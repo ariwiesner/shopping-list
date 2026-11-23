@@ -269,7 +269,8 @@ function renderStores() {
   const branch = b && ui.storeLists[sel]?.find((s) => s.id === b);
   $("branchBtn").hidden = !sel || !c?.branches;
   $("branchName").textContent = !b ? "כל הסניפים — מחיר נפוץ ברשת"
-    : branch ? `סניף ${branch.name}${branch.city && !branch.name.includes(branch.city) ? `, ${branch.city}` : ""}` : `סניף ${b}`;
+    : (branch ? `סניף ${branch.name}${branch.city && !branch.name.includes(branch.city) ? `, ${branch.city}` : ""}` : `סניף ${b}`)
+      + (isAutoBranch(sel) && !userPickedBranch(sel) ? " · הקרוב אליך" : "");
   $("storeNote").textContent = !sel
     ? "רשימה בלי מחירים · סובבו לחנות כדי לראות כמה הקנייה תעלה"
     : ui.catError ? "לא הצלחנו לטעון את המחירים. נסו שוב."
@@ -309,17 +310,61 @@ function selectStore(id) {
   if (choice === storeChoice()) return loadStore(id || null);
   prefs.store = choice;
   store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), store: choice });
-  if (backend === cloud && ui.list) cloud.setListStore(choice, id ? prefs.branches?.[id] || null : null).catch(fail);
+  // (A branch picked automatically as the nearest is this device's only; don't share it.)
+  if (backend === cloud && ui.list) cloud.setListStore(choice, id && !isAutoBranch(id) ? prefs.branches?.[id] || null : null).catch(fail);
   loadStore(id || null);
+  if (id) nearestBranch(id, true);
 }
 
 function selectBranch(branchId) {
   const chain = currentStoreId();
   if (!chain) return;
-  prefs.branches = { ...(prefs.branches || {}), [chain]: branchId || null };
-  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), branches: prefs.branches });
+  saveBranch(chain, branchId || null, false);
   if (backend === cloud && ui.list) cloud.setListStore(chain, branchId || null).catch(fail);
   buzz(8);
+  loadStore(chain);
+}
+
+function saveBranch(chain, branchId, auto) {
+  prefs.branches = { ...(prefs.branches || {}), [chain]: branchId };
+  prefs.autoBranches = { ...(prefs.autoBranches || {}), [chain]: auto };
+  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), branches: prefs.branches, autoBranches: prefs.autoBranches });
+}
+
+// ---------- Nearest branch by default ----------
+// A chain the user never picked a branch for gets the branch nearest them, and keeps
+// following them while that's an automatic choice. A branch the user picks (even
+// "all branches") stays, and so does one set on a shared list.
+const isAutoBranch = (chain) => !!prefs.autoBranches?.[chain];
+const userPickedBranch = (chain) =>
+  (prefs.branches && Object.prototype.hasOwnProperty.call(prefs.branches, chain) && !isAutoBranch(chain)) ||
+  (backend === cloud && ui.list?.store === chain && !!ui.list?.branch);
+function kmBetween(a, b) {
+  const r = Math.PI / 180;
+  const h = Math.sin((b.lat - a.lat) * r / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin((b.lon - a.lon) * r / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(h));
+}
+// mayAsk: whether a location prompt may appear (yes when the user just picked a chain;
+// not on app launch, where we only use a permission they already gave).
+async function nearestBranch(chain, mayAsk) {
+  if (!chain || userPickedBranch(chain)) return;
+  let perm = "prompt";
+  try { perm = (await navigator.permissions.query({ name: "geolocation" })).state; } catch (_) {}
+  if (perm === "denied" || (!mayAsk && perm !== "granted")) return;
+  const here = await getLocation();
+  if (!here) return;
+  let list;
+  try { list = ui.storeLists[chain] = await loadStores(chain); } catch (_) { return; }
+  let best = null, bestKm = Infinity;
+  for (const s of list) {
+    if (s.lat === undefined) continue;
+    const d = kmBetween(here, s);
+    if (d < bestKm) { best = s; bestKm = d; }
+  }
+  // Still on this chain, and the user didn't pick a branch while we were looking?
+  if (!best || currentStoreId() !== chain || userPickedBranch(chain)) return;
+  if (prefs.branches?.[chain] === best.id) return;
+  saveBranch(chain, best.id, true);
   loadStore(chain);
 }
 
@@ -399,8 +444,8 @@ $("dealsBody").addEventListener("click", (e) => {
 
 function chooseStore(chain, branch) {
   prefs.store = chain;
-  prefs.branches = { ...(prefs.branches || {}), [chain]: branch || null };
-  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), store: chain, branches: prefs.branches });
+  saveBranch(chain, branch || null, false);
+  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), store: chain });
   if (backend === cloud && ui.list) cloud.setListStore(chain, branch || null).catch(fail);
   buzz(8);
   loadStore(chain);
@@ -740,6 +785,7 @@ async function initStores() {
   // New users start on "no store" (a plain list); a store that no longer exists falls back to it too.
   if (currentStoreId() && ui.chains.length && !ui.chains.some((c) => c.id === currentStoreId())) selectStore(null);
   else loadStore(currentStoreId());
+  nearestBranch(currentStoreId(), false); // follow the user if their branch was picked as the nearest
 }
 
 // ---------- Item actions ----------
