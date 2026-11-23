@@ -1,0 +1,29 @@
+{
+ "generated": "2026-11-23T08:05Z",
+ "chains": [
+  {
+   "id": "shufersal",
+   "name": "שופרסל",
+   "color": "#d71f26",
+   "store": "413 - שופרסל ONLINE",
+   "count": 15810,
+   "updated": "2026-11-23T08:04Z"
+  },
+  {
+   "id": "carrefour",
+   "name": "קרפור",
+   "color": "#1d4f9c",
+   "store": "סניף 009",
+   "count": 12552,
+   "updated": "2026-11-23T08:05Z"
+  },
+  {
+   "id": "hazi-hinam",
+   "name": "חצי חינם",
+   "color": "#f28c00",
+   "store": "סניף 103",
+   "count": 10018,
+   "updated": "2026-11-23T08:05Z"
+  }
+ ]
+}
