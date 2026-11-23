@@ -243,19 +243,16 @@ function renderTotal(items) {
 const currentStoreId = () => (backend === cloud && ui.list?.store) || prefs.store || null;
 
 function renderStores() {
-  const row = $("storeRow");
   const sel = currentStoreId();
   if (!ui.chains.length) {
-    row.innerHTML = "";
+    wheel.el.innerHTML = ""; wheel.key = "";
     $("storeNote").textContent = ui.catError ? "לא הצלחנו לטעון את רשימת החנויות. בדקו את החיבור לאינטרנט." : "טוען חנויות…";
     return;
   }
-  row.innerHTML = ui.chains.map((c) => `
-    <button class="store${c.id === sel ? " selected" : ""}" role="radio" aria-checked="${c.id === sel}" data-store="${escapeHtml(c.id)}"
-            style="--store-color:${/^#[0-9a-f]{6}$/i.test(c.color) ? c.color : "#2f9e6b"}">
-      <span class="store-circle">${escapeHtml(c.name.split(" ").map((w) => w[0]).join("").slice(0, 2))}</span>
-      <span class="store-name">${escapeHtml(c.name)}</span>
-    </button>`).join("");
+  buildWheel();
+  // Someone else on a shared list picked a store: turn the wheel to it.
+  const k = ui.chains.findIndex((x) => x.id === sel);
+  if (k >= 0 && !wheel.dragging && !wheel.anim && wheelIndex() !== k) spinToChain(k, false);
   const c = ui.chains.find((x) => x.id === sel);
   $("storeNote").textContent = !sel
     ? "בחרו חנות כדי לראות כמה הקנייה תעלה"
@@ -279,19 +276,152 @@ async function loadStore(id) {
 }
 
 function selectStore(id) {
-  if (id === currentStoreId()) id = null; // tapping the selected store clears it
+  if (!id || id === currentStoreId()) return loadStore(id);
   prefs.store = id;
   store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), store: id });
   if (backend === cloud && ui.list) cloud.setListStore(id).catch(fail);
-  buzz(8);
   loadStore(id);
-  if (id) $("storeRow").querySelector(`[data-store="${CSS.escape(id)}"]`)?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
 }
 
-$("storeRow").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-store]");
-  if (b) selectStore(b.dataset.store);
-});
+// ---------- Store wheel ----------
+// Stores sit on the rim of a big circle. Drag to spin it; when it stops, the store
+// at the top is enlarged and its prices are shown. The ring repeats the stores so
+// it can spin endlessly even with only a few chains.
+const RTL = document.documentElement.dir === "rtl";
+const WHEEL = { step: (34 * Math.PI) / 180, radius: 250, top: 50, pxPerStep: 110, minSlots: 9 };
+const wheel = { el: $("storeRow"), btns: [], key: "", slots: 0, rot: 0, dragging: false, anim: 0, lastTick: null };
+
+const mod = (a, n) => ((a % n) + n) % n;
+const wrapDist = (d, n) => { d = mod(d, n); return d > n / 2 ? d - n : d; };
+const wheelIndex = () => (ui.chains.length ? mod(Math.round(wheel.rot), wheel.slots) % ui.chains.length : -1);
+
+function buildWheel() {
+  const key = ui.chains.map((c) => c.id + c.color).join("|");
+  if (key === wheel.key) return;
+  wheel.key = key;
+  const n = ui.chains.length;
+  wheel.slots = n * Math.ceil(WHEEL.minSlots / n);
+  const slots = Array.from({ length: wheel.slots }, (_, s) => ui.chains[s % n]);
+  wheel.el.innerHTML = `<div class="wheel-arc" aria-hidden="true"></div><div class="wheel-marker" aria-hidden="true"></div>` +
+    slots.map((c, s) => `
+      <button class="store" data-slot="${s}" tabindex="-1" aria-hidden="${s >= n}"
+              style="--store-color:${/^#[0-9a-f]{6}$/i.test(c.color) ? c.color : "#2f9e6b"}">
+        <span class="store-circle">${escapeHtml(c.name.split(" ").map((w) => w[0]).join("").slice(0, 2))}</span>
+        <span class="store-name">${escapeHtml(c.name)}</span>
+      </button>`).join("");
+  wheel.btns = [...wheel.el.querySelectorAll(".store")];
+  const k = ui.chains.findIndex((c) => c.id === currentStoreId());
+  wheel.rot = k >= 0 ? k : 0;
+  wheel.lastTick = Math.round(wheel.rot);
+  layoutWheel();
+}
+
+function layoutWheel() {
+  if (!wheel.btns.length) return;
+  const cx = (wheel.el.clientWidth || 360) / 2;
+  const dir = RTL ? -1 : 1; // in Hebrew the next store sits to the left
+  const top = wheelIndex();
+  wheel.btns.forEach((el, s) => {
+    const d = wrapDist(s - wheel.rot, wheel.slots);   // distance from the top, in stores
+    const a = d * WHEEL.step * dir;
+    const x = cx + WHEEL.radius * Math.sin(a);
+    const y = WHEEL.top + WHEEL.radius * (1 - Math.cos(a));
+    const near = Math.max(0, 1 - Math.abs(d));       // 1 at the top, 0 one step away
+    const scale = 0.72 + 0.5 * near;
+    el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -50%) scale(${scale.toFixed(3)})`;
+    el.style.opacity = String(Math.max(0, 1 - Math.max(0, Math.abs(d) - 1) * 0.75));
+    el.style.zIndex = String(100 - Math.round(Math.abs(d) * 10));
+    el.classList.toggle("top", Math.abs(d) < 0.5);
+  });
+  const c = ui.chains[top];
+  wheel.el.setAttribute("aria-valuetext", c ? c.name : "");
+  // A little tick each time a store passes the top.
+  const r = Math.round(wheel.rot);
+  if (r !== wheel.lastTick) { wheel.lastTick = r; buzz(4); }
+}
+
+function spinTo(target, animate = true) {
+  cancelAnimationFrame(wheel.anim);
+  wheel.anim = 0;
+  if (!animate) { wheel.rot = target; settleWheel(); return; }
+  const from = wheel.rot, dist = target - from;
+  const dur = Math.min(650, 220 + Math.abs(dist) * 140);
+  const t0 = performance.now();
+  const step = (t) => {
+    const p = Math.min(1, (t - t0) / dur);
+    wheel.rot = from + dist * (1 - Math.pow(1 - p, 3)); // ease-out
+    layoutWheel();
+    if (p < 1) wheel.anim = requestAnimationFrame(step);
+    else { wheel.anim = 0; wheel.rot = target; settleWheel(); }
+  };
+  wheel.anim = requestAnimationFrame(step);
+}
+
+// Spin to the nearest copy of chain k on the ring.
+function spinToChain(k, animate = true) {
+  let best = null;
+  for (let s = k; s < wheel.slots; s += ui.chains.length) {
+    const d = wrapDist(s - wheel.rot, wheel.slots);
+    if (best === null || Math.abs(d) < Math.abs(best)) best = d;
+  }
+  spinTo(wheel.rot + best, animate);
+}
+
+function settleWheel() {
+  wheel.rot = mod(Math.round(wheel.rot), wheel.slots);
+  layoutWheel();
+  const c = ui.chains[wheelIndex()];
+  if (c && c.id !== currentStoreId()) { buzz(12); selectStore(c.id); }
+}
+
+(function wheelInput() {
+  const el = wheel.el;
+  let startX = 0, startRot = 0, moved = false, downSlot = null, samples = [];
+  const sign = RTL ? 1 : -1;
+
+  el.addEventListener("pointerdown", (e) => {
+    if (!wheel.btns.length || (e.pointerType === "mouse" && e.button !== 0)) return;
+    cancelAnimationFrame(wheel.anim); wheel.anim = 0;
+    wheel.dragging = true; moved = false;
+    startX = e.clientX; startRot = wheel.rot;
+    downSlot = e.target.closest(".store")?.dataset.slot ?? null;
+    samples = [{ x: e.clientX, t: e.timeStamp }];
+    try { el.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  el.addEventListener("pointermove", (e) => {
+    if (!wheel.dragging) return;
+    const dx = e.clientX - startX;
+    if (Math.abs(dx) > 6) moved = true;
+    if (!moved) return;
+    wheel.rot = startRot + (sign * dx) / WHEEL.pxPerStep;
+    samples.push({ x: e.clientX, t: e.timeStamp });
+    if (samples.length > 6) samples.shift();
+    layoutWheel();
+  });
+  const end = () => {
+    if (!wheel.dragging) return;
+    wheel.dragging = false;
+    if (!moved) {
+      // A tap: bring the tapped store to the top.
+      if (downSlot !== null) spinTo(wheel.rot + wrapDist(+downSlot - wheel.rot, wheel.slots));
+      return;
+    }
+    // Fling: keep spinning a bit in the direction of the swipe, then snap to a store.
+    const a = samples[0], b = samples[samples.length - 1];
+    const v = b.t > a.t ? (b.x - a.x) / (b.t - a.t) : 0; // px per ms
+    const coast = Math.max(-3, Math.min(3, (sign * v * 220) / WHEEL.pxPerStep));
+    spinTo(Math.round(wheel.rot + coast));
+  };
+  el.addEventListener("pointerup", end);
+  el.addEventListener("pointercancel", end);
+  el.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const towardNext = (e.key === "ArrowLeft") === RTL;
+    spinTo(Math.round(wheel.rot) + (towardNext ? 1 : -1));
+  });
+  window.addEventListener("resize", layoutWheel);
+})();
 
 async function initStores() {
   try {
@@ -303,7 +433,9 @@ async function initStores() {
     ui.catError = true;
   }
   render();
-  loadStore(currentStoreId());
+  // The wheel always has a store at the top, so prices show right away.
+  if (ui.chains.length && !ui.chains.some((c) => c.id === currentStoreId())) selectStore(ui.chains[0].id);
+  else loadStore(currentStoreId());
 }
 
 // ---------- Item actions ----------
