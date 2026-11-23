@@ -386,7 +386,28 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
 .item-by { margin-top: 2px; font-size: 13px; font-weight: 600; color: var(--accent); }
 
 /* Sheet extras */
-.sheet { max-height: 88vh; overflow-y: auto; }
+/* Every sheet fits the visible screen: the sheet is a column capped at the screen
+   height, and only its long list (products, branches, lists, members) shrinks and
+   scrolls inside, so titles, fields and buttons always stay in view. */
+.sheet {
+  display: flex; flex-direction: column;
+  max-height: calc(100vh - var(--safe-t) - 12px);
+  max-height: calc(100dvh - var(--safe-t) - 12px);
+  overflow: hidden;
+}
+.sheet > *, .edit-form > *, #shareBody > * { flex: none; }
+.sheet .sheet-handle { flex: none; }
+#shareBody, .edit-form, .sheet .field:has(.products) {
+  display: flex; flex-direction: column;
+  flex: 0 1 auto; min-height: 0;
+}
+.sheet .products, #listSwitcher, #shareBody .members {
+  flex: 0 1 auto; min-height: 96px; max-height: none;
+  overflow-y: auto; overscroll-behavior: contain;
+}
+#listSwitcher:empty { min-height: 0; }
+/* Last resort on very short screens (e.g. landscape): let the whole sheet scroll. */
+@media (max-height: 420px) { .sheet { overflow-y: auto; } }
 .sheet-note { margin: -4px 4px 16px; color: var(--muted); line-height: 1.45; font-size: 15px; }
 .sheet-label { margin: 18px 4px 8px; font-size: 13px; font-weight: 700; color: var(--muted); }
 .sheet-sep { border: 0; height: 1px; background: var(--line); margin: 8px 4px; }
@@ -496,7 +517,7 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
 
 .field small { font-weight: 500; }
 .field input[type="search"] { margin-bottom: 2px; }
-.products { list-style: none; margin: 0; padding: 0; max-height: 38vh; overflow-y: auto; border-radius: 14px; border: 1.5px solid var(--line); }
+.products { list-style: none; margin: 0; padding: 0; overflow-y: auto; border-radius: 14px; border: 1.5px solid var(--line); }
 .product {
   width: 100%;
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -513,7 +534,12 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
 .product-price { flex: none; font-weight: 800; font-variant-numeric: tabular-nums; text-align: end; }
 .product-price small { display: block; color: var(--muted); font-weight: 500; font-size: 11px; }
 .products-empty { padding: 14px; color: var(--muted); text-align: center; font-size: 14px; }
-#editSheet { max-height: 94vh; }
+/* The item editor has the most in it, so it is a little tighter. */
+#editSheet .edit-form { gap: 12px; }
+#editSheet .field { gap: 6px; }
+#editSheet .field input { height: 46px; }
+#editSheet .stepper.big { height: 46px; }
+#editSheet .stepper.big button { width: 46px; height: 46px; }
 
 .item-price .pick { color: var(--accent); font-weight: 700; }
 
@@ -589,4 +615,3 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
 .branch-btn:active { transform: scale(.97); }
 .stores-note { margin-top: 6px; }
 #branchSheet .field { margin: 0 4px 10px; }
-.branches { max-height: 55vh; }
