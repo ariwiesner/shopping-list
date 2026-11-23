@@ -137,11 +137,11 @@ export async function createCloud(config) {
     },
 
     // ----- lists -----
-    async createList(items = []) {
+    async createList(items = [], listName = "") {
       const id = doc(collection(db, "lists")).id;
       const code = randomCode();
       const u = me();
-      const name = `הרשימה של ${firstName()}`;
+      const name = String(listName || "").trim().slice(0, 80) || `הרשימה של ${firstName()}`;
       const b = writeBatch(db);
       b.set(doc(db, "lists", id), { name, ownerId: u.uid, inviteCode: code, createdAt: serverTimestamp() });
       b.set(doc(db, "lists", id, "members", u.uid), memberData());
