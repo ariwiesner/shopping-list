@@ -84,6 +84,7 @@ const prefs = store.get(PREFS_KEY, {});
 const ui = {
   items: [],
   doneOpen: prefs.doneOpen ?? store.get(LOCAL_KEY, {})?.doneOpen ?? true,
+  suggestOff: prefs.suggestOff ?? false, // true once the user types an item themselves
   list: null,       // cloud list doc { id, name, ownerId, inviteCode }
   members: [],
   userLists: {},    // { listId: name }
@@ -165,9 +166,15 @@ function render() {
     done.length === 0 ? `${plural(todo.length, "פריט", "פריטים")} לקנות` :
     `נשארו עוד ${plural(todo.length, "פריט", "פריטים")}`;
 
-  if (!total) {
-    suggestions.innerHTML = SUGGESTIONS.map((s) => `<button class="chip" data-name="${s}">${emojiFor(s)} ${s}</button>`).join("");
-  }
+  // Suggestions: tapping one adds it and removes just that chip (it's now on the list).
+  // They stay until the user types an item manually; an empty list brings them back.
+  if (!total && ui.suggestOff) setSuggestOff(false);
+  const onList = new Set(items.map((i) => i.name));
+  const sugg = ui.suggestOff ? [] : SUGGESTIONS.filter((s) => !onList.has(s));
+  $("suggestBlock").hidden = !sugg.length;
+  $("suggestBlock").classList.toggle("compact", total > 0);
+  $("suggestHead").hidden = !total;
+  suggestions.innerHTML = sugg.map((s) => `<button class="chip" data-name="${s}">${emojiFor(s)} ${s}</button>`).join("");
 
   // Header: list name + who's in it
   $("listTitle").textContent = ui.list?.name || "הסל שלי";
@@ -465,14 +472,20 @@ doneList.addEventListener("click", onListClick);
 
 doneToggle.addEventListener("click", () => {
   ui.doneOpen = !ui.doneOpen;
-  store.set(PREFS_KEY, { ...prefs, doneOpen: ui.doneOpen });
+  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), doneOpen: ui.doneOpen });
   render();
 });
+
+function setSuggestOff(off) {
+  ui.suggestOff = off;
+  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), doneOpen: ui.doneOpen, suggestOff: off });
+}
 
 suggestions.addEventListener("click", (e) => {
   const chip = e.target.closest(".chip");
   if (chip) addItem(chip.dataset.name);
 });
+$("suggestClose").addEventListener("click", () => { setSuggestOff(true); render(); });
 
 // Swipe toward the end side to delete: right in RTL (Hebrew), left in LTR.
 const SWIPE_DIR = document.documentElement.dir === "rtl" ? 1 : -1;
@@ -506,10 +519,11 @@ function enableSwipe(list) {
     if (!active) return;
     active = false;
     if (!decided) return;
-    li.classList.remove("dragging");
     suppressClick = true;
     setTimeout(() => (suppressClick = false), 50);
     const threshold = Math.min(120, body.offsetWidth * 0.35);
+    li.classList.toggle("removing", Math.abs(dx) > threshold);
+    li.classList.remove("dragging");
     if (Math.abs(dx) > threshold) {
       body.style.transform = `translateX(${SWIPE_DIR * 110}%)`;
       buzz(20);
@@ -530,6 +544,7 @@ composer.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = input.value.trim();
   if (!text) { input.focus(); return; }
+  setSuggestOff(true); // typing your own item hides the suggestions
   addItem(text);
   input.value = "";
   input.focus(); // keep keyboard open for quick multi-add

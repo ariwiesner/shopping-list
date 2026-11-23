@@ -103,7 +103,7 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
 .item {
   position: relative;
   border-radius: var(--radius);
-  background: var(--danger);
+  background: transparent;
   overflow: hidden;
   animation: pop .22s ease-out;
 }
@@ -423,3 +423,24 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
 
 .skip-btn { margin-top: 14px; padding: 12px; font-weight: 700; color: var(--muted); font-size: 15px; }
 .sheet .google-btn { margin: 4px 0 8px; }
+
+/* Quick suggestions */
+.suggest { margin-top: 22px; }
+.suggest.compact { margin: 0 -16px 14px; }
+.suggest-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px 6px;
+  font-size: 13px; font-weight: 700; color: var(--muted);
+}
+.suggest-close { width: 36px; height: 36px; border-radius: 50%; color: var(--muted); font-size: 14px; }
+.suggest-close:active { background: var(--surface-2); }
+.suggest.compact .chips {
+  flex-wrap: nowrap; justify-content: flex-start;
+  overflow-x: auto; margin-top: 0;
+  padding: 4px 16px 8px;
+  scrollbar-width: none;
+}
+.suggest.compact .chips::-webkit-scrollbar { display: none; }
+.suggest.compact .chip { flex: none; }
+
+.item.dragging, .item.removing { background: var(--danger); }
