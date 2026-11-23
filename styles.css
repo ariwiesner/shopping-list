@@ -663,9 +663,17 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
 .deals-foot { margin: 8px 0 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
 .deals-also { margin: -2px 4px 14px; font-weight: 700; color: var(--accent); }
 .deal-warn { margin: 8px 0 0; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); font-size: 13px; font-weight: 600; line-height: 1.4; }
-.deal-name small.row-warn { color: inherit; font-weight: 600; white-space: normal; }
 
 /* "No store" slot on the wheel: a plain list, no prices */
 .wheel .store-circle.no-store { color: var(--muted); }
 .wheel .store.top .store-circle.no-store { color: var(--text); }
 .store-circle.no-store svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+.deals-excluded { margin: -4px 0 12px; }
+details.deal-warn summary { cursor: pointer; list-style: none; }
+details.deal-warn summary::-webkit-details-marker { display: none; }
+details.deal-warn .more { color: var(--accent); font-weight: 800; white-space: nowrap; }
+details.deal-warn[open] .more { display: none; }
+details.deal-warn.in-row { margin: 0 12px 10px; }
+.subs { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.subs li { display: flex; flex-direction: column; gap: 2px; padding-top: 8px; border-top: 1px solid var(--line); font-weight: 500; }
+.subs li b { font-weight: 800; }

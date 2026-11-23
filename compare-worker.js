@@ -8,7 +8,7 @@
 // Out: { type: "progress", id, done, total, name }
 //      { type: "result", id, result } | { type: "error", id, message }
 
-import { fetchJson, parseChain, parseStores, applyBranch, priceItem, estimatePool, norm, round } from "./catalog.js";
+import { fetchJson, parseChain, parseStores, applyBranch, priceItem, norm, round } from "./catalog.js";
 
 const PER_CHAIN = 4; // nearest branches checked per chain
 
@@ -20,90 +20,23 @@ function km(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-// Per item in one store: { total, exact, perKg, est, pool } or null.
-//   exact: the item's chosen product is sold here (same barcode, or same name)
-//   perKg: no chosen product, and the name clearly means one loose product (bananas)
-//   pool:  the products the item's plain name could mean here, with prices, used to
-//          measure how expensive this store is for that kind of product
-// Items with a price the user typed are left out: they cost the same everywhere.
+// Per item in one store, priced exactly as the list prices it in that store (so what the
+// comparison promises is what the list shows after switching): { total, est, sub } or null.
+//   est: a general item ("גבינה"), priced at a typical product of that kind
+//   sub: the product the user chose isn't sold here; a similar one is priced instead
 function pricesIn(cat, items, choices) {
   return items.map((it) => {
-    if (typeof it.price === "number" && it.price > 0) return null;
     const p = priceItem(cat, it, choices[norm(it.name)] || null);
-    const priced = p.kind === "exact" || p.kind === "estimate";
-    const pool = estimatePool(cat, it.name).map((x) => [x.code, x.price]);
-    if (!priced && !pool.length) return null;
+    if (p.kind === "none") return null;
     return {
-      total: priced ? p.total : null,
-      // Its chosen product, or the same product under this chain's wording.
-      exact: p.kind === "exact" && (!p.auto || (!!it.productName && p.matchedBy === it.productName)),
-      barcode: p.kind === "exact" && !p.auto,
-      perKg: p.kind === "exact" && !!p.auto && !!p.weighted,
-      est: p.kind === "estimate",
-      pool,
+      total: p.total, est: p.kind === "estimate", sub: !!p.missingProduct,
+      name: p.product?.name || null, kinds: p.kind === "estimate" ? p.count : null, // what was priced
     };
   });
-}
-
-const median = (xs) => { const s = xs.slice().sort((a, b) => a - b), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
-
-// Each chain words and stocks products differently, so pricing "the same item" needs care:
-// - A vague item ("גבינה") means different products in each chain; a chain with many
-//   premium cheeses would look expensive. So: products sold in at least two chains get a
-//   reference price (their median across chains), each store a price level for that kind
-//   of product (median of its price ÷ reference), and the item costs reference × level.
-// - A chosen product ("ביצים L 12 תנובה") costs its real price where it's sold; where it
-//   isn't, a comparable product costs its typical price × that store's level for the kind.
-//   (Otherwise every other chain would just be "missing" it and the chosen store would win.)
-// - Loose produce priced per kg in every chain is already comparable as is.
-function harmonize(items, chains, branches) {
-  const stores = [...chains, ...branches];
-  items.forEach((it, i) => {
-    const qty = it.qty || 1;
-    const here = chains.map((c) => c.prices[i]).filter(Boolean);
-    if (!here.length) return;
-
-    const seen = new Map(); // code -> prices across chains
-    for (const p of here) for (const [code, price] of p.pool) {
-      if (!seen.has(code)) seen.set(code, []);
-      seen.get(code).push(price);
-    }
-    const ref = new Map([...seen].filter(([, ps]) => ps.length >= 2).map(([code, ps]) => [code, median(ps)]));
-    const level = (p) => {
-      const ls = (p?.pool || []).filter(([code]) => ref.has(code)).map(([code, price]) => price / ref.get(code));
-      return ls.length ? median(ls) : null;
-    };
-    const set = (x, total) => { x.prices[i] = { ...x.prices[i], total: round(total), est: true }; };
-
-    const anchors = chains.map((c) => c.prices[i]).filter((p) => p?.exact);
-    if (anchors.length) {
-      // Chosen product: its typical price at an average store, from where it's sold.
-      // (Same-barcode prices are the surest guide; a same-name match only prices its own chain.)
-      const sure = anchors.some((p) => p.barcode) ? anchors.filter((p) => p.barcode) : anchors;
-      const typical = median(sure.map((p) => p.total / qty / (level(p) || 1)));
-      for (const x of stores) {
-        const p = x.prices[i];
-        if (p?.exact) continue;
-        const l = level(p);
-        if (l) set(x, typical * l * qty);
-        if (x.prices[i]) x.prices[i].sub = true; // the chosen product isn't sold here: a similar one is priced
-      }
-      return;
-    }
-    const named = here.filter((p) => p.total != null);
-    if (named.length && named.every((p) => p.perKg)) return;
-    if (!ref.size) return;
-    const base = median([...ref.values()]);
-    for (const x of stores) {
-      const l = level(x.prices[i]);
-      if (l) set(x, base * l * qty);
-    }
-  });
-  for (const x of stores) x.prices = x.prices.map((p) => (p && p.total != null ? { total: p.total, est: p.est, sub: !!p.sub } : null));
 }
 
 self.onmessage = async ({ data }) => {
-  const { id, items, choices, here, maxKm, current, anchor } = data;
+  const { id, items, choices, here, maxKm, current } = data;
   try {
     const index = await fetchJson("index.json");
     const chains = [], branches = [];
@@ -140,7 +73,7 @@ self.onmessage = async ({ data }) => {
       cat = null; // let this chain's catalog go before loading the next
       n++;
     }
-    self.postMessage({ type: "result", id, result: summarize(items, chains, branches, current, anchor) });
+    self.postMessage({ type: "result", id, result: summarize(items, chains, branches, current) });
   } catch (e) {
     self.postMessage({ type: "error", id, message: String(e?.message || e) });
   }
@@ -151,56 +84,54 @@ const strip = (s) => ({
   lat: s.lat, lon: s.lon, prec: s.prec, km: s.km === undefined ? null : round(s.km),
 });
 
-// Totals on a fair basis. Items no chain has (or with a typed price) are left out
-// for everyone. A store missing an item the others have can't be "the cheapest"
-// (you couldn't buy the whole list there); it is still listed with what it lacks.
-function summarize(items, chains, branches, current, anchor) {
-  harmonize(items, chains, branches);
-  const stores = [...chains, ...branches];
+// Totals compared like for like.
+// With a current store: every store is compared on the items the current store has
+// (items it lacks are left out for everyone, and named), so a smaller chain doesn't look
+// cheaper just because something is missing there. A store lacking one of those items
+// can't be "the cheapest" (you couldn't buy the whole list there).
+// Without a current store: on the items at least one chain has.
+function summarize(items, chains, branches, current) {
   const mine = current?.chain && (
     (current.branch && branches.find((x) => x.chain === current.chain && x.id === current.branch)) ||
-    (!current.branch && chains.find((x) => x.id === current.chain)));
-
-  items.forEach((it, i) => {
-    // A price the user typed costs the same in every store.
-    if (typeof it.price === "number" && it.price > 0) {
-      for (const x of stores) x.prices[i] = { total: round(it.price * (it.qty || 1)), est: false };
-      return;
-    }
-    // Anchor on the list: the user's own store costs exactly what the list says, and every
-    // other store costs that × how much more or less it is there (by the measures above).
-    // So "your purchase" always matches the list total, and savings are against it.
-    const a = anchor?.[i], ref = mine?.prices[i]?.total;
-    if (!mine || !(a > 0)) return;
-    for (const x of stores) {
-      if (x === mine) continue;
-      const p = x.prices[i];
-      if (p && ref > 0) x.prices[i] = { ...p, total: round(a * (p.total / ref)) };
-    }
-    mine.prices[i] = { total: a, est: !!mine.prices[i]?.est, sub: !!mine.prices[i]?.sub };
+    chains.find((x) => x.id === current.chain));
+  const counted = mine ? mine.prices.map(Boolean) : items.map((_, i) => chains.some((c) => c.prices[i]));
+  // For a chosen product some store lacks: where it is sold, and its price there
+  // (the user's own store first), to show next to what was priced instead.
+  const mineName = mine && (mine.chain ? `${mine.chainName} ${mine.name}` : mine.name);
+  const chosenAt = items.map((_, i) => {
+    if (mine?.prices[i] && !mine.prices[i].sub) return { at: mineName, total: mine.prices[i].total, name: mine.prices[i].name };
+    const c = chains.find((x) => x.prices[i] && !x.prices[i].sub);
+    return c ? { at: c.name, total: c.prices[i].total, name: c.prices[i].name } : null;
   });
-
-  const counted = items.map((_, i) => chains.some((c) => c.prices[i]));
   const total = (prices) => {
-    let sum = 0, missing = 0, est = false, subs = 0;
+    let sum = 0, missing = 0, est = 0, subs = 0;
+    const subList = [];
     prices.forEach((p, i) => {
       if (!counted[i]) return;
       if (!p) { missing++; return; }
-      sum += p.total; est ||= p.est; if (p.sub) subs++;
+      sum += p.total;
+      if (p.est) est++;
+      if (p.sub) {
+        subs++;
+        subList.push({ item: items[i].name, qty: items[i].qty || 1, chosen: items[i].productName || chosenAt[i]?.name || null,
+          chosenAt: chosenAt[i], instead: p.name, kinds: p.kinds, total: p.total });
+      }
     });
-    return { total: round(sum), missing, est, subs };
+    return { total: round(sum), missing, est, subs, subList };
   };
   const out = {
     itemCount: items.length,
     counted: counted.filter(Boolean).length,
+    // Items left out because the current store doesn't have them (but another chain does).
+    excluded: mine ? items.filter((_, i) => !counted[i] && chains.some((c) => c.prices[i])).map((it) => it.name) : [],
     chains: chains.map(({ prices, ...c }) => ({ ...c, ...total(prices) })),
     branches: branches.map(({ prices, ...b }) => ({ ...b, ...total(prices) })),
     current: null,
   };
-  if (current?.chain) {
-    const b = current.branch && out.branches.find((x) => x.chain === current.chain && x.id === current.branch);
+  if (mine) {
+    const b = mine.chain && out.branches.find((x) => x.chain === mine.chain && x.id === mine.id);
     const c = out.chains.find((x) => x.id === current.chain);
-    out.current = b ? { ...b, kind: "branch" } : c ? { ...c, chain: c.id, chainName: c.name, kind: "chain" } : null;
+    out.current = b ? { ...b, kind: "branch" } : { ...c, chain: c.id, chainName: c.name, kind: "chain" };
   }
   return out;
 }

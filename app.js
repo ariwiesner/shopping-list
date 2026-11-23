@@ -427,13 +427,9 @@ async function runDeals(force = false) {
   const items = ui.items.map(({ name, qty, barcode, productName, price }) => ({ name, qty, barcode, productName, price }));
   if (!items.length) { renderDeals(); return; }
   const current = currentStoreId() ? { chain: currentStoreId(), branch: currentBranchId() } : null;
-  // The list's own per-item prices in the current store (when its prices are loaded),
-  // so the comparison's "your purchase" matches the total shown on the list.
-  const anchor = current && ui.cat?.id === current.chain && (ui.cat.branch || null) === (current.branch || null)
-    ? ui.items.map((it) => priceItem(ui.cat, it, ui.choices[norm(it.name)]).total) : null;
   deals.error = false; deals.stage = "locating"; renderDeals();
   const here = await getLocation();
-  const key = JSON.stringify([items, ui.choices, current, anchor, here && [here.lat.toFixed(2), here.lon.toFixed(2)]]);
+  const key = JSON.stringify([items, ui.choices, current, here && [here.lat.toFixed(2), here.lon.toFixed(2)]]);
   if (!force && key === deals.key && deals.result) { deals.stage = null; renderDeals(); return; }
 
   deals.stage = "pricing"; deals.progress = null; renderDeals();
@@ -453,7 +449,7 @@ async function runDeals(force = false) {
     else { console.error(data.message); finish(null); }
   };
   w.onerror = (e) => { console.error(e); finish(null); };
-  w.postMessage({ id, items, choices: ui.choices, here, maxKm: Math.max(...RADII) / MIN_PER_KM, current, anchor });
+  w.postMessage({ id, items, choices: ui.choices, here, maxKm: Math.max(...RADII) / MIN_PER_KM, current });
 }
 
 function renderDeals() {
@@ -484,8 +480,20 @@ function renderDeals() {
   const trip = (b) => b.km == null ? "" :
     `~${driveMin(b.km)} דק׳ נסיעה · ${kmText(b.km)}${b.prec === "c" ? " · מיקום משוער לפי העיר" : ""}`;
   // Chosen products this store doesn't sell, priced by a similar product instead.
-  const subsNote = (x) => !x.subs || (cur && x.chain === cur.chain && cur.kind === "branch" && x.id === cur.id) ? "" :
-    `<p class="deal-warn">⚠️ ${x.subs === 1 ? "מוצר אחד שבחרתם לא נמכר כאן" : `${x.subs} מוצרים שבחרתם לא נמכרים כאן`} — חושב לפי מחיר של מוצר דומה</p>`;
+  // Tap to see, per product: what was chosen and its price where it's sold, and what was priced here instead.
+  const subsNote = (x, short = false) => !x.subs || (cur && x.chain === cur.chain && cur.kind === "branch" && x.id === cur.id) ? "" :
+    `<details class="deal-warn${short ? " in-row" : ""}"><summary>⚠️ ${x.subs === 1 ? "מוצר אחד שבחרתם לא נמכר כאן" : `${x.subs} מוצרים שבחרתם לא נמכרים כאן`}` +
+    `${short ? "" : " — חושב לפי מחיר של מוצר דומה"} <span class="more">פרטים</span></summary><ul class="subs">` +
+    x.subList.map((d) => {
+      const q = d.qty > 1 ? ` <span class="muted">(×${d.qty})</span>` : "";
+      const chosen = d.chosenAt
+        ? `${escapeHtml(d.chosen || d.item)} — <strong>${amt(money(d.chosenAt.total))}</strong>${q} ב${escapeHtml(d.chosenAt.at)}`
+        : escapeHtml(d.chosen || d.item);
+      const instead = d.instead
+        ? `${escapeHtml(d.instead)} — <strong>${amt(money(d.total))}</strong>${q}`
+        : `מחיר טיפוסי של ${d.kinds > 1 ? `${d.kinds} סוגים` : "מוצר דומה"} — <strong>${amt("~" + money(d.total))}</strong>${q}`;
+      return `<li><b>${escapeHtml(d.item)}</b><span>בחרתם: ${chosen}</span><span>כאן במקומו: ${instead}</span></li>`;
+    }).join("") + `</ul></details>`;
   const isCur = (b) => cur?.kind === "branch" && cur.chain === b.chain && cur.id === b.id;
   const save = (x) => {
     if (!cur || !ok(cur)) return "";
@@ -500,8 +508,12 @@ function renderDeals() {
   let html = "";
   if (cur) {
     const label = cur.kind === "branch" ? `${escapeHtml(cur.chainName)}, ${escapeHtml(where(cur))}` : `${escapeHtml(cur.chainName)} (מחיר נפוץ ברשת)`;
-    html += `<p class="deals-current">הקנייה שלך ב${label}: <strong>${amt(est(cur) + money(cur.total))}</strong>` +
-      (cur.missing ? ` <span class="muted">· חסרים שם ${plural(cur.missing, "פריט", "פריטים")}</span>` : "") + `</p>`;
+    html += `<p class="deals-current">הקנייה שלך ב${label}: <strong>${amt(est(cur) + money(cur.total))}</strong></p>`;
+    // Items the current store lacks are left out for every store, so the totals compare like for like.
+    if (res.excluded.length) {
+      html += `<p class="deal-warn deals-excluded">אין ב${escapeHtml(cur.chainName)}: ${res.excluded.map(escapeHtml).join(", ")}. ` +
+        `כדי להשוות הוגן, ${res.excluded.length === 1 ? "הפריט הזה לא נכלל" : "הפריטים האלה לא נכללו"} בסכומים כאן.</p>`;
+    }
   }
 
   // Cheapest within the chosen drive time.
@@ -545,14 +557,14 @@ function renderDeals() {
     html += `<p class="sheet-label">רשתות אחרות לידך</p><ul class="deal-list">` + more.map((b) => `
       <li><button type="button" class="deal-row" data-pick='${escapeHtml(JSON.stringify([b.chain, b.id]))}'>
         ${logo(b.chain)}
-        <span class="deal-name"><strong>${escapeHtml(b.chainName)}</strong><small>${escapeHtml(where(b))} · ~${driveMin(b.km)} דק׳</small>${b.subs ? `<small class="row-warn">⚠️ ${b.subs === 1 ? "מוצר אחד שבחרתם לא נמכר כאן" : `${b.subs} מוצרים שבחרתם לא נמכרים כאן`}</small>` : ""}</span>
+        <span class="deal-name"><strong>${escapeHtml(b.chainName)}</strong><small>${escapeHtml(where(b))} · ~${driveMin(b.km)} דק׳</small></span>
         <strong class="deal-total">${amt(est(b) + money(b.total))}</strong>
-      </button></li>`).join("") + `</ul>`;
+      </button>${subsNote(b, true)}</li>`).join("") + `</ul>`;
   }
 
-  const notes = [`השוואה לפי ${res.counted} מתוך ${plural(res.itemCount, "פריט", "פריטים")}`];
-  if (cur && ok(cur)) notes.push(`המחירים בחנויות האחרות מחושבים לפי ההבדל בין המחירים שם לבין ${escapeHtml(cur.chainName)}, פריט אחרי פריט`);
-  else if ([best, top].some((x) => x?.est)) notes.push("פריטים כלליים מחושבים לפי מוצרים שנמכרים בכמה רשתות");
+  const notes = [`המחירים כאן הם בדיוק מה שהרשימה תראה אחרי מעבר לחנות`];
+  const general = Math.max(cur?.est || 0, best?.est || 0, top?.est || 0);
+  if (general) notes.push(`${general === 1 ? "פריט אחד כללי" : `${general} פריטים כלליים`} (כמו "גבינה") מתומחרים לפי מוצר טיפוסי, אז ההשוואה משוערת. להשוואה מדויקת, הקישו על פריט ברשימה ובחרו מוצר`);
   // Chains left out because they lack something on the list.
   const lacking = res.chains.filter((c) => c.missing && c.id !== cur?.chain)
     .map((c) => `${escapeHtml(c.name)} (${c.missing === 1 ? "חסר פריט אחד" : `חסרים ${c.missing} פריטים`})`);
