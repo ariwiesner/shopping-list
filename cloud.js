@@ -1,0 +1,236 @@
+// Firebase layer: Google sign-in, Firestore lists, live updates and invites.
+//
+// Data model
+//   users/{uid}                     { activeListId, lists: { [listId]: listName } }
+//   lists/{listId}                  { name, ownerId, inviteCode, createdAt }
+//   lists/{listId}/members/{uid}    { uid, name, email, photo, joinedAt, inviteCode? }
+//   lists/{listId}/invites/{code}   { listName, ownerName, createdAt }   (doc id = secret code)
+//   lists/{listId}/items/{itemId}   { name, qty, done, price, createdAt, sortKey, updatedBy, updatedByName, updatedAt }
+//
+// Access rules live in firestore.rules.
+
+const V = "11.0.2";
+const SDK = `https://www.gstatic.com/firebasejs/${V}`;
+
+export async function createCloud(config) {
+  const [{ initializeApp }, A, F] = await Promise.all([
+    import(`${SDK}/firebase-app.js`),
+    import(`${SDK}/firebase-auth.js`),
+    import(`${SDK}/firebase-firestore.js`),
+  ]);
+  const {
+    getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup,
+    signInWithRedirect, getRedirectResult, signOut,
+  } = A;
+  const {
+    initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+    doc, collection, getDoc, setDoc, updateDoc, deleteDoc, writeBatch,
+    onSnapshot, serverTimestamp, deleteField,
+  } = F;
+
+  const app = initializeApp(config);
+  const auth = getAuth(app);
+  auth.languageCode = "he";
+  let db;
+  try {
+    // Offline support: the list keeps working without network and syncs later.
+    db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
+  } catch (_) {
+    db = initializeFirestore(app, {});
+  }
+
+  let listId = null;
+  let subs = [];
+  let userSub = null;
+  const recentlyDeleted = new Set();
+
+  const me = () => auth.currentUser;
+  const firstName = () => {
+    const u = me();
+    return ((u && (u.displayName || u.email)) || "").split(/[\s@]/)[0] || "מישהו";
+  };
+  const randomCode = () => {
+    const a = new Uint8Array(16);
+    crypto.getRandomValues(a);
+    return [...a].map((b) => b.toString(16).padStart(2, "0")).join("");
+  };
+
+  const listRef = (id = listId) => doc(db, "lists", id);
+  const itemRef = (id) => doc(db, "lists", listId, "items", id);
+  const userRef = () => doc(db, "users", me().uid);
+
+  const memberData = () => {
+    const u = me();
+    return {
+      uid: u.uid,
+      name: u.displayName || u.email || "",
+      email: u.email || "",
+      photo: u.photoURL || "",
+      joinedAt: serverTimestamp(),
+    };
+  };
+  const stamp = () => ({ updatedBy: me().uid, updatedByName: firstName(), updatedAt: serverTimestamp() });
+  const itemData = (it) => ({
+    name: it.name, qty: it.qty, done: !!it.done, price: it.price ?? null,
+    createdAt: it.createdAt || Date.now(), sortKey: it.sortKey || Date.now(), ...stamp(),
+  });
+  const fromDoc = (d) => {
+    const x = d.data();
+    return { id: d.id, name: x.name, qty: x.qty, done: x.done, price: x.price ?? null,
+      createdAt: x.createdAt, sortKey: x.sortKey, updatedBy: x.updatedBy, updatedByName: x.updatedByName };
+  };
+
+  function closeList() {
+    subs.forEach((u) => u());
+    subs = [];
+    listId = null;
+  }
+
+  return {
+    get user() { return me(); },
+    get listId() { return listId; },
+
+    onAuth(cb) {
+      getRedirectResult(auth).catch((e) => console.warn("redirect sign-in", e));
+      return onAuthStateChanged(auth, cb);
+    },
+
+    async signIn() {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+      try {
+        await signInWithPopup(auth, provider);
+      } catch (e) {
+        if (["auth/popup-blocked", "auth/operation-not-supported-in-this-environment"].includes(e.code)) {
+          return signInWithRedirect(auth, provider);
+        }
+        if (["auth/popup-closed-by-user", "auth/cancelled-popup-request"].includes(e.code)) return;
+        throw e;
+      }
+    },
+
+    async signOut() {
+      closeList();
+      if (userSub) { userSub(); userSub = null; }
+      await signOut(auth);
+    },
+
+    // ----- user index of lists -----
+    async getUserData() {
+      const s = await getDoc(userRef());
+      return s.exists() ? s.data() : { lists: {} };
+    },
+    watchUser(cb) {
+      if (userSub) userSub();
+      userSub = onSnapshot(userRef(), (s) => cb(s.exists() ? s.data() : { lists: {} }), (e) => console.warn(e));
+    },
+    setActive(id) {
+      return setDoc(userRef(), { activeListId: id }, { merge: true });
+    },
+    indexList(id, name) {
+      return setDoc(userRef(), { activeListId: id, lists: { [id]: name || "רשימה" } }, { merge: true });
+    },
+    unindexList(id) {
+      return updateDoc(userRef(), { [`lists.${id}`]: deleteField() }).catch(() => {});
+    },
+
+    // ----- lists -----
+    async createList(items = []) {
+      const id = doc(collection(db, "lists")).id;
+      const code = randomCode();
+      const u = me();
+      const name = `הרשימה של ${firstName()}`;
+      const b = writeBatch(db);
+      b.set(doc(db, "lists", id), { name, ownerId: u.uid, inviteCode: code, createdAt: serverTimestamp() });
+      b.set(doc(db, "lists", id, "members", u.uid), memberData());
+      b.set(doc(db, "lists", id, "invites", code), { listName: name, ownerName: u.displayName || "", createdAt: serverTimestamp() });
+      items.slice(0, 400).forEach((it) => b.set(doc(db, "lists", id, "items", it.id), itemData(it)));
+      b.set(userRef(), { activeListId: id, lists: { [id]: name } }, { merge: true });
+      await b.commit();
+      return id;
+    },
+
+    async join(id, code) {
+      // Already a member? Reading the list only succeeds for members.
+      try {
+        const s = await getDoc(listRef(id));
+        if (s.exists()) { await this.indexList(id, s.data().name); return id; }
+      } catch (e) {
+        if (e.code !== "permission-denied") throw e;
+      }
+      const inv = await getDoc(doc(db, "lists", id, "invites", code));
+      if (!inv.exists()) throw Object.assign(new Error("Invalid invite"), { code: "invalid-invite" });
+      await setDoc(doc(db, "lists", id, "members", me().uid), { ...memberData(), inviteCode: code });
+      await this.indexList(id, inv.data().listName);
+      return id;
+    },
+
+    open(id, h) {
+      closeList();
+      listId = id;
+      let settled = false; // ignore the initial load when reporting "someone else changed X"
+      const fail = (e) => {
+        if (e.code === "permission-denied") h.onLost();
+        else console.error(e);
+      };
+
+      subs.push(onSnapshot(listRef(id), (s) => (s.exists() ? h.onList({ id, ...s.data() }) : h.onLost()), fail));
+      subs.push(onSnapshot(collection(db, "lists", id, "members"),
+        (s) => h.onMembers(s.docs.map((d) => ({ id: d.id, ...d.data() }))), fail));
+      subs.push(onSnapshot(collection(db, "lists", id, "items"), { includeMetadataChanges: true }, (s) => {
+        if (settled) {
+          const remote = [];
+          s.docChanges().forEach((c) => {
+            const it = fromDoc(c.doc);
+            if (c.type === "removed") {
+              if (recentlyDeleted.delete(c.doc.id)) return;
+              remote.push({ type: "removed", item: it });
+            } else if (!c.doc.metadata.hasPendingWrites && it.updatedBy !== me().uid) {
+              remote.push({ type: c.type, item: it, by: it.updatedByName });
+            }
+          });
+          if (remote.length) h.onRemote(remote);
+        }
+        if (!s.metadata.fromCache) settled = true;
+        h.onItems(s.docs.map(fromDoc));
+      }, fail));
+    },
+    close: closeList,
+
+    // ----- items (same interface as the local backend) -----
+    put(items) {
+      const b = writeBatch(db);
+      items.forEach((it) => { recentlyDeleted.delete(it.id); b.set(itemRef(it.id), itemData(it)); });
+      return b.commit();
+    },
+    patch(ids, fields) {
+      const b = writeBatch(db);
+      ids.forEach((id) => b.update(itemRef(id), { ...fields, ...stamp() }));
+      return b.commit();
+    },
+    del(ids) {
+      const b = writeBatch(db);
+      ids.forEach((id) => { recentlyDeleted.add(id); b.delete(itemRef(id)); });
+      return b.commit();
+    },
+
+    // ----- sharing -----
+    async resetInvite(list) {
+      const code = randomCode();
+      const b = writeBatch(db);
+      if (list.inviteCode) b.delete(doc(db, "lists", list.id, "invites", list.inviteCode));
+      b.set(doc(db, "lists", list.id, "invites", code), { listName: list.name, ownerName: me().displayName || "", createdAt: serverTimestamp() });
+      b.update(listRef(list.id), { inviteCode: code });
+      await b.commit();
+    },
+    removeMember(uid) {
+      return deleteDoc(doc(db, "lists", listId, "members", uid));
+    },
+    async leave() {
+      const id = listId;
+      closeList();
+      await deleteDoc(doc(db, "lists", id, "members", me().uid));
+      await this.unindexList(id);
+    },
+  };
+}
