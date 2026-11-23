@@ -51,6 +51,19 @@ export function stem(w) {
 }
 const words = (s) => norm(s).split(" ").filter(Boolean);
 
+// Words that don't change what a product *is*: "בננה מובחרת" is just a banana,
+// "בצל יבש" is a regular onion, "גזר בתפזורת" is loose carrots.
+const FILLER = new Set([
+  "מובחר", "מובחרת", "מובחרים", "טרי", "טריה", "טריים", "טריות", "בתפזורת", "תפזורת",
+  "רגיל", "רגילה", "רגילים", "יבש", "יבשה", "במשקל", "משקל", "לקג", "קג", "ק.ג", "ק", "יח", "יח.", "יחידה", "יחידות",
+  "ארוז", "ארוזה", "ארוזים", "ארוזות", "גרם", "גר", "ג", "ליטר", "ל", "מל",
+]);
+const coreOf = (s) => {
+  const all = words(s);
+  const core = all.filter((w) => !FILLER.has(w)).map(stem).sort();
+  return { core, filler: all.length - core.length };
+};
+
 // ---------- Loading ----------
 let indexPromise = null;
 const chains = new Map(); // id -> Promise<catalog>
@@ -69,9 +82,10 @@ export function loadChain(id) {
       const entries = doc.items.map(([code, name, price, brand, weighted]) => {
         const it = { code, name, price, brand, weighted: !!weighted };
         byCode.set(code, it);
-        return { it, stems: words(name).map(stem) };
+        const { core, filler } = coreOf(name);
+        return { it, stems: words(name).map(stem), coreKey: core.join(" "), filler };
       });
-      return { ...doc, byCode, entries, estimates: new Map() };
+      return { ...doc, byCode, entries, estimates: new Map(), resolved: new Map() };
     });
     p.catch(() => chains.delete(id));
     chains.set(id, p);
@@ -104,6 +118,29 @@ export function search(cat, query, limit = 40) {
   out.sort((a, b) => b.score - a.score || a.e.it.weighted - b.e.it.weighted
     || a.e.it.name.length - b.e.it.name.length || a.e.it.price - b.e.it.price);
   return out.slice(0, limit).map((x) => x.e.it);
+}
+
+// The product an item name clearly means, or null if it's ambiguous.
+// "בננה" → the store's product named "בננה" (or "בננה מובחרת"); "גבינה" → null (dozens of kinds).
+export function resolve(cat, name) {
+  const key = norm(name);
+  if (cat.resolved.has(key)) return cat.resolved.get(key);
+  const { core } = coreOf(name);
+  let product = null;
+  if (core.length) {
+    const coreKey = core.join(" ");
+    const cands = cat.entries.filter((e) => e.coreKey === coreKey);
+    if (cands.length) {
+      // Prefer the plainest name ("בננה" over "בננה ארוזה"), then loose produce, then the middle price.
+      const minFiller = Math.min(...cands.map((c) => c.filler));
+      const plain = cands.filter((c) => c.filler === minFiller).map((c) => c.it);
+      const loose = plain.filter((p) => p.weighted);
+      const pool = (loose.length ? loose : plain).sort((a, b) => a.price - b.price);
+      product = pool[Math.floor((pool.length - 1) / 2)];
+    }
+  }
+  cat.resolved.set(key, product);
+  return product;
 }
 
 // Typical price for a vague item name like "גבינה".
@@ -142,6 +179,9 @@ export function priceItem(cat, item, choice) {
   const code = item.barcode || choice?.code;
   const p = code && cat.byCode.get(code);
   if (p) return { kind: "exact", unit: p.price, total: round(p.price * qty), product: p, weighted: p.weighted, learned: !item.barcode };
+  // Not linked to a product: if the name clearly means one product in this store, use it.
+  const auto = resolve(cat, item.productName || item.name);
+  if (auto) return { kind: "exact", unit: auto.price, total: round(auto.price * qty), product: auto, weighted: auto.weighted, auto: true, missingProduct: !!item.barcode };
   const est = estimate(cat, item.productName || item.name);
   if (est) return { kind: "estimate", unit: est.price, total: round(est.price * qty), ...est, missingProduct: !!item.barcode };
   return { kind: "none", total: 0, missingProduct: !!item.barcode };

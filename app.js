@@ -1,5 +1,5 @@
 import { firebaseConfig } from "./firebase-config.js";
-import { loadIndex, loadChain, search, priceItem, norm, money } from "./catalog.js";
+import { loadIndex, loadChain, search, resolve, priceItem, norm, money } from "./catalog.js";
 
 const LOCAL_KEY = "basket.v1";
 const PREFS_KEY = "basket.prefs";
@@ -141,8 +141,9 @@ function priceLine(it) {
     return `<div class="item-price">${amt(money(p.total))}${perKg}${qtyNote} <span class="muted">· ${escapeHtml(label)}</span></div>`;
   }
   if (p.kind === "estimate") {
-    const note = p.missingProduct ? "המוצר לא נמצא כאן · " : "";
-    return `<div class="item-price est">${amt("~" + money(p.total))}${p.weighted ? " לק״ג" : ""}${qtyNote} <span class="muted">· ${note}הקישו לבחירת מוצר</span></div>`;
+    const note = p.missingProduct ? "המוצר שבחרתם לא נמצא כאן · " : "";
+    const kinds = p.count > 1 ? `יש ${p.count} סוגים — ` : "";
+    return `<div class="item-price est">${amt("~" + money(p.total))}${p.weighted ? " לק״ג" : ""}${qtyNote} <span class="pick">${note}${kinds}הקישו לבחירה</span></div>`;
   }
   return `<div class="item-price none">לא נמצא ב${escapeHtml(ui.cat.name)}</div>`;
 }
@@ -233,7 +234,7 @@ function renderTotal(items) {
   $("totalAmount").textContent = (estCount ? "~" : "") + money(sum);
   const notes = [];
   if (inCart) notes.push(`בעגלה: ${money(inCart)}`);
-  if (estCount) notes.push(`${estCount === 1 ? "פריט אחד" : `${estCount} פריטים`} לפי הערכה`);
+  if (estCount) notes.push(`${estCount === 1 ? "פריט אחד כללי" : `${estCount} פריטים כלליים`} — מחיר משוער`);
   if (noneCount) notes.push(`${noneCount === 1 ? "פריט אחד" : `${noneCount} פריטים`} בלי מחיר`);
   $("totalNote").textContent = notes.join(" · ");
 }
@@ -456,10 +457,12 @@ function renderProducts() {
   const sel = editProduct?.code;
   const selected = sel && ui.cat.byCode.get(sel);
   const list = selected && !results.includes(selected) ? [selected, ...results] : results;
+  // First option: let the app decide (the clearly-meant product, or a typical price).
+  const auto = ui.cat && resolve(ui.cat, $("editName").value.trim());
   $("productList").innerHTML = `
     <li><button type="button" class="product${!sel ? " selected" : ""}" data-code="" role="option" aria-selected="${!sel}">
-      <span class="product-name">לא משנה איזה — לפי הערכה</span>
-      <span class="product-price muted">מחיר טיפוסי</span>
+      <span class="product-name">${auto ? `אוטומטי — ${escapeHtml(auto.name)}` : "לא משנה איזה — לפי הערכה"}</span>
+      <span class="product-price${auto ? "" : " muted"}">${auto ? amt(money(auto.price)) + (auto.weighted ? "<small>לק״ג</small>" : "") : "מחיר טיפוסי"}</span>
     </button></li>` +
     list.map((p) => `
     <li><button type="button" class="product${p.code === sel ? " selected" : ""}" data-code="${escapeHtml(p.code)}" role="option" aria-selected="${p.code === sel}">

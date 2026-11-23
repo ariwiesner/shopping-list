@@ -514,3 +514,6 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
 .product-price small { display: block; color: var(--muted); font-weight: 500; font-size: 11px; }
 .products-empty { padding: 14px; color: var(--muted); text-align: center; font-size: 14px; }
 #editSheet { max-height: 94vh; }
+
+.item-price .pick { color: var(--accent); font-weight: 700; }
+
