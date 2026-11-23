@@ -1,4 +1,5 @@
 import { firebaseConfig } from "./firebase-config.js";
+import { loadIndex, loadChain, search, priceItem, norm, money } from "./catalog.js";
 
 const LOCAL_KEY = "basket.v1";
 const PREFS_KEY = "basket.prefs";
@@ -85,6 +86,11 @@ const ui = {
   items: [],
   doneOpen: prefs.doneOpen ?? store.get(LOCAL_KEY, {})?.doneOpen ?? true,
   suggestOff: prefs.suggestOff ?? false, // true once the user types an item themselves
+  chains: [],        // available stores from the catalog index
+  cat: null,         // loaded catalog of the selected store
+  catId: null,       // id of the catalog in ui.cat (or being loaded)
+  catError: false,
+  choices: prefs.choices || {}, // remembered product per item name: { [norm(name)]: { code, name } }
   list: null,       // cloud list doc { id, name, ownerId, inviteCode }
   members: [],
   userLists: {},    // { listId: name }
@@ -119,6 +125,28 @@ function avatarHtml(m, cls = "avatar") {
 // ---------- Render ----------
 const CHECK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
+// Money inside Hebrew text: keep ~₪12.90 in left-to-right order.
+const amt = (s) => `<bdi dir="ltr">${s}</bdi>`;
+
+function priceLine(it) {
+  const p = it._price;
+  if (!p || (!ui.cat && p.kind !== "manual")) return "";
+  const qtyNote = it.qty > 1 ? ` <span class="muted">(${amt(money(p.unit))} ליח׳)</span>` : "";
+  if (p.kind === "manual") return `<div class="item-price">${amt(money(p.total))}${qtyNote} <span class="tag">ידני</span></div>`;
+  if (p.kind === "exact") {
+    const perKg = p.weighted ? " לק״ג" : "";
+    // Same barcode = same product in every chain, but chains word names differently;
+    // show the name the user picked so it doesn't look like a different product.
+    const label = it.productName || ui.choices[norm(it.name)]?.name || p.product.name;
+    return `<div class="item-price">${amt(money(p.total))}${perKg}${qtyNote} <span class="muted">· ${escapeHtml(label)}</span></div>`;
+  }
+  if (p.kind === "estimate") {
+    const note = p.missingProduct ? "המוצר לא נמצא כאן · " : "";
+    return `<div class="item-price est">${amt("~" + money(p.total))}${p.weighted ? " לק״ג" : ""}${qtyNote} <span class="muted">· ${note}הקישו לבחירת מוצר</span></div>`;
+  }
+  return `<div class="item-price none">לא נמצא ב${escapeHtml(ui.cat.name)}</div>`;
+}
+
 function itemHtml(it) {
   const name = escapeHtml(it.name);
   return `
@@ -130,6 +158,7 @@ function itemHtml(it) {
         </button>
         <button class="item-main" data-act="edit" aria-label="עריכת ${name}">
           <div class="item-name"><span class="item-emoji" aria-hidden="true">${emojiFor(it.name)}</span>${name}</div>
+          ${priceLine(it)}
           ${ui.flash.has(it.id) && it.updatedByName ? `<div class="item-by">${escapeHtml(it.updatedByName)} עדכן/ה עכשיו</div>` : ""}
         </button>
         <div class="stepper" role="group" aria-label="כמות">
@@ -143,7 +172,8 @@ function itemHtml(it) {
 }
 
 function render() {
-  const items = ui.items.slice().sort((a, b) => (b.sortKey || 0) - (a.sortKey || 0));
+  const items = ui.items.slice().sort((a, b) => (b.sortKey || 0) - (a.sortKey || 0))
+    .map((it) => ({ ...it, _price: priceItem(ui.cat, it, ui.choices[norm(it.name)]) }));
   const todo = items.filter((i) => !i.done);
   const done = items.filter((i) => i.done);
   const total = items.length;
@@ -166,6 +196,9 @@ function render() {
     done.length === 0 ? `${plural(todo.length, "פריט", "פריטים")} לקנות` :
     `נשארו עוד ${plural(todo.length, "פריט", "פריטים")}`;
 
+  renderTotal(items);
+  renderStores();
+
   // Suggestions: tapping one adds it and removes just that chip (it's now on the list).
   // They stay until the user types an item manually; an empty list brings them back.
   if (!total && ui.suggestOff) setSuggestOff(false);
@@ -182,6 +215,94 @@ function render() {
   $("avatars").innerHTML = others.slice(0, 3).map((m) => avatarHtml(m, "avatar sm")).join("");
   $("shareBtn").classList.toggle("shared", others.length > 0);
   $("shareBtn").setAttribute("aria-label", others.length ? `משותף עם ${others.length} — ניהול שיתוף` : "שיתוף הרשימה");
+}
+
+function renderTotal(items) {
+  const box = $("totalBox");
+  const anyManual = items.some((i) => i._price.kind === "manual");
+  box.hidden = !items.length || (!ui.cat && !anyManual);
+  if (box.hidden) return;
+  let sum = 0, inCart = 0, estCount = 0, noneCount = 0;
+  for (const it of items) {
+    sum += it._price.total;
+    if (it.done) inCart += it._price.total;
+    if (it._price.kind === "estimate") estCount++;
+    if (it._price.kind === "none") noneCount++;
+  }
+  $("totalStore").textContent = ui.cat ? ui.cat.name : "רשימה";
+  $("totalAmount").textContent = (estCount ? "~" : "") + money(sum);
+  const notes = [];
+  if (inCart) notes.push(`בעגלה: ${money(inCart)}`);
+  if (estCount) notes.push(`${estCount === 1 ? "פריט אחד" : `${estCount} פריטים`} לפי הערכה`);
+  if (noneCount) notes.push(`${noneCount === 1 ? "פריט אחד" : `${noneCount} פריטים`} בלי מחיר`);
+  $("totalNote").textContent = notes.join(" · ");
+}
+
+// ---------- Stores ----------
+const currentStoreId = () => (backend === cloud && ui.list?.store) || prefs.store || null;
+
+function renderStores() {
+  const row = $("storeRow");
+  const sel = currentStoreId();
+  if (!ui.chains.length) {
+    row.innerHTML = "";
+    $("storeNote").textContent = ui.catError ? "לא הצלחנו לטעון את רשימת החנויות. בדקו את החיבור לאינטרנט." : "טוען חנויות…";
+    return;
+  }
+  row.innerHTML = ui.chains.map((c) => `
+    <button class="store${c.id === sel ? " selected" : ""}" role="radio" aria-checked="${c.id === sel}" data-store="${escapeHtml(c.id)}"
+            style="--store-color:${/^#[0-9a-f]{6}$/i.test(c.color) ? c.color : "#2f9e6b"}">
+      <span class="store-circle">${escapeHtml(c.name.split(" ").map((w) => w[0]).join("").slice(0, 2))}</span>
+      <span class="store-name">${escapeHtml(c.name)}</span>
+    </button>`).join("");
+  const c = ui.chains.find((x) => x.id === sel);
+  $("storeNote").textContent = !sel
+    ? "בחרו חנות כדי לראות כמה הקנייה תעלה"
+    : ui.catId === sel && !ui.cat
+      ? (ui.catError ? "לא הצלחנו לטעון את המחירים. נסו שוב." : "טוען מחירים…")
+      : c ? `מחירים מ${c.store ? `${c.store}` : c.name} · עודכן ${new Date(c.updated).toLocaleDateString("he-IL")}` : "";
+}
+
+async function loadStore(id) {
+  if (!id) { ui.cat = null; ui.catId = null; render(); return; }
+  if (ui.catId === id && (ui.cat || !ui.catError)) return;
+  ui.catId = id; ui.cat = null; ui.catError = false;
+  render();
+  try {
+    const cat = await loadChain(id);
+    if (ui.catId === id) { ui.cat = cat; render(); }
+  } catch (e) {
+    console.error(e);
+    if (ui.catId === id) { ui.catError = true; render(); }
+  }
+}
+
+function selectStore(id) {
+  if (id === currentStoreId()) id = null; // tapping the selected store clears it
+  prefs.store = id;
+  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), store: id });
+  if (backend === cloud && ui.list) cloud.setListStore(id).catch(fail);
+  buzz(8);
+  loadStore(id);
+  if (id) $("storeRow").querySelector(`[data-store="${CSS.escape(id)}"]`)?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+}
+
+$("storeRow").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-store]");
+  if (b) selectStore(b.dataset.store);
+});
+
+async function initStores() {
+  try {
+    const idx = await loadIndex();
+    ui.chains = idx.chains || [];
+    ui.catError = false;
+  } catch (e) {
+    console.error(e);
+    ui.catError = true;
+  }
+  render();
+  loadStore(currentStoreId());
 }
 
 // ---------- Item actions ----------
@@ -308,6 +429,8 @@ menuSheet.addEventListener("click", (e) => {
 });
 
 // Edit
+let editProduct = null; // { code, name } chosen in the picker, or null for "estimate"
+
 function openEdit(id) {
   const it = find(id);
   if (!it) return;
@@ -316,7 +439,50 @@ function openEdit(id) {
   editQty = it.qty;
   $("editName").value = it.name;
   $("editQty").textContent = editQty;
+  $("editPrice").value = typeof it.price === "number" && it.price > 0 ? it.price : "";
+  const remembered = ui.choices[norm(it.name)];
+  editProduct = it.barcode ? { code: it.barcode, name: it.productName } : remembered || null;
+  $("productField").hidden = !ui.cat;
+  if (ui.cat) {
+    $("productStore").textContent = `(${ui.cat.name})`;
+    $("productSearch").value = it.name;
+    renderProducts();
+  }
 }
+
+function renderProducts() {
+  const q = $("productSearch").value.trim();
+  const results = ui.cat && q ? search(ui.cat, q, 40) : [];
+  const sel = editProduct?.code;
+  const selected = sel && ui.cat.byCode.get(sel);
+  const list = selected && !results.includes(selected) ? [selected, ...results] : results;
+  $("productList").innerHTML = `
+    <li><button type="button" class="product${!sel ? " selected" : ""}" data-code="" role="option" aria-selected="${!sel}">
+      <span class="product-name">לא משנה איזה — לפי הערכה</span>
+      <span class="product-price muted">מחיר טיפוסי</span>
+    </button></li>` +
+    list.map((p) => `
+    <li><button type="button" class="product${p.code === sel ? " selected" : ""}" data-code="${escapeHtml(p.code)}" role="option" aria-selected="${p.code === sel}">
+      <span class="product-name">${escapeHtml(p.name)}${p.brand ? `<small>${escapeHtml(p.brand)}</small>` : ""}</span>
+      <span class="product-price">${amt(money(p.price))}${p.weighted ? "<small>לק״ג</small>" : ""}</span>
+    </button></li>`).join("") +
+    (q && !results.length ? `<li class="products-empty">לא מצאנו מוצרים בשם הזה</li>` : "");
+}
+
+let productSearchTimer;
+$("productSearch").addEventListener("input", () => {
+  clearTimeout(productSearchTimer);
+  productSearchTimer = setTimeout(renderProducts, 120);
+});
+$("productSearch").addEventListener("keydown", (e) => { if (e.key === "Enter") e.preventDefault(); });
+$("productList").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-code]");
+  if (!b) return;
+  const p = b.dataset.code && ui.cat?.byCode.get(b.dataset.code);
+  editProduct = p ? { code: p.code, name: p.name } : null;
+  buzz(5);
+  renderProducts();
+});
 editSheet.addEventListener("click", (e) => {
   const step = e.target.closest("[data-step]");
   if (!step) return;
@@ -327,8 +493,23 @@ editSheet.addEventListener("click", (e) => {
 $("editForm").addEventListener("submit", (e) => {
   e.preventDefault();
   const id = editingId;
+  const it = find(id);
   const name = $("editName").value.trim();
-  if (find(id) && name) backend.patch([id], { name: capitalize(name), qty: editQty }).catch(fail);
+  if (it && name) {
+    const fields = { name: capitalize(name), qty: editQty };
+    const price = parseFloat($("editPrice").value);
+    fields.price = price > 0 && price <= 5000 ? Math.round(price * 100) / 100 : null;
+    if (ui.cat) {
+      // Link the chosen product to the item (shared with everyone on the list), and
+      // remember it for this item name so next time "גבינה" means the same cheese.
+      fields.barcode = editProduct?.code || null;
+      fields.productName = editProduct?.name || null;
+      const key = norm(fields.name);
+      if (editProduct) ui.choices[key] = editProduct; else delete ui.choices[key];
+      store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), choices: ui.choices });
+    }
+    backend.patch([id], fields).catch(fail);
+  }
   closeSheets();
 });
 $("editDelete").addEventListener("click", () => {
@@ -585,7 +766,12 @@ function openCloudList(id) {
   cloud.setActive(id).catch(() => {});
   cloud.open(id, {
     onItems(items) { ui.items = items; render(); },
-    onList(list) { ui.list = list; render(); if (!shareSheet.hidden) renderShare(); },
+    onList(list) {
+      ui.list = list;
+      render();
+      if (!shareSheet.hidden) renderShare();
+      if (list.store && list.store !== ui.catId) loadStore(list.store); // someone on the list picked a store
+    },
     onMembers(members) { ui.members = members; render(); if (!shareSheet.hidden) renderShare(); },
     onRemote(changes) {
       changes.forEach((c) => {
@@ -659,10 +845,12 @@ function enterLocal() {
   local.subscribe((items) => { if (backend === local) { ui.items = items; render(); } });
   greeting();
   showScreen("app");
+  if (ui.chains.length) loadStore(currentStoreId());
 }
 
 async function boot() {
   readJoinParam();
+  initStores(); // store list + prices load in the background
   if (!firebaseConfig) {
     console.info("Firebase is not configured — running in local mode.");
     return enterLocal();

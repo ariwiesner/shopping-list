@@ -1,0 +1,47 @@
+name: Update price catalog
+
+# Downloads each chain's published price file, builds compact JSON catalogs,
+# and publishes them on the `catalog-data` branch (one commit, replaced each run),
+# which the app reads from raw.githubusercontent.com.
+on:
+  schedule:
+    - cron: "30 3 * * *"   # daily, ~05:30-06:30 Israel time (chains publish full files overnight)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: catalog
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch previous catalog (fallback for chains that fail today)
+        run: |
+          mkdir -p out
+          if git fetch --depth=1 origin catalog-data 2>/dev/null; then
+            git --work-tree=out checkout FETCH_HEAD -- . || true
+          fi
+
+      - name: Build catalog
+        run: python scripts/build_catalog.py --out out
+
+      - name: Publish to catalog-data branch
+        run: |
+          cd out
+          git init -q -b catalog-data
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Price catalog $(date -u +%Y-%m-%d)"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" catalog-data

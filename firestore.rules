@@ -42,6 +42,9 @@ service cloud.firestore {
           && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 60
           && request.resource.data.qty is int
           && request.resource.data.qty >= 1 && request.resource.data.qty <= 999
+          && (request.resource.data.get('price', null) == null
+              || (request.resource.data.price is number
+                  && request.resource.data.price > 0 && request.resource.data.price <= 5000))
           && request.resource.data.updatedBy == request.auth.uid;
       }
 
