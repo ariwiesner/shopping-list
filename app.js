@@ -1,5 +1,5 @@
 import { firebaseConfig } from "./firebase-config.js";
-import { loadIndex, loadChain, search, resolve, priceItem, norm, money } from "./catalog.js";
+import { loadIndex, loadChain, loadStores, loadBranch, search, resolve, priceItem, norm, money } from "./catalog.js";
 
 const LOCAL_KEY = "basket.v1";
 const PREFS_KEY = "basket.prefs";
@@ -88,7 +88,9 @@ const ui = {
   suggestOff: prefs.suggestOff ?? false, // true once the user types an item themselves
   chains: [],        // available stores from the catalog index
   cat: null,         // loaded catalog of the selected store
-  catId: null,       // id of the catalog in ui.cat (or being loaded)
+  catId: null,       // chain id of the catalog in ui.cat (or being loaded)
+  catKey: null,      // "chain|branch" being shown
+  storeLists: {},    // chain id -> [{ id, name, city, count }] branches
   catError: false,
   choices: prefs.choices || {}, // remembered product per item name: { [norm(name)]: { code, name } }
   list: null,       // cloud list doc { id, name, ownerId, inviteCode }
@@ -254,24 +256,41 @@ function renderStores() {
   const k = ui.chains.findIndex((x) => x.id === sel);
   if (k >= 0 && !wheel.dragging && !wheel.anim && wheelIndex() !== k) spinToChain(k, false);
   const c = ui.chains.find((x) => x.id === sel);
+  const b = currentBranchId(sel);
+  const branch = b && ui.storeLists[sel]?.find((s) => s.id === b);
+  $("branchBtn").hidden = !sel || !c?.branches;
+  $("branchName").textContent = !b ? "כל הסניפים — מחיר נפוץ ברשת"
+    : branch ? `סניף ${branch.name}${branch.city && !branch.name.includes(branch.city) ? `, ${branch.city}` : ""}` : `סניף ${b}`;
   $("storeNote").textContent = !sel
     ? "בחרו חנות כדי לראות כמה הקנייה תעלה"
-    : ui.catId === sel && !ui.cat
-      ? (ui.catError ? "לא הצלחנו לטעון את המחירים. נסו שוב." : "טוען מחירים…")
-      : c ? `מחירים מ${c.store ? `${c.store}` : c.name} · עודכן ${new Date(c.updated).toLocaleDateString("he-IL")}` : "";
+    : ui.catError ? "לא הצלחנו לטעון את המחירים. נסו שוב."
+    : ui.catId === sel && (!ui.cat || ui.cat.id !== sel || (ui.cat.branch || null) !== b) ? "טוען מחירים…"
+    : c ? `עודכן ${new Date(c.updated).toLocaleDateString("he-IL")}` : "";
 }
 
+// The branch picked for a chain: the shared list's choice, else this device's last choice.
+const currentBranchId = (chain = currentStoreId()) =>
+  (backend === cloud && ui.list?.store === chain && ui.list?.branch) || prefs.branches?.[chain] || null;
+
 async function loadStore(id) {
-  if (!id) { ui.cat = null; ui.catId = null; render(); return; }
-  if (ui.catId === id && (ui.cat || !ui.catError)) return;
-  ui.catId = id; ui.cat = null; ui.catError = false;
+  if (!id) { ui.cat = null; ui.catId = null; ui.catKey = null; render(); return; }
+  const branch = currentBranchId(id);
+  const key = `${id}|${branch || ""}`;
+  if (ui.catKey === key && (ui.cat || !ui.catError)) return;
+  if (ui.catId !== id) ui.cat = null; // switching chain; same chain keeps old prices while the branch loads
+  ui.catId = id; ui.catKey = key; ui.catError = false;
   render();
+  loadStores(id).then((list) => { ui.storeLists[id] = list; render(); }).catch(() => {});
   try {
-    const cat = await loadChain(id);
-    if (ui.catId === id) { ui.cat = cat; render(); }
+    let cat = await loadChain(id);
+    if (branch) {
+      try { cat = await loadBranch(cat, branch); }
+      catch (e) { console.warn("Branch prices unavailable, using chain prices", e); }
+    }
+    if (ui.catKey === key) { ui.cat = cat; render(); }
   } catch (e) {
     console.error(e);
-    if (ui.catId === id) { ui.catError = true; render(); }
+    if (ui.catKey === key) { ui.catError = true; render(); }
   }
 }
 
@@ -279,9 +298,59 @@ function selectStore(id) {
   if (!id || id === currentStoreId()) return loadStore(id);
   prefs.store = id;
   store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), store: id });
-  if (backend === cloud && ui.list) cloud.setListStore(id).catch(fail);
+  if (backend === cloud && ui.list) cloud.setListStore(id, prefs.branches?.[id] || null).catch(fail);
   loadStore(id);
 }
+
+function selectBranch(branchId) {
+  const chain = currentStoreId();
+  if (!chain) return;
+  prefs.branches = { ...(prefs.branches || {}), [chain]: branchId || null };
+  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), branches: prefs.branches });
+  if (backend === cloud && ui.list) cloud.setListStore(chain, branchId || null).catch(fail);
+  buzz(8);
+  loadStore(chain);
+}
+
+// ---------- Branch picker ----------
+const branchSheet = $("branchSheet");
+$("branchBtn").addEventListener("click", async () => {
+  const chain = currentStoreId();
+  if (!chain) return;
+  $("branchTitle").textContent = `באיזה סניף של ${ui.chains.find((c) => c.id === chain)?.name || ""}?`;
+  $("branchSearch").value = "";
+  openSheet(branchSheet);
+  renderBranches();
+  try { ui.storeLists[chain] = await loadStores(chain); renderBranches(); }
+  catch (e) { console.error(e); $("branchList").innerHTML = `<li class="products-empty">לא הצלחנו לטעון את רשימת הסניפים</li>`; }
+});
+$("branchSearch").addEventListener("input", () => renderBranches());
+$("branchSearch").addEventListener("keydown", (e) => { if (e.key === "Enter") e.preventDefault(); });
+
+function renderBranches() {
+  const chain = currentStoreId();
+  const list = ui.storeLists[chain];
+  const sel = currentBranchId(chain);
+  if (!list) { $("branchList").innerHTML = `<li class="products-empty">טוען סניפים…</li>`; return; }
+  const q = norm($("branchSearch").value);
+  const shown = q ? list.filter((s) => norm(`${s.name} ${s.city} ${s.address}`).includes(q)) : list;
+  const where = (s) => [s.city, s.address].filter(Boolean).join(" · ");
+  const row = (id, title, sub, selected) => `
+    <li><button type="button" class="product${selected ? " selected" : ""}" data-branch="${escapeHtml(id)}" role="option" aria-selected="${selected}">
+      <span class="product-name">${title}${sub ? `<small>${sub}</small>` : ""}</span>
+    </button></li>`;
+  $("branchList").innerHTML =
+    (q ? "" : row("", "כל הסניפים", "המחיר הנפוץ ברוב הסניפים של הרשת", !sel)) +
+    shown.map((s) => row(s.id, escapeHtml(s.name), escapeHtml(where(s)), s.id === sel)).join("") +
+    (q && !shown.length ? `<li class="products-empty">לא מצאנו סניף כזה</li>` : "");
+}
+
+$("branchList").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-branch]");
+  if (!b) return;
+  selectBranch(b.dataset.branch || null);
+  closeSheets();
+});
 
 // ---------- Store wheel ----------
 // Stores sit on the rim of a big circle. Drag to spin it; when it stops, the store
@@ -292,7 +361,7 @@ const WHEEL = { step: (34 * Math.PI) / 180, radius: 250, top: 50, pxPerStep: 110
 const wheel = { el: $("storeRow"), btns: [], key: "", slots: 0, rot: 0, dragging: false, anim: 0, lastTick: null };
 
 // Chains with a logo in /stores (others show their initials).
-const STORE_LOGOS = new Set(["shufersal", "carrefour", "hazi-hinam"]);
+const STORE_LOGOS = new Set(["shufersal", "carrefour", "hazi-hinam", "rami-levy", "yochananof", "osher-ad", "tiv-taam"]);
 
 const mod = (a, n) => ((a % n) + n) % n;
 const wrapDist = (d, n) => { d = mod(d, n); return d > n / 2 ? d - n : d; };
@@ -625,6 +694,9 @@ $("productList").addEventListener("click", (e) => {
   editProduct = p ? { code: p.code, name: p.name } : null;
   buzz(5);
   renderProducts();
+  // Picking a product is the decision: save right away (with any name/qty/price edits)
+  // so nobody has to scroll down to the save button.
+  $("editForm").requestSubmit();
 });
 editSheet.addEventListener("click", (e) => {
   const step = e.target.closest("[data-step]");
@@ -913,7 +985,7 @@ function openCloudList(id) {
       ui.list = list;
       render();
       if (!shareSheet.hidden) renderShare();
-      if (list.store && list.store !== ui.catId) loadStore(list.store); // someone on the list picked a store
+      if (list.store) loadStore(list.store); // someone on the list picked a store or branch (no-op if unchanged)
     },
     onMembers(members) { ui.members = members; render(); if (!shareSheet.hidden) renderShare(); },
     onRemote(changes) {

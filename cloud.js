@@ -217,8 +217,8 @@ export async function createCloud(config) {
     },
 
     // The store a shared list is priced at, so everyone on the list sees the same total.
-    setListStore(store) {
-      return updateDoc(listRef(), { store: store || null });
+    setListStore(store, branch = null) {
+      return updateDoc(listRef(), { store: store || null, branch: branch || null });
     },
 
     // ----- sharing -----

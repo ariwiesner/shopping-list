@@ -93,6 +93,40 @@ export function loadChain(id) {
   return chains.get(id);
 }
 
+// ---------- Branches ----------
+// Chain files carry each product's *common* price; a branch file lists only the
+// prices that differ in that branch. withBranch() returns a catalog with those applied.
+const storeLists = new Map();
+export function loadStores(chainId) {
+  if (!storeLists.has(chainId)) {
+    const p = fetchJson(`${encodeURIComponent(chainId)}/stores.json`).then((d) =>
+      d.stores.map(([id, name, city, count, address]) => ({ id, name, city: city || "", count, address: address || "" })));
+    p.catch(() => storeLists.delete(chainId));
+    storeLists.set(chainId, p);
+  }
+  return storeLists.get(chainId);
+}
+
+const branchCats = new Map(); // `${chain}/${store}` -> Promise<catalog>
+export function loadBranch(cat, storeId) {
+  const key = `${cat.id}/${storeId}`;
+  if (!branchCats.has(key)) {
+    const p = fetchJson(`${encodeURIComponent(cat.id)}/${encodeURIComponent(storeId)}.json`).then(({ p: diff }) => {
+      const byCode = new Map();
+      const entries = cat.entries.map((e) => {
+        const price = diff[e.it.code];
+        const it = price === undefined ? e.it : { ...e.it, price };
+        byCode.set(it.code, it);
+        return it === e.it ? e : { ...e, it };
+      });
+      return { ...cat, branch: storeId, byCode, entries, estimates: new Map(), resolved: new Map() };
+    });
+    p.catch(() => branchCats.delete(key));
+    branchCats.set(key, p);
+  }
+  return branchCats.get(key);
+}
+
 // ---------- Search ----------
 // Every query word must match the start of some word in the product name.
 // Exact word matches score higher, and a match on the product's first word highest.

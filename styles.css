@@ -572,3 +572,21 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
   border-width: 3px;
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--store-color) 22%, transparent), 0 8px 20px color-mix(in srgb, var(--store-color) 30%, transparent);
 }
+
+/* Branch picker */
+.branch-btn {
+  display: flex; align-items: center; gap: 6px;
+  margin: 2px auto 0;
+  max-width: calc(100% - 32px);
+  padding: 8px 14px;
+  border-radius: 99px;
+  background: var(--surface); box-shadow: var(--shadow);
+  font-weight: 700; font-size: 14px;
+}
+.branch-btn svg { width: 18px; height: 18px; flex: none; color: var(--accent); }
+.branch-btn .chev { color: var(--muted); }
+.branch-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.branch-btn:active { transform: scale(.97); }
+.stores-note { margin-top: 6px; }
+#branchSheet .field { margin: 0 4px 10px; }
+.branches { max-height: 55vh; }
