@@ -322,8 +322,9 @@ function buildWheel() {
 }
 
 function layoutWheel() {
-  if (!wheel.btns.length) return;
-  const cx = (wheel.el.clientWidth || 360) / 2;
+  // Not on screen yet (e.g. behind the splash): the ResizeObserver lays it out once visible.
+  if (!wheel.btns.length || !wheel.el.clientWidth) return;
+  const cx = wheel.el.clientWidth / 2;
   const dir = RTL ? -1 : 1; // in Hebrew the next store sits to the left
   const top = wheelIndex();
   wheel.btns.forEach((el, s) => {
@@ -425,7 +426,9 @@ function settleWheel() {
     const towardNext = (e.key === "ArrowLeft") === RTL;
     spinTo(Math.round(wheel.rot) + (towardNext ? 1 : -1));
   });
-  window.addEventListener("resize", layoutWheel);
+  // Re-center whenever the wheel appears or changes width (app shown, rotation, wider screens).
+  if ("ResizeObserver" in window) new ResizeObserver(() => layoutWheel()).observe(el);
+  else window.addEventListener("resize", layoutWheel);
 })();
 
 async function initStores() {
