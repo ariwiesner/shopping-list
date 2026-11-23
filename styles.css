@@ -397,11 +397,11 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
 }
 .sheet > *, .edit-form > *, #shareBody > * { flex: none; }
 .sheet .sheet-handle { flex: none; }
-#shareBody, .edit-form, .sheet .field:has(.products) {
+#shareBody, .edit-form, .sheet .field:has(.products), #importBody {
   display: flex; flex-direction: column;
   flex: 0 1 auto; min-height: 0;
 }
-.sheet .products, #listSwitcher, #shareBody .members, #dealsBody {
+.sheet .products, #listSwitcher, #shareBody .members, #dealsBody, .import-items {
   flex: 0 1 auto; min-height: 96px; max-height: none;
   overflow-y: auto; overscroll-behavior: contain;
 }
@@ -677,3 +677,43 @@ details.deal-warn.in-row { margin: 0 12px 10px; }
 .subs { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
 .subs li { display: flex; flex-direction: column; gap: 2px; padding-top: 8px; border-top: 1px solid var(--line); font-weight: 500; }
 .subs li b { font-weight: 800; }
+
+/* ---------- Import a list ---------- */
+.empty-import { display: inline-block; width: auto; margin-top: 10px; }
+#importBody > :not(.import-items) { flex: none; }
+.import-text {
+  width: 100%; min-height: 120px; max-height: 32vh; resize: vertical;
+  padding: 12px 14px; border-radius: 14px; border: 1.5px solid var(--line);
+  background: var(--surface); color: var(--text); font: inherit; font-size: 16px; line-height: 1.5;
+}
+.import-text:focus { outline: none; border-color: var(--accent); }
+.import-actions { display: flex; gap: 8px; margin-top: 10px; }
+.import-actions .btn { height: 48px; }
+.import-actions .btn:disabled { opacity: .5; }
+.import-or { margin: 18px 4px 0; text-align: center; font-size: 13px; font-weight: 700; color: var(--muted); }
+.import-error { margin-top: 12px; }
+.import-photo { display: block; max-width: 100%; max-height: 30vh; margin: 0 auto 8px; border-radius: 12px; object-fit: contain; }
+.import-name { margin: 0 4px 10px; }
+.import-items { list-style: none; margin: 0; padding: 0; min-height: 96px; border: 1.5px solid var(--line); border-radius: 14px; }
+.import-items li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 6px 8px; }
+.import-hints { flex-basis: 100%; display: flex; flex-direction: column; gap: 2px; padding: 0 4px 2px; font-size: 12px; color: var(--muted); line-height: 1.4; }
+.import-merge { color: var(--accent); font-weight: 700; }
+.import-note { color: var(--muted); }
+.import-btn .share-label, .import-btn span { font-weight: 700; }
+.import-btn svg { fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.import-items li + li { border-top: 1px solid var(--line); }
+.import-items input {
+  height: 40px; border-radius: 10px; border: 1.5px solid transparent; background: var(--surface-2);
+  color: var(--text); font: inherit; font-size: 16px; padding: 0 10px;
+}
+.import-items input:focus { outline: none; border-color: var(--accent); }
+.import-qty { width: 56px; flex: none; text-align: center; }
+.import-item-name { flex: 1; min-width: 0; }
+.import-del { flex: none; width: 36px; height: 36px; border-radius: 50%; color: var(--muted); font-size: 16px; }
+.import-del:active { background: var(--surface-2); }
+.import-items .tag { flex: none; }
+/* Narrow phones: the import button shows only its icon, so the list name keeps its room. */
+@media (max-width: 380px) {
+  .import-btn { padding: 0 10px; }
+  .import-btn span { display: none; }
+}

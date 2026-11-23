@@ -47,6 +47,7 @@ export const norm = (s) =>
 export function stem(w) {
   if (w.length >= 4 && /(ים|ות)$/.test(w)) return w.slice(0, -2);
   if (w.length >= 4 && /ה$/.test(w)) return w.slice(0, -1);
+  if (w.length >= 5 && /ת$/.test(w)) return w.slice(0, -1); // "גלידת" (construct) = "גלידה"
   return w;
 }
 const words = (s) => norm(s).split(" ").filter(Boolean);
@@ -58,6 +59,21 @@ const FILLER = new Set([
   "רגיל", "רגילה", "רגילים", "יבש", "יבשה", "במשקל", "משקל", "לקג", "קג", "ק.ג", "ק", "יח", "יח.", "יחידה", "יחידות",
   "ארוז", "ארוזה", "ארוזים", "ארוזות", "גרם", "גר", "ג", "ליטר", "ל", "מל",
 ]);
+// Packaging: "קופסאת גלידה" is ice cream, "תבנית ביצים" is eggs.
+const PACKAGING = new Set([
+  "קופסה", "קופסא", "קופסת", "קופסאת", "קופסאות", "תבנית", "תבניות", "חבילה", "חבילת", "חבילות", "בקבוק", "בקבוקי",
+  "בקבוקים", "שקית", "שקיות", "מארז", "מארזי", "פחית", "פחיות", "קרטון", "קרטוני", "צנצנת", "גביע", "גביעי", "מגש",
+  "אריזה", "אריזת", "שלישיית", "רביעיית", "שישיית",
+]);
+PACKAGING.forEach((w) => FILLER.add(w));
+
+// Ways chains write the same detail: egg sizes as letters or words, spelling variants.
+const SYNONYMS = {
+  l: ["l", "גדול", "גדולה", "גדולות", "לארג"], m: ["m", "בינוני", "בינונית", "בינוניות", "מדיום"],
+  xl: ["xl", "ענק", "ענקית", "ענקיות"], s: ["s", "קטן", "קטנה", "קטנות"],
+  "פרווה": ["פרווה", "פרוה"], "פרוה": ["פרווה", "פרוה"],
+  "מספר": ["מספר", "מס", "no"], "מס": ["מספר", "מס", "no"],
+};
 // Query words the stemmer left alone ("חלב") must appear as-is in a product name:
 // otherwise "חלב" would match "חלבה" (halva), whose stem is also "חלב".
 const unstemmed = (s) => words(s).filter((w) => !FILLER.has(w) && stem(w) === w);
@@ -149,24 +165,40 @@ export function loadBranch(cat, storeId) {
 // ---------- Search ----------
 // Every query word must match the start of some word in the product name.
 // Exact word matches score higher, and a match on the product's first word highest.
+// Packaging words are ignored ("תבנית ביצים" = "ביצים") and egg sizes etc. are equivalent
+// (SYNONYMS). If no product has every word, the closest ones are shown: those with the
+// first word and as many of the others as possible.
 export function search(cat, query, limit = 40) {
-  const q = words(query).map(stem);
-  if (!q.length) return [];
-  const out = [];
-  for (const e of cat.entries) {
-    let score = 0;
-    for (const t of q) {
-      let best = 0;
-      for (let i = 0; i < e.stems.length; i++) {
-        const w = e.stems[i];
-        const s = w === t ? 3 : w.startsWith(t) ? 1 : 0;
-        if (s) best = Math.max(best, s + (i === 0 ? 2 : 0));
+  let qw = words(query);
+  const content = qw.filter((w) => !PACKAGING.has(w));
+  if (content.length) qw = content;
+  if (!qw.length) return [];
+  const q = qw.map((w) => (SYNONYMS[w] || [w]).map(stem));
+  const scan = (allowMissing) => {
+    const out = [];
+    for (const e of cat.entries) {
+      let score = 0, missing = 0;
+      for (const [k, variants] of q.entries()) {
+        let best = 0;
+        for (let i = 0; i < e.stems.length; i++) {
+          const w = e.stems[i];
+          for (const t of variants) {
+            const s = w === t ? 3 : w.startsWith(t) && !(/^\d/.test(t) && /[\d.]/.test(w.charAt(t.length))) ? 1 : 0;
+            if (s) best = Math.max(best, s + (i === 0 ? 2 : 0));
+          }
+        }
+        if (!best) {
+          if (allowMissing && k > 0) { missing++; continue; }
+          score = 0; break;
+        }
+        score += best;
       }
-      if (!best) { score = 0; break; }
-      score += best;
+      if (score) out.push({ e, score: score - missing * 10 });
     }
-    if (score) out.push({ e, score });
-  }
+    return out;
+  };
+  let out = scan(false);
+  if (!out.length && q.length > 1) out = scan(true);
   // Best match first; packaged products before sold-by-weight (per-kg) ones; then shorter names.
   out.sort((a, b) => b.score - a.score || a.e.it.weighted - b.e.it.weighted
     || a.e.it.name.length - b.e.it.name.length || a.e.it.price - b.e.it.price);
@@ -205,19 +237,40 @@ export function resolve(cat, name) {
 
 // The products a vague item name like "גבינה" could mean.
 // Prefers packaged products; per-kg prices only if that's all there is (e.g. produce).
+//
+// Matching is strict about WHAT the product is and flexible about the details, since
+// every chain words (and shortens) names differently: "קופסאת גלידה פרווה וניל" is sold
+// as "גלידה לה קרמריה וניל", "תבנית ביצים 12 L" as "ביצים 12 יח גדולות".
+//   - Packaging words are ignored; egg sizes and spelling variants are equivalent.
+//   - The product word (the first word, "גלידה") must match.
+//   - The details ("פרווה", "וניל") are scored: the products matching the most of them win.
+// The pool says how good the match was: fit "all" (every detail), "partial" (some), or
+// "general" (just the product word), and which details were not found (missing).
+// A number must match as a whole number: "5" is not "500".
+const has = (e, w) => (SYNONYMS[w] || [w]).map(stem).some((v) => /^\d/.test(v)
+  ? e.stems.some((s) => s.startsWith(v) && !/[\d.]/.test(s.charAt(v.length)))
+  : e.stems.some((s) => s.startsWith(v)));
+
 export function estimatePool(cat, name) {
-  const all = words(name);
+  const all = words(name).filter((w) => !FILLER.has(w));
   if (!all.length) return [];
-  const q = all.map(stem);
-  const first = stem(all[0]) === all[0] ? all[0] : null; // unstemmed: must match as-is
-  // Products whose name begins with the item's first word, and contain the rest.
-  let pool = cat.entries
-    .filter((e) => e.stems[0] === q[0] && q.slice(1).every((t) => e.stems.some((w) => w.startsWith(t)))
-      && (!first || words(e.it.name)[0] === first))
-    .map((e) => e.it);
-  if (!pool.length) pool = search(cat, name, 15);
-  const packaged = pool.filter((p) => !p.weighted);
-  return packaged.length ? packaged : pool;
+  const head = all[0], headStem = stem(head), rest = all.slice(1);
+  const exact = headStem === head ? head : null; // unstemmed ("חלב"): must appear as-is, not "חלבה"
+  const prefer = (list) => { const packaged = list.filter((p) => !p.weighted); return packaged.length ? packaged : list; };
+  const pick = (cands) => {
+    if (!cands.length) return null;
+    const scored = cands.map((e) => ({ e, hits: rest.filter((w) => has(e, w)) }));
+    const best = Math.max(...scored.map((x) => x.hits.length));
+    const top = scored.filter((x) => x.hits.length === best);
+    const pool = prefer(top.map((x) => x.e.it));
+    pool.fit = best === rest.length ? "all" : best > 0 ? "partial" : "general";
+    pool.missing = rest.filter((w) => !top[0].hits.includes(w));
+    return pool;
+  };
+  // Names that start with the product word, then (brand first: "תנובה חלב") contain it anywhere.
+  return pick(cat.entries.filter((e) => e.stems[0] === headStem && (!exact || words(e.it.name)[0] === exact)))
+    || pick(cat.entries.filter((e) => e.stems.includes(headStem) && (!exact || words(e.it.name).includes(exact))))
+    || Object.assign(prefer(search(cat, all.join(" "), 15)), { fit: "all", missing: [] });
 }
 
 // Typical price for a vague item name like "גבינה".
@@ -229,7 +282,8 @@ export function estimate(cat, name) {
   if (pool.length) {
     const prices = pool.map((p) => p.price).sort((a, b) => a - b);
     const at = (f) => prices[Math.min(prices.length - 1, Math.floor(f * prices.length))];
-    result = { price: at(0.5), low: at(0.1), high: at(0.9), count: pool.length, weighted: pool.every((p) => p.weighted) };
+    result = { price: at(0.5), low: at(0.1), high: at(0.9), count: pool.length, weighted: pool.every((p) => p.weighted),
+      fit: pool.fit || "all", missing: pool.missing || [] };
   }
   cat.estimates.set(key, result);
   return result;

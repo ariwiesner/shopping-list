@@ -10,6 +10,9 @@ A mobile-first, Hebrew (RTL) shopping list. Lists are shared live between people
 | `index.html`, `styles.css` | Screens: login, list, sheets |
 | `app.js` | UI logic; works with a local (on-device) or cloud backend |
 | `catalog.js` | Store catalogs: loading, product search, item prices |
+| `import-parse.js` | Import a pasted list (WhatsApp, notes): one item per line or comma, quantities, chatter removed |
+| `photo-config.js` | Address of the photo-reading worker (`null` = not set up) |
+| `worker/` | Cloudflare Worker that reads photos of lists with Google Gemini (free tier) |
 | `compare-worker.js` | "Where is it cheapest?": prices the list in every chain and the nearest branches, in the background |
 | `scripts/build_catalog.py` | Daily price build (GitHub Action), incl. branch locations from OpenStreetMap |
 | `cloud.js` | Firebase: Google sign-in, Firestore lists, live updates, invites |
@@ -52,3 +55,21 @@ to test on a phone, deploy to Firebase Hosting.
 - **Share** → WhatsApp / email / copy link. The link contains a secret invite code; whoever opens it signs in and joins.
 - Members see each other's changes live (changed items glow and show who changed them).
 - The owner can remove members or reset the invite link; members can leave.
+
+## Photo import (reading handwritten lists)
+
+Photos are read by a Cloudflare Worker (`worker/`) using Google Gemini's free tier.
+The Gemini key stays in the worker, never in the app. One-time setup:
+
+1. Get a free Gemini API key at https://aistudio.google.com/apikey (no card needed).
+2. Create a free Cloudflare account at https://dash.cloudflare.com.
+3. In the `worker` folder:
+   ```
+   npx wrangler login
+   npx wrangler secret put GEMINI_API_KEY     # paste the key when asked
+   npx wrangler deploy                        # prints the worker's https://...workers.dev address
+   ```
+4. Put that address in `photo-config.js` (`PHOTO_URL`) and deploy the app.
+
+Free-tier limits apply per day; when they run out the app says so and pasting text still works.
+On Gemini's free tier, Google may use the photos sent to improve its products.

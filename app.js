@@ -1,5 +1,7 @@
 import { firebaseConfig } from "./firebase-config.js";
 import { loadIndex, loadChain, loadStores, loadBranch, search, resolve, priceItem, norm, money } from "./catalog.js";
+import { parseList, cleanItems } from "./import-parse.js";
+import { PHOTO_URL } from "./photo-config.js";
 
 const LOCAL_KEY = "basket.v1";
 const PREFS_KEY = "basket.prefs";
@@ -147,7 +149,12 @@ function priceLine(it) {
     return `<div class="item-price">${amt(money(p.total))}${perKg}${qtyNote} <span class="muted">· ${escapeHtml(label)}</span></div>`;
   }
   if (p.kind === "estimate") {
-    const note = p.missingProduct ? "המוצר שבחרתם לא נמכר כאן — מחיר משוער למוצר דומה · " : "";
+    // How close the match is: every detail found, some ("בלי: פרווה"), or just the product type.
+    const fit = p.missingProduct ? "המוצר שבחרתם לא נמכר כאן — מחיר משוער למוצר דומה · "
+      : p.fit === "partial" ? `לא מצאנו בדיוק (בלי: ${escapeHtml(p.missing.join(" "))}) — מחיר לפי מוצרים דומים · `
+      : p.fit === "general" ? `לא מצאנו ${escapeHtml(p.missing.join(" "))} — מחיר כללי לסוג המוצר · `
+      : "";
+    const note = fit;
     const kinds = p.count > 1 ? `יש ${p.count} סוגים — ` : "";
     return `<div class="item-price est">${amt("~" + money(p.total))}${p.weighted ? " לק״ג" : ""}${qtyNote} <span class="pick">${note}${kinds}הקישו לבחירה</span></div>`;
   }
@@ -167,6 +174,7 @@ function itemHtml(it) {
           <div class="item-name"><span class="item-emoji" aria-hidden="true">${emojiFor(it.name)}</span>${name}</div>
           ${priceLine(it)}
           ${ui.flash.has(it.id) && it.updatedByName ? `<div class="item-by">${escapeHtml(it.updatedByName)} עדכן/ה עכשיו</div>` : ""}
+          ${it.importNote && Date.now() - it.importNote.at < 864e5 ? `<div class="item-by import-note">📥 שימו לב: ${it.importNote.added === 1 ? "נוסף 1" : `נוספו ${it.importNote.added}`} מהרשימה המיובאת</div>` : ""}
         </button>
         <div class="stepper" role="group" aria-label="כמות">
           <button data-act="inc" aria-label="הגדלת כמות">+</button>
@@ -788,6 +796,238 @@ async function initStores() {
   nearestBranch(currentStoreId(), false); // follow the user if their branch was picked as the nearest
 }
 
+// ---------- Import a list (paste text or read a photo) ----------
+// Paste: parsed in the app (import-parse.js). Photo: shrunk in the app, read by the
+// Cloudflare Worker (worker/) with Google Gemini. Either way the user checks and edits
+// the items before anything is added. Signed in: they become a new list; on a phone-only
+// list (one list): they're added to it.
+const importSheet = $("importSheet");
+const imp = { step: "start", text: "", items: [], name: "", error: "", photo: "", busy: false };
+const intoNewList = () => backend === cloud && !!cloud?.user;
+const commitLabel = (n) => (intoNewList() ? `יצירת רשימה (${n})` : `הוספה לרשימה (${n})`);
+
+function openImport() {
+  Object.assign(imp, { step: "start", items: [], name: "", error: "", busy: false });
+  openSheet(importSheet);
+  renderImport();
+}
+$("emptyImport").addEventListener("click", openImport);
+$("importBtn").addEventListener("click", openImport);
+
+// On a phone-only list, imported items merge into what's there: the item already on the list.
+const existingFor = (name) => !intoNewList() && name.trim()
+  ? ui.items.find((i) => !i.done && i.name.toLowerCase() === capitalize(name.trim().replace(/\s+/g, " ")).toLowerCase())
+  : null;
+
+// Under a preview row: the original line when it was shortened, and whether the item
+// is already on the list (its quantity will grow instead of adding it twice).
+function importHints(it) {
+  const hints = [];
+  if (it.source && it.source.split(" ").length - it.name.split(" ").length >= 2) {
+    hints.push(`<span>מהשורה: "${escapeHtml(it.source)}"</span>`);
+  }
+  const ex = !it.done && existingFor(it.name);
+  if (ex) hints.push(`<span class="import-merge">כבר ברשימה (×${ex.qty}) · יעודכן ל־×${Math.min(ex.qty + it.qty, 999)}</span>`);
+  return hints.length ? `<div class="import-hints">${hints.join("")}</div>` : "";
+}
+
+function renderImport() {
+  const body = $("importBody");
+  const err = imp.error ? `<p class="deal-warn import-error" role="alert">${escapeHtml(imp.error)}</p>` : "";
+  if (imp.step === "reading") {
+    body.innerHTML = `${imp.photo ? `<img class="import-photo" src="${imp.photo}" alt="" />` : ""}
+      <div class="deals-loading"><span class="spinner" aria-hidden="true"></span>קוראים את הרשימה מהתמונה…</div>`;
+    return;
+  }
+  if (imp.step === "preview") {
+    const n = imp.items.filter((it) => it.name.trim()).length;
+    body.innerHTML = `<p class="sheet-note">מצאנו ${plural(n, "פריט", "פריטים")}. אפשר לתקן, למחוק או להוסיף לפני שממשיכים.</p>
+      ${intoNewList() ? `<label class="field import-name"><span>שם הרשימה החדשה</span>
+        <input id="importName" type="text" maxlength="80" value="${escapeHtml(imp.name)}" placeholder="רשימה מיובאת" /></label>` : ""}
+      <ul class="import-items">${imp.items.map((it, k) => `
+        <li data-k="${k}">
+          <input class="import-qty" type="number" inputmode="numeric" min="1" max="999" value="${it.qty}" aria-label="כמות" />
+          <input class="import-item-name" type="text" maxlength="60" value="${escapeHtml(it.name)}" aria-label="שם הפריט" />
+          ${it.done ? `<span class="tag">בעגלה</span>` : ""}
+          <button type="button" class="import-del" data-imp="del" aria-label="מחיקת ${escapeHtml(it.name)}">✕</button>
+          ${importHints(it)}
+        </li>`).join("")}</ul>
+      <button type="button" class="link-btn" data-imp="add-row">＋ הוספת פריט</button>
+      ${err}
+      <div class="import-actions">
+        <button type="button" class="btn ghost" data-imp="back">חזרה</button>
+        <button type="button" class="btn primary" data-imp="commit" ${n && !imp.busy ? "" : "disabled"}>${imp.busy ? "רגע…" : commitLabel(n)}</button>
+      </div>`;
+    return;
+  }
+  const canPaste = !!navigator.clipboard?.readText;
+  body.innerHTML = `<p class="sheet-note">הדביקו רשימה מוואטסאפ, מהפתקים או מכל מקום. כל שורה (או פסיק) היא פריט, וכמויות כמו "2 חלב" או "חלב x2" נקלטות.</p>
+    <textarea id="importText" class="import-text" rows="6" placeholder="למשל:&#10;2 חלב&#10;לחם&#10;ביצים x2">${escapeHtml(imp.text)}</textarea>
+    <div class="import-actions">
+      ${canPaste ? `<button type="button" class="btn ghost" data-imp="paste">📋 הדבקה</button>` : ""}
+      <button type="button" class="btn primary" data-imp="parse">המשך</button>
+    </div>
+    <p class="import-or">או מתמונה של רשימה, גם בכתב יד</p>
+    <div class="import-actions">
+      <button type="button" class="btn ghost" data-imp="camera">📷 צילום</button>
+      <button type="button" class="btn ghost" data-imp="gallery">🖼️ מהגלריה</button>
+    </div>
+    ${err}`;
+}
+
+importSheet.addEventListener("input", (e) => {
+  if (e.target.id === "importText") { imp.text = e.target.value; return; }
+  if (e.target.id === "importName") { imp.name = e.target.value; return; }
+  const li = e.target.closest("li[data-k]");
+  if (!li) return;
+  const it = imp.items[+li.dataset.k];
+  if (e.target.classList.contains("import-item-name")) it.name = e.target.value;
+  if (e.target.classList.contains("import-qty")) it.qty = Math.min(Math.max(parseInt(e.target.value, 10) || 1, 1), 999);
+  // Keep the count on the button current without re-rendering (which would drop focus).
+  const n = imp.items.filter((x) => x.name.trim()).length;
+  const btn = importSheet.querySelector("[data-imp='commit']");
+  if (btn) { btn.disabled = !n; btn.textContent = commitLabel(n); }
+});
+
+importSheet.addEventListener("click", async (e) => {
+  const act = e.target.closest("[data-imp]")?.dataset.imp;
+  if (!act) return;
+  imp.error = "";
+  if (act === "paste") {
+    try { imp.text = await navigator.clipboard.readText(); }
+    catch (_) { imp.error = "לא הצלחנו לקרוא מהלוח. לחצו לחיצה ארוכה בתיבה ובחרו 'הדבקה'."; }
+    renderImport();
+  } else if (act === "parse") {
+    imp.items = parseList(imp.text);
+    if (!imp.items.length) imp.error = imp.text.trim() ? "לא מצאנו פריטים בטקסט הזה." : "הדביקו קודם את הרשימה בתיבה.";
+    else imp.step = "preview";
+    renderImport();
+  } else if (act === "camera" || act === "gallery") {
+    if (!PHOTO_URL) { imp.error = "קריאת רשימות מתמונה עוד לא הופעלה. בינתיים אפשר להדביק את הרשימה כטקסט."; renderImport(); return; }
+    $(act === "camera" ? "importCamera" : "importGallery").click();
+  } else if (act === "del") {
+    imp.items.splice(+e.target.closest("li").dataset.k, 1);
+    if (!imp.items.length) imp.step = "start";
+    renderImport();
+  } else if (act === "add-row") {
+    imp.items.push({ name: "", qty: 1, done: false });
+    renderImport();
+    importSheet.querySelector("li:last-child .import-item-name")?.focus();
+  } else if (act === "back") {
+    imp.step = "start";
+    renderImport();
+  } else if (act === "commit") {
+    commitImport();
+  }
+});
+
+for (const id of ["importCamera", "importGallery"]) {
+  $(id).addEventListener("change", (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // so the same photo can be picked again
+    if (file) readPhoto(file);
+  });
+}
+
+// Photos from phones are large: shrink to at most 1600px on the long side, as JPEG.
+async function shrinkImage(file) {
+  let src, w, h;
+  try {
+    src = await createImageBitmap(file, { imageOrientation: "from-image" });
+    w = src.width; h = src.height;
+  } catch (_) {
+    src = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = URL.createObjectURL(file);
+    });
+    w = src.naturalWidth; h = src.naturalHeight;
+  }
+  const scale = Math.min(1, 1600 / Math.max(w, h));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(w * scale);
+  canvas.height = Math.round(h * scale);
+  canvas.getContext("2d").drawImage(src, 0, 0, canvas.width, canvas.height);
+  src.close?.();
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+  const data = await new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1]);
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+  return { data, mime: "image/jpeg" };
+}
+
+async function readPhoto(file) {
+  if (imp.photo) URL.revokeObjectURL(imp.photo);
+  imp.photo = URL.createObjectURL(file);
+  imp.step = "reading";
+  imp.error = "";
+  renderImport();
+  try {
+    const { data, mime } = await shrinkImage(file);
+    const res = await fetch(PHOTO_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: data, mime }) });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out.error || "failed");
+    imp.items = cleanItems(out.items);
+    if (imp.items.length) imp.step = "preview";
+    else { imp.step = "start"; imp.error = "לא מצאנו פריטים בתמונה. נסו לצלם מקרוב, ישר ובאור טוב."; }
+  } catch (e) {
+    console.error(e);
+    imp.step = "start";
+    imp.error = e.message === "quota" ? "נגמרה המכסה היומית החינמית לקריאת תמונות. נסו שוב מחר, או הדביקו את הרשימה כטקסט."
+      : e.message === "too_big" ? "התמונה גדולה מדי. נסו תמונה אחרת."
+      : "לא הצלחנו לקרוא את התמונה. בדקו את החיבור לאינטרנט ונסו שוב.";
+  }
+  renderImport();
+}
+
+async function commitImport() {
+  const rows = imp.items
+    .map((it) => ({ ...it, name: capitalize(it.name.trim().replace(/\s+/g, " ")) }))
+    .filter((it) => it.name);
+  if (!rows.length || imp.busy) return;
+  const now = Date.now();
+  // First item on top: the list shows the highest sortKey first.
+  const make = (it, k) => ({ id: uid(), name: it.name, qty: it.qty, done: !!it.done, price: null, createdAt: now, sortKey: now - k });
+  if (intoNewList()) {
+    imp.busy = true;
+    renderImport();
+    try {
+      const id = await cloud.createList(rows.map(make), imp.name.trim() || "רשימה מיובאת");
+      closeSheets();
+      openCloudList(id);
+      showToast(`נוצרה רשימה חדשה עם ${plural(rows.length, "פריט", "פריטים")}`, false);
+    } catch (e) {
+      console.error(e);
+      imp.error = "לא הצלחנו ליצור את הרשימה. נסו שוב.";
+    } finally {
+      imp.busy = false;
+      if (!importSheet.hidden) renderImport();
+    }
+    return;
+  }
+  // One list on this phone: add to it; an item already on the list gets the quantity added.
+  const fresh = [];
+  let merged = 0;
+  rows.forEach((it, k) => {
+    const existing = !it.done && existingFor(it.name);
+    if (existing) {
+      merged++;
+      const added = it.qty + (existing.importNote?.added || 0);
+      backend.patch([existing.id], { qty: Math.min(existing.qty + it.qty, 999), importNote: { added, at: now } }).catch(fail);
+    } else fresh.push(make(it, k));
+  });
+  if (fresh.length) backend.put(fresh).catch(fail);
+  closeSheets();
+  buzz();
+  showToast(merged
+    ? `נוספו ${plural(fresh.length, "פריט חדש", "פריטים חדשים")}, ול־${merged === 1 ? "פריט אחד" : `${merged} פריטים`} שכבר היו ברשימה הכמות גדלה`
+    : `נוספו ${plural(rows.length, "פריט", "פריטים")} לרשימה`, false);
+}
+
 // ---------- Item actions ----------
 const find = (id) => ui.items.find((i) => i.id === id);
 const fail = (e) => { console.error(e); showToast("משהו השתבש — נסו שוב", false); };
@@ -811,7 +1051,7 @@ function toggle(id) {
   const it = find(id);
   if (!it) return;
   buzz(it.done ? 8 : 15);
-  backend.patch([id], { done: !it.done, sortKey: Date.now() }).catch(fail);
+  backend.patch([id], { done: !it.done, sortKey: Date.now(), ...(it.importNote ? { importNote: null } : {}) }).catch(fail);
 }
 
 function changeQty(id, delta) {
@@ -820,7 +1060,7 @@ function changeQty(id, delta) {
   const next = it.qty + delta;
   if (next < 1) return removeItems([id]);
   buzz(5);
-  backend.patch([id], { qty: Math.min(next, 999) }).catch(fail);
+  backend.patch([id], { qty: Math.min(next, 999), ...(it.importNote ? { importNote: null } : {}) }).catch(fail);
 }
 
 let lastRemoved = null;
@@ -961,6 +1201,8 @@ menuSheet.addEventListener("click", (e) => {
     removeItems(ui.items.map((i) => i.id), "הרשימה רוקנה");
   } else if (action === "switch") {
     openCloudList(el.dataset.list);
+  } else if (action === "import") {
+    openImport();
   } else if (action === "sign-out") {
     cloud.signOut().catch(fail);
   } else if (action === "sign-in") {

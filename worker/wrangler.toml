@@ -1,0 +1,12 @@
+# Cloudflare Worker that reads photos of shopping lists (see src/index.js).
+# Deploy:   cd worker && npx wrangler deploy
+# Secret:   npx wrangler secret put GEMINI_API_KEY   (free key from https://aistudio.google.com/apikey)
+name = "shopping-list-photo"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+
+[vars]
+# Sites allowed to call this worker (the app, and local testing).
+ALLOWED_ORIGINS = "https://shopping-list-864e9.web.app,https://shopping-list-864e9.firebaseapp.com,http://localhost:3000"
+# Gemini models to try, in order (each has its own free daily limit).
+GEMINI_MODELS = "gemini-flash-latest,gemini-flash-lite-latest"

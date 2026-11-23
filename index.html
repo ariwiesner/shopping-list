@@ -52,6 +52,10 @@
           <h1 id="listTitle">הסל שלי</h1>
         </div>
         <div class="top-actions">
+          <button class="share-btn import-btn" id="importBtn" aria-label="ייבוא רשימה מוואטסאפ או מצילום" aria-haspopup="dialog">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10"/><path d="M8 10.5l4 4 4-4"/><path d="M5 15.5V18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2.5"/></svg>
+            <span>ייבוא</span>
+          </button>
           <button class="share-btn" id="shareBtn" aria-label="שיתוף הרשימה">
             <span class="avatars" id="avatars" aria-hidden="true"></span>
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.9-5 5.5-5s4.9 1.8 5.5 5"/><path d="M18 8v6M15 11h6"/></svg>
@@ -100,6 +104,7 @@
         <div class="empty-art" aria-hidden="true">🧺</div>
         <h2>הסל שלך ריק</h2>
         <p>הוסיפו משהו למטה, או הקישו על הצעה כדי להתחיל.</p>
+        <button type="button" class="link-btn empty-import" id="emptyImport">📥 ייבוא רשימה מוואטסאפ או מצילום</button>
       </section>
 
       <section id="suggestBlock" class="suggest" hidden>
@@ -175,6 +180,15 @@
       <button type="button" role="radio" data-min="40">עד 40 דק׳</button>
     </div>
     <div id="dealsBody" aria-live="polite"></div>
+  </div>
+
+  <!-- Import a list: paste text or read a photo (content rendered by app.js) -->
+  <div class="sheet" id="importSheet" role="dialog" aria-modal="true" aria-labelledby="importTitle" hidden>
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <h3 id="importTitle">ייבוא רשימה</h3>
+    <div id="importBody"></div>
+    <input type="file" id="importCamera" accept="image/*" capture="environment" hidden />
+    <input type="file" id="importGallery" accept="image/*" hidden />
   </div>
 
   <!-- Edit sheet -->
