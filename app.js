@@ -665,7 +665,7 @@ async function boot() {
     try { await cloud.signIn(); }
     catch (e) {
       console.error(e);
-      $("loginError").textContent = "ההתחברות נכשלה. נסו שוב.";
+      $("loginError").textContent = signInErrorText(e);
       $("loginError").hidden = false;
     }
   });
@@ -687,10 +687,19 @@ async function boot() {
   });
 }
 
+function signInErrorText(e) {
+  const code = e?.code || "";
+  if (code === "auth/network-request-failed") return "אין חיבור לאינטרנט. נסו שוב.";
+  if (["auth/configuration-not-found", "auth/operation-not-allowed", "auth/unauthorized-domain"].includes(code)) {
+    return `ההתחברות עם Google עוד לא מופעלת באפליקציה (${code}).`;
+  }
+  return `ההתחברות נכשלה. נסו שוב.${code ? ` (${code})` : ""}`;
+}
+
 async function signIn() {
   if (!cloud) return;
   try { await cloud.signIn(); }
-  catch (e) { console.error(e); showToast("ההתחברות נכשלה. נסו שוב.", false); }
+  catch (e) { console.error(e); showToast(signInErrorText(e), false); }
 }
 
 async function createCloudSafe() {
