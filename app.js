@@ -273,7 +273,10 @@ function renderMenu() {
          <div class="account-text"><strong>${escapeHtml(u.displayName || "")}</strong><span>${escapeHtml(u.email || "")}</span></div>
          <button class="link-btn" data-action="sign-out">התנתקות</button>
        </div>`
-    : "";
+    : cloud
+      ? `<hr class="sheet-sep" />
+         <button class="sheet-item" data-action="sign-in">👤 <span>התחברות עם Google — לשיתוף ולגיבוי הרשימה</span></button>`
+      : "";
 }
 
 menuSheet.addEventListener("click", (e) => {
@@ -292,6 +295,8 @@ menuSheet.addEventListener("click", (e) => {
     openCloudList(el.dataset.list);
   } else if (action === "sign-out") {
     cloud.signOut().catch(fail);
+  } else if (action === "sign-in") {
+    signIn();
   }
 });
 
@@ -346,6 +351,15 @@ function renderShare() {
       <h3 id="shareTitle">שיתוף הרשימה</h3>
       <p class="sheet-note">השיתוף עוד לא הוגדר. צריך לחבר את האפליקציה ל-Firebase (ראו README).</p>
       <button class="sheet-item cancel" data-share="close">סגירה</button>`;
+    return;
+  }
+  if (!cloud.user) {
+    body.innerHTML = `
+      <h3 id="shareTitle">שיתוף הרשימה</h3>
+      <p class="sheet-note">כדי לשתף את הרשימה ולראות שינויים של אחרים בזמן אמת, צריך להתחבר פעם אחת עם Google.
+        הרשימה שכבר יש לך תעבור איתך.</p>
+      <button class="google-btn" data-share="sign-in">${$("googleBtn").querySelector("svg").outerHTML}<span>כניסה עם Google</span></button>
+      <button class="sheet-item cancel" data-share="close">לא עכשיו</button>`;
     return;
   }
   if (!ui.list) {
@@ -406,6 +420,7 @@ shareSheet.addEventListener("click", async (e) => {
   const act = el.dataset.share;
   try {
     if (act === "close") closeSheets();
+    else if (act === "sign-in") { closeSheets(); await signIn(); }
     else if (act === "copy") {
       await navigator.clipboard.writeText(shareLink());
       showToast("הקישור הועתק 📋", false);
@@ -610,12 +625,13 @@ async function enterCloud() {
     }
 
     const lists = data.lists || {};
-    if (!id) id = data.activeListId && lists[data.activeListId] !== undefined ? data.activeListId : Object.keys(lists)[0];
-    if (!id) {
-      // First sign-in: move the list saved on this phone into the cloud.
+    if (!id && local.items.length) {
+      // Signing in with a list on this phone: move it to the cloud so it can be shared.
       id = await cloud.createList(local.items);
       local.clear();
     }
+    if (!id) id = data.activeListId && lists[data.activeListId] !== undefined ? data.activeListId : Object.keys(lists)[0];
+    if (!id) id = await cloud.createList();
     if (run === authRun) openCloudList(id);
   } catch (e) {
     fail(e);
@@ -653,18 +669,28 @@ async function boot() {
       $("loginError").hidden = false;
     }
   });
+  $("skipLogin").addEventListener("click", () => { takeJoin(); enterLocal(); });
 
   cloud.onAuth((user) => {
     if (user) return enterCloud();
+    // Signed out: the app works on this device only. Signing in is optional,
+    // except to accept an invite link — then we show the login screen.
     authRun++;
-    backend = local;
-    ui.items = []; ui.list = null; ui.members = []; ui.userLists = {};
-    $("loginSub").textContent = peekJoin()
-      ? "הוזמנתם לרשימת קניות משותפת 🛒 התחברו כדי להצטרף."
-      : "רשימת קניות משותפת שמתעדכנת אצל כולם בזמן אמת.";
+    ui.userLists = {};
     closeSheets();
-    showScreen("login");
+    if (peekJoin()) {
+      $("loginSub").textContent = "הוזמנתם לרשימת קניות משותפת 🛒 התחברו עם Google כדי להצטרף.";
+      showScreen("login");
+    } else {
+      enterLocal();
+    }
   });
+}
+
+async function signIn() {
+  if (!cloud) return;
+  try { await cloud.signIn(); }
+  catch (e) { console.error(e); showToast("ההתחברות נכשלה. נסו שוב.", false); }
 }
 
 async function createCloudSafe() {

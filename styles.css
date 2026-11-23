@@ -420,3 +420,6 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
 
 .members { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .member { display: flex; align-items: center; gap: 12px; padding: 6px 4px; }
+
+.skip-btn { margin-top: 14px; padding: 12px; font-weight: 700; color: var(--muted); font-size: 15px; }
+.sheet .google-btn { margin: 4px 0 8px; }

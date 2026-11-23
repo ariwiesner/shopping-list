@@ -43,7 +43,9 @@ to test on a phone, deploy to Firebase Hosting.
 
 ## How sharing works
 
-- Everyone signs in with Google when they open the app. On first sign-in, any list saved on the phone moves to the cloud.
+- Signing in is optional. Without it, the list is saved on the phone only.
+- Sign in with Google from **Share** or the ⋮ menu. The list already on the phone moves to the cloud.
+- Opening an invite link asks you to sign in (needed to join), with a "continue without signing in" option.
 - **Share** → WhatsApp / email / copy link. The link contains a secret invite code; whoever opens it signs in and joins.
 - Members see each other's changes live (changed items glow and show who changed them).
 - The owner can remove members or reset the invite link; members can leave.
