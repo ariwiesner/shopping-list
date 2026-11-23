@@ -1,29 +1,61 @@
 {
- "generated": "2026-11-23T08:05Z",
+ "generated": "2026-11-23T09:16Z",
  "chains": [
   {
    "id": "shufersal",
    "name": "שופרסל",
    "color": "#d71f26",
-   "store": "413 - שופרסל ONLINE",
-   "count": 15810,
-   "updated": "2026-11-23T08:04Z"
+   "count": 38741,
+   "branches": 412,
+   "updated": "2026-11-23T09:08Z"
+  },
+  {
+   "id": "rami-levy",
+   "name": "רמי לוי",
+   "color": "#0a5bab",
+   "count": 26216,
+   "branches": 98,
+   "updated": "2026-11-23T09:10Z"
   },
   {
    "id": "carrefour",
    "name": "קרפור",
    "color": "#1d4f9c",
-   "store": "סניף 009",
-   "count": 12552,
-   "updated": "2026-11-23T08:05Z"
+   "count": 22912,
+   "branches": 147,
+   "updated": "2026-11-23T09:12Z"
+  },
+  {
+   "id": "yochananof",
+   "name": "יוחננוף",
+   "color": "#e4002b",
+   "count": 18198,
+   "branches": 47,
+   "updated": "2026-11-23T09:13Z"
+  },
+  {
+   "id": "osher-ad",
+   "name": "אושר עד",
+   "color": "#f7a600",
+   "count": 9622,
+   "branches": 24,
+   "updated": "2026-11-23T09:14Z"
   },
   {
    "id": "hazi-hinam",
    "name": "חצי חינם",
    "color": "#f28c00",
-   "store": "סניף 103",
-   "count": 10018,
-   "updated": "2026-11-23T08:05Z"
+   "count": 21230,
+   "branches": 13,
+   "updated": "2026-11-23T09:14Z"
+  },
+  {
+   "id": "tiv-taam",
+   "name": "טיב טעם",
+   "color": "#00843d",
+   "count": 32411,
+   "branches": 53,
+   "updated": "2026-11-23T09:16Z"
   }
  ]
 }
