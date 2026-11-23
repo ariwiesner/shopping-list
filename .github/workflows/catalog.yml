@@ -1,0 +1,53 @@
+name: Update price catalog
+
+# Downloads every branch's published price file for each chain, builds compact JSON
+# catalogs (chain-wide common prices + small per-branch differences + branch lists),
+# and commits them to the `catalog-data` branch, which the app reads from
+# raw.githubusercontent.com.
+#
+# Each run adds a normal commit (no force-push): git stores only what changed since
+# yesterday, so the branch stays small even though there are ~900 branch files.
+on:
+  schedule:
+    - cron: "30 3 * * *"   # daily, ~05:30-06:30 Israel time (chains publish full files overnight)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: catalog
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check out current catalog data
+        run: |
+          git fetch --depth=1 origin catalog-data
+          git worktree add out FETCH_HEAD
+          cd out && git switch -c catalog-data
+
+      - name: Build catalog
+        run: python scripts/build_catalog.py --out out
+
+      - name: Commit and push changes
+        working-directory: out
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No price changes today."
+            exit 0
+          fi
+          git commit -q -m "Price catalog $(date -u +%Y-%m-%d)"
+          git push origin HEAD:catalog-data

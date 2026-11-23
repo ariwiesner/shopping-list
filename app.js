@@ -1,4 +1,5 @@
 import { firebaseConfig } from "./firebase-config.js";
+import { loadIndex, loadChain, loadStores, loadBranch, search, resolve, priceItem, norm, money } from "./catalog.js";
 
 const LOCAL_KEY = "basket.v1";
 const PREFS_KEY = "basket.prefs";
@@ -85,6 +86,13 @@ const ui = {
   items: [],
   doneOpen: prefs.doneOpen ?? store.get(LOCAL_KEY, {})?.doneOpen ?? true,
   suggestOff: prefs.suggestOff ?? false, // true once the user types an item themselves
+  chains: [],        // available stores from the catalog index
+  cat: null,         // loaded catalog of the selected store
+  catId: null,       // chain id of the catalog in ui.cat (or being loaded)
+  catKey: null,      // "chain|branch" being shown
+  storeLists: {},    // chain id -> [{ id, name, city, count }] branches
+  catError: false,
+  choices: prefs.choices || {}, // remembered product per item name: { [norm(name)]: { code, name } }
   list: null,       // cloud list doc { id, name, ownerId, inviteCode }
   members: [],
   userLists: {},    // { listId: name }
@@ -119,6 +127,29 @@ function avatarHtml(m, cls = "avatar") {
 // ---------- Render ----------
 const CHECK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
+// Money inside Hebrew text: keep ~₪12.90 in left-to-right order.
+const amt = (s) => `<bdi dir="ltr">${s}</bdi>`;
+
+function priceLine(it) {
+  const p = it._price;
+  if (!p || (!ui.cat && p.kind !== "manual")) return "";
+  const qtyNote = it.qty > 1 ? ` <span class="muted">(${amt(money(p.unit))} ליח׳)</span>` : "";
+  if (p.kind === "manual") return `<div class="item-price">${amt(money(p.total))}${qtyNote} <span class="tag">ידני</span></div>`;
+  if (p.kind === "exact") {
+    const perKg = p.weighted ? " לק״ג" : "";
+    // Same barcode = same product in every chain, but chains word names differently;
+    // show the name the user picked so it doesn't look like a different product.
+    const label = it.productName || ui.choices[norm(it.name)]?.name || p.product.name;
+    return `<div class="item-price">${amt(money(p.total))}${perKg}${qtyNote} <span class="muted">· ${escapeHtml(label)}</span></div>`;
+  }
+  if (p.kind === "estimate") {
+    const note = p.missingProduct ? "המוצר שבחרתם לא נמצא כאן · " : "";
+    const kinds = p.count > 1 ? `יש ${p.count} סוגים — ` : "";
+    return `<div class="item-price est">${amt("~" + money(p.total))}${p.weighted ? " לק״ג" : ""}${qtyNote} <span class="pick">${note}${kinds}הקישו לבחירה</span></div>`;
+  }
+  return `<div class="item-price none">לא נמצא ב${escapeHtml(ui.cat.name)}</div>`;
+}
+
 function itemHtml(it) {
   const name = escapeHtml(it.name);
   return `
@@ -130,6 +161,7 @@ function itemHtml(it) {
         </button>
         <button class="item-main" data-act="edit" aria-label="עריכת ${name}">
           <div class="item-name"><span class="item-emoji" aria-hidden="true">${emojiFor(it.name)}</span>${name}</div>
+          ${priceLine(it)}
           ${ui.flash.has(it.id) && it.updatedByName ? `<div class="item-by">${escapeHtml(it.updatedByName)} עדכן/ה עכשיו</div>` : ""}
         </button>
         <div class="stepper" role="group" aria-label="כמות">
@@ -143,7 +175,8 @@ function itemHtml(it) {
 }
 
 function render() {
-  const items = ui.items.slice().sort((a, b) => (b.sortKey || 0) - (a.sortKey || 0));
+  const items = ui.items.slice().sort((a, b) => (b.sortKey || 0) - (a.sortKey || 0))
+    .map((it) => ({ ...it, _price: priceItem(ui.cat, it, ui.choices[norm(it.name)]) }));
   const todo = items.filter((i) => !i.done);
   const done = items.filter((i) => i.done);
   const total = items.length;
@@ -166,6 +199,9 @@ function render() {
     done.length === 0 ? `${plural(todo.length, "פריט", "פריטים")} לקנות` :
     `נשארו עוד ${plural(todo.length, "פריט", "פריטים")}`;
 
+  renderTotal(items);
+  renderStores();
+
   // Suggestions: tapping one adds it and removes just that chip (it's now on the list).
   // They stay until the user types an item manually; an empty list brings them back.
   if (!total && ui.suggestOff) setSuggestOff(false);
@@ -182,6 +218,301 @@ function render() {
   $("avatars").innerHTML = others.slice(0, 3).map((m) => avatarHtml(m, "avatar sm")).join("");
   $("shareBtn").classList.toggle("shared", others.length > 0);
   $("shareBtn").setAttribute("aria-label", others.length ? `משותף עם ${others.length} — ניהול שיתוף` : "שיתוף הרשימה");
+}
+
+function renderTotal(items) {
+  const box = $("totalBox");
+  const anyManual = items.some((i) => i._price.kind === "manual");
+  box.hidden = !items.length || (!ui.cat && !anyManual);
+  if (box.hidden) return;
+  let sum = 0, inCart = 0, estCount = 0, noneCount = 0;
+  for (const it of items) {
+    sum += it._price.total;
+    if (it.done) inCart += it._price.total;
+    if (it._price.kind === "estimate") estCount++;
+    if (it._price.kind === "none") noneCount++;
+  }
+  $("totalStore").textContent = ui.cat ? ui.cat.name : "רשימה";
+  $("totalAmount").textContent = (estCount ? "~" : "") + money(sum);
+  const notes = [];
+  if (inCart) notes.push(`בעגלה: ${money(inCart)}`);
+  if (estCount) notes.push(`${estCount === 1 ? "פריט אחד כללי" : `${estCount} פריטים כלליים`} — מחיר משוער`);
+  if (noneCount) notes.push(`${noneCount === 1 ? "פריט אחד" : `${noneCount} פריטים`} בלי מחיר`);
+  $("totalNote").textContent = notes.join(" · ");
+}
+
+// ---------- Stores ----------
+const currentStoreId = () => (backend === cloud && ui.list?.store) || prefs.store || null;
+
+function renderStores() {
+  const sel = currentStoreId();
+  if (!ui.chains.length) {
+    wheel.el.innerHTML = ""; wheel.key = "";
+    $("storeNote").textContent = ui.catError ? "לא הצלחנו לטעון את רשימת החנויות. בדקו את החיבור לאינטרנט." : "טוען חנויות…";
+    return;
+  }
+  buildWheel();
+  // Someone else on a shared list picked a store: turn the wheel to it.
+  const k = ui.chains.findIndex((x) => x.id === sel);
+  if (k >= 0 && !wheel.dragging && !wheel.anim && wheelIndex() !== k) spinToChain(k, false);
+  const c = ui.chains.find((x) => x.id === sel);
+  const b = currentBranchId(sel);
+  const branch = b && ui.storeLists[sel]?.find((s) => s.id === b);
+  $("branchBtn").hidden = !sel || !c?.branches;
+  $("branchName").textContent = !b ? "כל הסניפים — מחיר נפוץ ברשת"
+    : branch ? `סניף ${branch.name}${branch.city && !branch.name.includes(branch.city) ? `, ${branch.city}` : ""}` : `סניף ${b}`;
+  $("storeNote").textContent = !sel
+    ? "בחרו חנות כדי לראות כמה הקנייה תעלה"
+    : ui.catError ? "לא הצלחנו לטעון את המחירים. נסו שוב."
+    : ui.catId === sel && (!ui.cat || ui.cat.id !== sel || (ui.cat.branch || null) !== b) ? "טוען מחירים…"
+    : c ? `עודכן ${new Date(c.updated).toLocaleDateString("he-IL")}` : "";
+}
+
+// The branch picked for a chain: the shared list's choice, else this device's last choice.
+const currentBranchId = (chain = currentStoreId()) =>
+  (backend === cloud && ui.list?.store === chain && ui.list?.branch) || prefs.branches?.[chain] || null;
+
+async function loadStore(id) {
+  if (!id) { ui.cat = null; ui.catId = null; ui.catKey = null; render(); return; }
+  const branch = currentBranchId(id);
+  const key = `${id}|${branch || ""}`;
+  if (ui.catKey === key && (ui.cat || !ui.catError)) return;
+  if (ui.catId !== id) ui.cat = null; // switching chain; same chain keeps old prices while the branch loads
+  ui.catId = id; ui.catKey = key; ui.catError = false;
+  render();
+  loadStores(id).then((list) => { ui.storeLists[id] = list; render(); }).catch(() => {});
+  try {
+    let cat = await loadChain(id);
+    if (branch) {
+      try { cat = await loadBranch(cat, branch); }
+      catch (e) { console.warn("Branch prices unavailable, using chain prices", e); }
+    }
+    if (ui.catKey === key) { ui.cat = cat; render(); }
+  } catch (e) {
+    console.error(e);
+    if (ui.catKey === key) { ui.catError = true; render(); }
+  }
+}
+
+function selectStore(id) {
+  if (!id || id === currentStoreId()) return loadStore(id);
+  prefs.store = id;
+  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), store: id });
+  if (backend === cloud && ui.list) cloud.setListStore(id, prefs.branches?.[id] || null).catch(fail);
+  loadStore(id);
+}
+
+function selectBranch(branchId) {
+  const chain = currentStoreId();
+  if (!chain) return;
+  prefs.branches = { ...(prefs.branches || {}), [chain]: branchId || null };
+  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), branches: prefs.branches });
+  if (backend === cloud && ui.list) cloud.setListStore(chain, branchId || null).catch(fail);
+  buzz(8);
+  loadStore(chain);
+}
+
+// ---------- Branch picker ----------
+const branchSheet = $("branchSheet");
+$("branchBtn").addEventListener("click", async () => {
+  const chain = currentStoreId();
+  if (!chain) return;
+  $("branchTitle").textContent = `באיזה סניף של ${ui.chains.find((c) => c.id === chain)?.name || ""}?`;
+  $("branchSearch").value = "";
+  openSheet(branchSheet);
+  renderBranches();
+  try { ui.storeLists[chain] = await loadStores(chain); renderBranches(); }
+  catch (e) { console.error(e); $("branchList").innerHTML = `<li class="products-empty">לא הצלחנו לטעון את רשימת הסניפים</li>`; }
+});
+$("branchSearch").addEventListener("input", () => renderBranches());
+$("branchSearch").addEventListener("keydown", (e) => { if (e.key === "Enter") e.preventDefault(); });
+
+function renderBranches() {
+  const chain = currentStoreId();
+  const list = ui.storeLists[chain];
+  const sel = currentBranchId(chain);
+  if (!list) { $("branchList").innerHTML = `<li class="products-empty">טוען סניפים…</li>`; return; }
+  const q = norm($("branchSearch").value);
+  const shown = q ? list.filter((s) => norm(`${s.name} ${s.city} ${s.address}`).includes(q)) : list;
+  const where = (s) => [s.city, s.address].filter(Boolean).join(" · ");
+  const row = (id, title, sub, selected) => `
+    <li><button type="button" class="product${selected ? " selected" : ""}" data-branch="${escapeHtml(id)}" role="option" aria-selected="${selected}">
+      <span class="product-name">${title}${sub ? `<small>${sub}</small>` : ""}</span>
+    </button></li>`;
+  $("branchList").innerHTML =
+    (q ? "" : row("", "כל הסניפים", "המחיר הנפוץ ברוב הסניפים של הרשת", !sel)) +
+    shown.map((s) => row(s.id, escapeHtml(s.name), escapeHtml(where(s)), s.id === sel)).join("") +
+    (q && !shown.length ? `<li class="products-empty">לא מצאנו סניף כזה</li>` : "");
+}
+
+$("branchList").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-branch]");
+  if (!b) return;
+  selectBranch(b.dataset.branch || null);
+  closeSheets();
+});
+
+// ---------- Store wheel ----------
+// Stores sit on the rim of a big circle. Drag to spin it; when it stops, the store
+// at the top is enlarged and its prices are shown. The ring repeats the stores so
+// it can spin endlessly even with only a few chains.
+const RTL = document.documentElement.dir === "rtl";
+const WHEEL = { step: (34 * Math.PI) / 180, radius: 250, top: 50, pxPerStep: 110, minSlots: 9 };
+const wheel = { el: $("storeRow"), btns: [], key: "", slots: 0, rot: 0, dragging: false, anim: 0, lastTick: null };
+
+// Chains with a logo in /stores (others show their initials).
+const STORE_LOGOS = new Set(["shufersal", "carrefour", "hazi-hinam", "rami-levy", "yochananof", "osher-ad", "tiv-taam"]);
+
+const mod = (a, n) => ((a % n) + n) % n;
+const wrapDist = (d, n) => { d = mod(d, n); return d > n / 2 ? d - n : d; };
+const wheelIndex = () => (ui.chains.length ? mod(Math.round(wheel.rot), wheel.slots) % ui.chains.length : -1);
+
+function buildWheel() {
+  const key = ui.chains.map((c) => c.id + c.color).join("|");
+  if (key === wheel.key) return;
+  wheel.key = key;
+  const n = ui.chains.length;
+  wheel.slots = n * Math.ceil(WHEEL.minSlots / n);
+  const slots = Array.from({ length: wheel.slots }, (_, s) => ui.chains[s % n]);
+  wheel.el.innerHTML = `<div class="wheel-arc" aria-hidden="true"></div><div class="wheel-marker" aria-hidden="true"></div>` +
+    slots.map((c, s) => `
+      <button class="store" data-slot="${s}" tabindex="-1" aria-hidden="${s >= n}"
+              style="--store-color:${/^#[0-9a-f]{6}$/i.test(c.color) ? c.color : "#2f9e6b"}">
+        <span class="store-circle">${STORE_LOGOS.has(c.id)
+          ? `<img src="stores/${c.id}.png" alt="" draggable="false" />`
+          : escapeHtml(c.name.split(" ").map((w) => w[0]).join("").slice(0, 2))}</span>
+        <span class="store-name">${escapeHtml(c.name)}</span>
+      </button>`).join("");
+  wheel.btns = [...wheel.el.querySelectorAll(".store")];
+  const k = ui.chains.findIndex((c) => c.id === currentStoreId());
+  wheel.rot = k >= 0 ? k : 0;
+  wheel.lastTick = Math.round(wheel.rot);
+  layoutWheel();
+}
+
+function layoutWheel() {
+  // Not on screen yet (e.g. behind the splash): the ResizeObserver lays it out once visible.
+  if (!wheel.btns.length || !wheel.el.clientWidth) return;
+  const cx = wheel.el.clientWidth / 2;
+  const dir = RTL ? -1 : 1; // in Hebrew the next store sits to the left
+  const top = wheelIndex();
+  wheel.btns.forEach((el, s) => {
+    const d = wrapDist(s - wheel.rot, wheel.slots);   // distance from the top, in stores
+    const a = d * WHEEL.step * dir;
+    const x = cx + WHEEL.radius * Math.sin(a);
+    const y = WHEEL.top + WHEEL.radius * (1 - Math.cos(a));
+    const near = Math.max(0, 1 - Math.abs(d));       // 1 at the top, 0 one step away
+    const scale = 0.72 + 0.5 * near;
+    el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -50%) scale(${scale.toFixed(3)})`;
+    el.style.opacity = String(Math.max(0, 1 - Math.max(0, Math.abs(d) - 1) * 0.75));
+    el.style.zIndex = String(100 - Math.round(Math.abs(d) * 10));
+    el.classList.toggle("top", Math.abs(d) < 0.5);
+  });
+  const c = ui.chains[top];
+  wheel.el.setAttribute("aria-valuetext", c ? c.name : "");
+  // A little tick each time a store passes the top.
+  const r = Math.round(wheel.rot);
+  if (r !== wheel.lastTick) { wheel.lastTick = r; buzz(4); }
+}
+
+function spinTo(target, animate = true) {
+  cancelAnimationFrame(wheel.anim);
+  wheel.anim = 0;
+  if (!animate) { wheel.rot = target; settleWheel(); return; }
+  const from = wheel.rot, dist = target - from;
+  const dur = Math.min(650, 220 + Math.abs(dist) * 140);
+  const t0 = performance.now();
+  const step = (t) => {
+    const p = Math.min(1, (t - t0) / dur);
+    wheel.rot = from + dist * (1 - Math.pow(1 - p, 3)); // ease-out
+    layoutWheel();
+    if (p < 1) wheel.anim = requestAnimationFrame(step);
+    else { wheel.anim = 0; wheel.rot = target; settleWheel(); }
+  };
+  wheel.anim = requestAnimationFrame(step);
+}
+
+// Spin to the nearest copy of chain k on the ring.
+function spinToChain(k, animate = true) {
+  let best = null;
+  for (let s = k; s < wheel.slots; s += ui.chains.length) {
+    const d = wrapDist(s - wheel.rot, wheel.slots);
+    if (best === null || Math.abs(d) < Math.abs(best)) best = d;
+  }
+  spinTo(wheel.rot + best, animate);
+}
+
+function settleWheel() {
+  wheel.rot = mod(Math.round(wheel.rot), wheel.slots);
+  layoutWheel();
+  const c = ui.chains[wheelIndex()];
+  if (c && c.id !== currentStoreId()) { buzz(12); selectStore(c.id); }
+}
+
+(function wheelInput() {
+  const el = wheel.el;
+  let startX = 0, startRot = 0, moved = false, downSlot = null, samples = [];
+  const sign = RTL ? 1 : -1;
+
+  el.addEventListener("pointerdown", (e) => {
+    if (!wheel.btns.length || (e.pointerType === "mouse" && e.button !== 0)) return;
+    cancelAnimationFrame(wheel.anim); wheel.anim = 0;
+    wheel.dragging = true; moved = false;
+    startX = e.clientX; startRot = wheel.rot;
+    downSlot = e.target.closest(".store")?.dataset.slot ?? null;
+    samples = [{ x: e.clientX, t: e.timeStamp }];
+    try { el.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  el.addEventListener("pointermove", (e) => {
+    if (!wheel.dragging) return;
+    const dx = e.clientX - startX;
+    if (Math.abs(dx) > 6) moved = true;
+    if (!moved) return;
+    wheel.rot = startRot + (sign * dx) / WHEEL.pxPerStep;
+    samples.push({ x: e.clientX, t: e.timeStamp });
+    if (samples.length > 6) samples.shift();
+    layoutWheel();
+  });
+  const end = () => {
+    if (!wheel.dragging) return;
+    wheel.dragging = false;
+    if (!moved) {
+      // A tap: bring the tapped store to the top.
+      if (downSlot !== null) spinTo(wheel.rot + wrapDist(+downSlot - wheel.rot, wheel.slots));
+      return;
+    }
+    // Fling: keep spinning a bit in the direction of the swipe, then snap to a store.
+    const a = samples[0], b = samples[samples.length - 1];
+    const v = b.t > a.t ? (b.x - a.x) / (b.t - a.t) : 0; // px per ms
+    const coast = Math.max(-3, Math.min(3, (sign * v * 220) / WHEEL.pxPerStep));
+    spinTo(Math.round(wheel.rot + coast));
+  };
+  el.addEventListener("pointerup", end);
+  el.addEventListener("pointercancel", end);
+  el.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const towardNext = (e.key === "ArrowLeft") === RTL;
+    spinTo(Math.round(wheel.rot) + (towardNext ? 1 : -1));
+  });
+  // Re-center whenever the wheel appears or changes width (app shown, rotation, wider screens).
+  if ("ResizeObserver" in window) new ResizeObserver(() => layoutWheel()).observe(el);
+  else window.addEventListener("resize", layoutWheel);
+})();
+
+async function initStores() {
+  try {
+    const idx = await loadIndex();
+    ui.chains = idx.chains || [];
+    ui.catError = false;
+  } catch (e) {
+    console.error(e);
+    ui.catError = true;
+  }
+  render();
+  // The wheel always has a store at the top, so prices show right away.
+  if (ui.chains.length && !ui.chains.some((c) => c.id === currentStoreId())) selectStore(ui.chains[0].id);
+  else loadStore(currentStoreId());
 }
 
 // ---------- Item actions ----------
@@ -308,6 +639,8 @@ menuSheet.addEventListener("click", (e) => {
 });
 
 // Edit
+let editProduct = null; // { code, name } chosen in the picker, or null for "estimate"
+
 function openEdit(id) {
   const it = find(id);
   if (!it) return;
@@ -316,7 +649,55 @@ function openEdit(id) {
   editQty = it.qty;
   $("editName").value = it.name;
   $("editQty").textContent = editQty;
+  $("editPrice").value = typeof it.price === "number" && it.price > 0 ? it.price : "";
+  const remembered = ui.choices[norm(it.name)];
+  editProduct = it.barcode ? { code: it.barcode, name: it.productName } : remembered || null;
+  $("productField").hidden = !ui.cat;
+  if (ui.cat) {
+    $("productStore").textContent = `(${ui.cat.name})`;
+    $("productSearch").value = it.name;
+    renderProducts();
+  }
 }
+
+function renderProducts() {
+  const q = $("productSearch").value.trim();
+  const results = ui.cat && q ? search(ui.cat, q, 40) : [];
+  const sel = editProduct?.code;
+  const selected = sel && ui.cat.byCode.get(sel);
+  const list = selected && !results.includes(selected) ? [selected, ...results] : results;
+  // First option: let the app decide (the clearly-meant product, or a typical price).
+  const auto = ui.cat && resolve(ui.cat, $("editName").value.trim());
+  $("productList").innerHTML = `
+    <li><button type="button" class="product${!sel ? " selected" : ""}" data-code="" role="option" aria-selected="${!sel}">
+      <span class="product-name">${auto ? `אוטומטי — ${escapeHtml(auto.name)}` : "לא משנה איזה — לפי הערכה"}</span>
+      <span class="product-price${auto ? "" : " muted"}">${auto ? amt(money(auto.price)) + (auto.weighted ? "<small>לק״ג</small>" : "") : "מחיר טיפוסי"}</span>
+    </button></li>` +
+    list.map((p) => `
+    <li><button type="button" class="product${p.code === sel ? " selected" : ""}" data-code="${escapeHtml(p.code)}" role="option" aria-selected="${p.code === sel}">
+      <span class="product-name">${escapeHtml(p.name)}${p.brand ? `<small>${escapeHtml(p.brand)}</small>` : ""}</span>
+      <span class="product-price">${amt(money(p.price))}${p.weighted ? "<small>לק״ג</small>" : ""}</span>
+    </button></li>`).join("") +
+    (q && !results.length ? `<li class="products-empty">לא מצאנו מוצרים בשם הזה</li>` : "");
+}
+
+let productSearchTimer;
+$("productSearch").addEventListener("input", () => {
+  clearTimeout(productSearchTimer);
+  productSearchTimer = setTimeout(renderProducts, 120);
+});
+$("productSearch").addEventListener("keydown", (e) => { if (e.key === "Enter") e.preventDefault(); });
+$("productList").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-code]");
+  if (!b) return;
+  const p = b.dataset.code && ui.cat?.byCode.get(b.dataset.code);
+  editProduct = p ? { code: p.code, name: p.name } : null;
+  buzz(5);
+  renderProducts();
+  // Picking a product is the decision: save right away (with any name/qty/price edits)
+  // so nobody has to scroll down to the save button.
+  $("editForm").requestSubmit();
+});
 editSheet.addEventListener("click", (e) => {
   const step = e.target.closest("[data-step]");
   if (!step) return;
@@ -327,8 +708,23 @@ editSheet.addEventListener("click", (e) => {
 $("editForm").addEventListener("submit", (e) => {
   e.preventDefault();
   const id = editingId;
+  const it = find(id);
   const name = $("editName").value.trim();
-  if (find(id) && name) backend.patch([id], { name: capitalize(name), qty: editQty }).catch(fail);
+  if (it && name) {
+    const fields = { name: capitalize(name), qty: editQty };
+    const price = parseFloat($("editPrice").value);
+    fields.price = price > 0 && price <= 5000 ? Math.round(price * 100) / 100 : null;
+    if (ui.cat) {
+      // Link the chosen product to the item (shared with everyone on the list), and
+      // remember it for this item name so next time "גבינה" means the same cheese.
+      fields.barcode = editProduct?.code || null;
+      fields.productName = editProduct?.name || null;
+      const key = norm(fields.name);
+      if (editProduct) ui.choices[key] = editProduct; else delete ui.choices[key];
+      store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), choices: ui.choices });
+    }
+    backend.patch([id], fields).catch(fail);
+  }
   closeSheets();
 });
 $("editDelete").addEventListener("click", () => {
@@ -585,7 +981,12 @@ function openCloudList(id) {
   cloud.setActive(id).catch(() => {});
   cloud.open(id, {
     onItems(items) { ui.items = items; render(); },
-    onList(list) { ui.list = list; render(); if (!shareSheet.hidden) renderShare(); },
+    onList(list) {
+      ui.list = list;
+      render();
+      if (!shareSheet.hidden) renderShare();
+      if (list.store) loadStore(list.store); // someone on the list picked a store or branch (no-op if unchanged)
+    },
     onMembers(members) { ui.members = members; render(); if (!shareSheet.hidden) renderShare(); },
     onRemote(changes) {
       changes.forEach((c) => {
@@ -659,10 +1060,12 @@ function enterLocal() {
   local.subscribe((items) => { if (backend === local) { ui.items = items; render(); } });
   greeting();
   showScreen("app");
+  if (ui.chains.length) loadStore(currentStoreId());
 }
 
 async function boot() {
   readJoinParam();
+  initStores(); // store list + prices load in the background
   if (!firebaseConfig) {
     console.info("Firebase is not configured — running in local mode.");
     return enterLocal();

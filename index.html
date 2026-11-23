@@ -69,10 +69,29 @@
           <span class="progress-count" id="progressCount"></span>
         </div>
         <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+        <div class="total" id="totalBox" hidden>
+          <div class="total-row">
+            <span>סה״כ משוער ב<span id="totalStore"></span></span>
+            <strong id="totalAmount" dir="ltr">₪0</strong>
+          </div>
+          <p class="total-note" id="totalNote"></p>
+        </div>
       </div>
     </header>
 
     <main class="content" id="content">
+      <section class="stores" aria-labelledby="storesTitle">
+        <p class="stores-title" id="storesTitle">איפה קונים היום?</p>
+        <div class="wheel" id="storeRow" role="slider" tabindex="0" aria-labelledby="storesTitle"
+             aria-description="גררו או השתמשו בחצים כדי לסובב את הגלגל"></div>
+        <button class="branch-btn" id="branchBtn" hidden aria-haspopup="dialog">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
+          <span id="branchName">כל הסניפים</span>
+          <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <p class="stores-note" id="storeNote"></p>
+      </section>
+
       <section id="emptyState" class="empty" hidden>
         <div class="empty-art" aria-hidden="true">🧺</div>
         <h2>הסל שלך ריק</h2>
@@ -131,6 +150,17 @@
     <div id="shareBody"></div>
   </div>
 
+  <!-- Branch picker -->
+  <div class="sheet" id="branchSheet" role="dialog" aria-modal="true" aria-labelledby="branchTitle" hidden>
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <h3 id="branchTitle">באיזה סניף?</h3>
+    <p class="sheet-note">המחירים משתנים בין סניפים. בחרו את הסניף שלכם למחיר מדויק יותר.</p>
+    <div class="field">
+      <input id="branchSearch" type="search" enterkeyhint="search" placeholder="חיפוש לפי עיר או שם סניף…" aria-label="חיפוש סניף" />
+    </div>
+    <ul class="products branches" id="branchList" role="listbox" aria-label="סניפים"></ul>
+  </div>
+
   <!-- Edit sheet -->
   <div class="sheet" id="editSheet" role="dialog" aria-modal="true" aria-labelledby="editTitle" hidden>
     <div class="sheet-handle" aria-hidden="true"></div>
@@ -148,6 +178,15 @@
           <button type="button" data-step="-1" aria-label="הקטנה">−</button>
         </div>
       </div>
+      <div class="field" id="productField" hidden>
+        <span>איזה מוצר? <small id="productStore"></small></span>
+        <input id="productSearch" type="search" enterkeyhint="search" placeholder="חיפוש מוצר…" aria-label="חיפוש מוצר" />
+        <ul class="products" id="productList" role="listbox" aria-label="מוצרים"></ul>
+      </div>
+      <label class="field">
+        <span>מחיר ידני ליחידה <small>(לא חובה — גובר על מחיר החנות)</small></span>
+        <input id="editPrice" type="number" inputmode="decimal" min="0" max="5000" step="0.01" placeholder="למשל 12.90" />
+      </label>
       <div class="edit-actions">
         <button type="button" class="btn ghost danger" id="editDelete">מחיקה</button>
         <button type="submit" class="btn primary">שמירה</button>

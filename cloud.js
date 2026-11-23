@@ -72,11 +72,13 @@ export async function createCloud(config) {
   const stamp = () => ({ updatedBy: me().uid, updatedByName: firstName(), updatedAt: serverTimestamp() });
   const itemData = (it) => ({
     name: it.name, qty: it.qty, done: !!it.done, price: it.price ?? null,
+    barcode: it.barcode ?? null, productName: it.productName ?? null,
     createdAt: it.createdAt || Date.now(), sortKey: it.sortKey || Date.now(), ...stamp(),
   });
   const fromDoc = (d) => {
     const x = d.data();
     return { id: d.id, name: x.name, qty: x.qty, done: x.done, price: x.price ?? null,
+      barcode: x.barcode ?? null, productName: x.productName ?? null,
       createdAt: x.createdAt, sortKey: x.sortKey, updatedBy: x.updatedBy, updatedByName: x.updatedByName };
   };
 
@@ -212,6 +214,11 @@ export async function createCloud(config) {
       const b = writeBatch(db);
       ids.forEach((id) => { recentlyDeleted.add(id); b.delete(itemRef(id)); });
       return b.commit();
+    },
+
+    // The store a shared list is priced at, so everyone on the list sees the same total.
+    setListStore(store, branch = null) {
+      return updateDoc(listRef(), { store: store || null, branch: branch || null });
     },
 
     // ----- sharing -----
