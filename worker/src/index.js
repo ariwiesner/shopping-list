@@ -5,7 +5,7 @@
 //
 // POST /  { image: "<base64 JPEG/PNG/WEBP>", mime: "image/jpeg" }
 //   200 -> { items: [{ name, qty }] }
-//   4xx/5xx -> { error: "too_big" | "bad_request" | "quota" | "failed" | "forbidden" }
+//   4xx/5xx -> { error: "too_big" | "bad_request" | "quota" | "busy" | "failed" | "forbidden" }
 //
 // Only the app's own sites may call it (checked by Origin), and photos are limited in size,
 // so the free quota isn't easy to drain from elsewhere.
@@ -17,7 +17,8 @@ const PROMPT = `This photo should show a shopping list: handwritten or printed, 
 List every item to buy, in the order written.
 - Write each item in the language it is written in (usually Hebrew), fixing obvious spelling, as a short general product name, e.g. "חלב", "גבינה צהובה", "עגבניות". Keep a brand or detail only if it is written (e.g. "קוטג' 5%").
 - qty: the number written next to the item (e.g. "2", "x3", "שני"); otherwise 1. A weight like "2 ק"ג" counts as 2.
-- Leave out crossed-out items, titles ("רשימת קניות"), dates, prices, names, and doodles.
+- Leave out any item with a line drawn through it (crossed out / struck through): it was already bought.
+- Leave out titles ("לקנות", "רשימת קניות"), dates, prices, people's names and notes to someone, and doodles.
 - If you can't read an item at all, leave it out. If the photo is not a shopping list, return no items.`;
 
 const SCHEMA = {
@@ -57,10 +58,24 @@ export default {
     if (typeof image !== "string" || !MIMES.has(mime)) return reply(400, { error: "bad_request" });
     if (image.length > MAX_BASE64) return reply(413, { error: "too_big" });
 
-    // Try each model in turn: the free tier limits each model separately.
+    // Try each model in turn: the free tier limits each model separately, and is often
+    // briefly overloaded ("high demand", 503). If every model is busy, wait and go round again.
     const models = (env.GEMINI_MODELS || "gemini-flash-latest,gemini-flash-lite-latest").split(",").map((s) => s.trim()).filter(Boolean);
-    let quota = false;
-    for (const model of models) {
+    let quota = false, busy = false;
+    for (let round = 0; round < 3; round++) {
+      if (round) await new Promise((r) => setTimeout(r, 1500 * round));
+      busy = false;
+      for (const model of models) {
+        const out = await ask(model);
+        if (out.items) return reply(200, { items: out.items });
+        if (out.quota) quota = true;
+        if (out.busy) busy = true;
+      }
+      if (!busy) break; // nothing temporary: don't retry
+    }
+    return reply(busy ? 503 : quota ? 429 : 502, { error: busy ? "busy" : quota ? "quota" : "failed" });
+
+    async function ask(model) {
       let res;
       try {
         res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
@@ -73,10 +88,13 @@ export default {
         });
       } catch (e) {
         console.log("gemini fetch failed", model, String(e));
-        continue;
+        return { busy: true };
       }
-      if (res.status === 429) { quota = true; continue; }
-      if (!res.ok) { console.log("gemini error", model, res.status, (await res.text()).slice(0, 300)); continue; }
+      if (res.status === 429) return { quota: true };
+      if (!res.ok) {
+        console.log("gemini error", model, res.status, (await res.text()).slice(0, 200));
+        return { busy: res.status >= 500 };
+      }
       try {
         const data = await res.json();
         const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
@@ -84,11 +102,11 @@ export default {
           .filter((it) => it && typeof it.name === "string" && it.name.trim())
           .slice(0, 200)
           .map((it) => ({ name: it.name.trim().slice(0, 60), qty: Math.min(Math.max(parseInt(it.qty, 10) || 1, 1), 999) }));
-        return reply(200, { items });
+        return { items };
       } catch (e) {
         console.log("gemini parse failed", model, String(e));
+        return { busy: true }; // an unreadable answer is usually a hiccup: worth another round
       }
     }
-    return reply(quota ? 429 : 502, { error: quota ? "quota" : "failed" });
   },
 };

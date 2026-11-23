@@ -807,7 +807,7 @@ const intoNewList = () => backend === cloud && !!cloud?.user;
 const commitLabel = (n) => (intoNewList() ? `יצירת רשימה (${n})` : `הוספה לרשימה (${n})`);
 
 function openImport() {
-  Object.assign(imp, { step: "start", items: [], name: "", error: "", busy: false });
+  Object.assign(imp, { step: "start", items: [], name: "", error: "", busy: false, retry: false, lastFile: null });
   openSheet(importSheet);
   renderImport();
 }
@@ -872,7 +872,8 @@ function renderImport() {
       <button type="button" class="btn ghost" data-imp="camera">📷 צילום</button>
       <button type="button" class="btn ghost" data-imp="gallery">🖼️ מהגלריה</button>
     </div>
-    ${err}`;
+    ${err}
+    ${imp.retry ? `<button type="button" class="btn primary import-retry" data-imp="retry-photo">לנסות שוב עם אותה תמונה</button>` : ""}`;
 }
 
 importSheet.addEventListener("input", (e) => {
@@ -918,6 +919,8 @@ importSheet.addEventListener("click", async (e) => {
     renderImport();
   } else if (act === "commit") {
     commitImport();
+  } else if (act === "retry-photo") {
+    if (imp.lastFile) readPhoto(imp.lastFile);
   }
 });
 
@@ -963,6 +966,8 @@ async function shrinkImage(file) {
 async function readPhoto(file) {
   if (imp.photo) URL.revokeObjectURL(imp.photo);
   imp.photo = URL.createObjectURL(file);
+  imp.lastFile = file;
+  imp.retry = false;
   imp.step = "reading";
   imp.error = "";
   renderImport();
@@ -977,7 +982,9 @@ async function readPhoto(file) {
   } catch (e) {
     console.error(e);
     imp.step = "start";
-    imp.error = e.message === "quota" ? "נגמרה המכסה היומית החינמית לקריאת תמונות. נסו שוב מחר, או הדביקו את הרשימה כטקסט."
+    imp.retry = e.message !== "too_big" && e.message !== "quota";
+    imp.error = e.message === "busy" ? "שירות קריאת התמונות עמוס כרגע. נסו שוב בעוד רגע."
+      : e.message === "quota" ? "נגמרה המכסה היומית החינמית לקריאת תמונות. נסו שוב מחר, או הדביקו את הרשימה כטקסט."
       : e.message === "too_big" ? "התמונה גדולה מדי. נסו תמונה אחרת."
       : "לא הצלחנו לקרוא את התמונה. בדקו את החיבור לאינטרנט ונסו שוב.";
   }
