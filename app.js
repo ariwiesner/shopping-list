@@ -593,6 +593,63 @@ function closeSheets() {
 backdrop.addEventListener("click", closeSheets);
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheets(); });
 
+// Swipe a sheet down by its top (the handle and title) to close it.
+// Dragging up only gives a little stretch, since sheets already show everything.
+const GRAB_ZONE = 64; // px from the top of the sheet that starts a drag
+document.querySelectorAll(".sheet").forEach((sheet) => {
+  let startY = 0, lastY = 0, lastT = 0, velocity = 0, dragging = false;
+
+  const setOffset = (dy) => {
+    const y = dy > 0 ? dy : -Math.sqrt(-dy) * 3; // resistance when pulling up
+    sheet.style.transform = `translateY(${y}px)`;
+    backdrop.style.opacity = String(Math.max(0, 1 - Math.max(0, dy) / sheet.offsetHeight));
+  };
+  const reset = () => {
+    sheet.style.transition = sheet.style.transform = backdrop.style.transition = backdrop.style.opacity = "";
+  };
+
+  sheet.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    const inZone = t.clientY - sheet.getBoundingClientRect().top < GRAB_ZONE;
+    if (!inZone || e.target.closest("input, textarea, select")) return;
+    dragging = true;
+    startY = lastY = t.clientY; lastT = e.timeStamp; velocity = 0;
+    sheet.style.transition = backdrop.style.transition = "none";
+  }, { passive: true });
+
+  sheet.addEventListener("touchmove", (e) => {
+    if (!dragging) return;
+    e.preventDefault(); // keep the page behind from scrolling
+    const y = e.touches[0].clientY, dt = e.timeStamp - lastT;
+    if (dt > 0) velocity = (y - lastY) / dt;
+    lastY = y; lastT = e.timeStamp;
+    setOffset(y - startY);
+  }, { passive: false });
+
+  const end = () => {
+    if (!dragging) return;
+    dragging = false;
+    const dy = lastY - startY;
+    const ease = "transform .22s cubic-bezier(.2, .8, .2, 1)";
+    if (dy > sheet.offsetHeight * 0.25 || (dy > 20 && velocity > 0.5)) {
+      sheet.style.transition = ease;
+      backdrop.style.transition = "opacity .22s";
+      sheet.style.transform = "translateY(100%)";
+      backdrop.style.opacity = "0";
+      setTimeout(() => { closeSheets(); reset(); }, 220);
+    } else {
+      sheet.style.transition = ease;
+      backdrop.style.transition = "opacity .22s";
+      sheet.style.transform = "";
+      backdrop.style.opacity = "";
+      setTimeout(() => { reset(); }, 220);
+    }
+  };
+  sheet.addEventListener("touchend", end);
+  sheet.addEventListener("touchcancel", end);
+});
+
 // Menu
 $("menuBtn").addEventListener("click", () => { renderMenu(); openSheet(menuSheet); });
 
