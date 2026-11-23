@@ -562,3 +562,13 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
 .wheel .store.top .store-name { color: var(--text); font-weight: 800; }
 .stores-note { text-align: center; }
 .stores-title { text-align: center; }
+
+/* Store logos inside the wheel circles */
+.wheel .store-circle { background: #fff; overflow: hidden; padding: 9px; }
+.wheel .store-circle img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; -webkit-user-drag: none; }
+.wheel .store.top .store-circle {
+  background: #fff;
+  border-color: var(--store-color);
+  border-width: 3px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--store-color) 22%, transparent), 0 8px 20px color-mix(in srgb, var(--store-color) 30%, transparent);
+}

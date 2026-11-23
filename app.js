@@ -291,6 +291,9 @@ const RTL = document.documentElement.dir === "rtl";
 const WHEEL = { step: (34 * Math.PI) / 180, radius: 250, top: 50, pxPerStep: 110, minSlots: 9 };
 const wheel = { el: $("storeRow"), btns: [], key: "", slots: 0, rot: 0, dragging: false, anim: 0, lastTick: null };
 
+// Chains with a logo in /stores (others show their initials).
+const STORE_LOGOS = new Set(["shufersal", "carrefour", "hazi-hinam"]);
+
 const mod = (a, n) => ((a % n) + n) % n;
 const wrapDist = (d, n) => { d = mod(d, n); return d > n / 2 ? d - n : d; };
 const wheelIndex = () => (ui.chains.length ? mod(Math.round(wheel.rot), wheel.slots) % ui.chains.length : -1);
@@ -306,7 +309,9 @@ function buildWheel() {
     slots.map((c, s) => `
       <button class="store" data-slot="${s}" tabindex="-1" aria-hidden="${s >= n}"
               style="--store-color:${/^#[0-9a-f]{6}$/i.test(c.color) ? c.color : "#2f9e6b"}">
-        <span class="store-circle">${escapeHtml(c.name.split(" ").map((w) => w[0]).join("").slice(0, 2))}</span>
+        <span class="store-circle">${STORE_LOGOS.has(c.id)
+          ? `<img src="stores/${c.id}.png" alt="" draggable="false" />`
+          : escapeHtml(c.name.split(" ").map((w) => w[0]).join("").slice(0, 2))}</span>
         <span class="store-name">${escapeHtml(c.name)}</span>
       </button>`).join("");
   wheel.btns = [...wheel.el.querySelectorAll(".store")];
