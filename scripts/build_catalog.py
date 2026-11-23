@@ -22,6 +22,7 @@ import gzip
 import html
 import http.cookiejar
 import json
+import math
 import os
 import re
 import shutil
@@ -231,13 +232,23 @@ def clean(s):
     return re.sub(r"\s+", " ", s or "").strip()
 
 
-def city_in_text(*texts):
-    """The longest known city name that appears as whole words in any of the texts."""
-    for text in texts:
-        t = " " + re.sub(r"[^\w\"'-]+", " ", text) + " "
+# Real place names that are also everyday address words: "רחוב הפלדה" (street), "שדרות תל חי"
+# (avenue), "אזור תעשיה" (industrial zone), "יגאל אלון 57". Never taken from an address;
+# taken from a branch name only when the name is just that word ("שדרות", the city).
+AMBIGUOUS_CITIES = {"רחוב", "שדרות", "אזור", "נווה", "אלון", "סגולה", "מבקיעים", "גבעות", "צומת"}
+
+
+def city_in_text(name, address=""):
+    """The longest known city name that appears as whole words in the branch name, else its address."""
+    for text, from_name in ((name, True), (address, False)):
+        words = re.sub(r"[^\w\"'-]+", " ", text or "").split()
+        t = " " + " ".join(words) + " "
         for n in _CITY_NAMES:
-            if f" {n} " in t:
-                return _CITY_LOOKUP[n]
+            if f" {n} " not in t:
+                continue
+            if n in AMBIGUOUS_CITIES and not (from_name and words[-1] == n):
+                continue
+            return _CITY_LOOKUP[n]
     return ""
 
 
@@ -256,7 +267,7 @@ def parse_stores(data):
         if city.isdigit():  # usually a locality code, not a name
             city = CITIES.get(str(int(city)), "")
         if not city:
-            city = city_in_text(address, name)
+            city = city_in_text(name, address)
         # "רחוב X, חולון, ישראל" -> "רחוב X" when the city is shown separately
         parts = [p.strip() for p in address.split(",") if p.strip() and p.strip() not in (city, "ישראל")]
         out[str(int(sid))] = (name, city, ", ".join(parts))
@@ -332,6 +343,88 @@ def build_chain(chain, out_dir, log):
             "count": len(items), "branches": len(stores), "updated": updated}
 
 
+# ---------------------------------------------------------------------------
+# Branch locations
+# ---------------------------------------------------------------------------
+# Each branch's address is looked up once on OpenStreetMap (Nominatim) and remembered in
+# <out>/geo.json, so daily runs only look up new or changed addresses. Nominatim's rules:
+# at most one request per second, and an identifying User-Agent.
+
+GEO_URL = "https://nominatim.openstreetmap.org/search?"
+GEO_UA = "shopping-list-catalog/2.0 (branch locator; one-time lookups, cached)"
+
+
+def _geo_query(params):
+    url = GEO_URL + urllib.parse.urlencode({**params, "format": "jsonv2", "countrycodes": "il", "limit": 1})
+    req = urllib.request.Request(url, headers={"User-Agent": GEO_UA, "Accept-Language": "he"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        hits = json.loads(r.read())
+    time.sleep(1.1)
+    return [round(float(hits[0]["lat"]), 5), round(float(hits[0]["lon"]), 5)] if hits else None
+
+
+def _km(a, b):
+    r = 3.141592653589793 / 180
+    h = (math.sin((b[0] - a[0]) * r / 2) ** 2
+         + math.cos(a[0] * r) * math.cos(b[0] * r) * math.sin((b[1] - a[1]) * r / 2) ** 2)
+    return 12742 * math.asin(math.sqrt(h))
+
+
+def geocode_stores(out_dir, log, budget=1500):
+    """Add [lat, lon, precision] to every branch row in <out>/<chain>/stores.json.
+    precision: "a" = street address, "c" = city centre only. Unknown branches get no location."""
+    cache_path = os.path.join(out_dir, "geo.json")
+    cache = {}
+    if os.path.exists(cache_path):
+        with open(cache_path, encoding="utf-8") as fh:
+            cache = json.load(fh)
+    used = 0
+
+    def lookup(key, params):
+        nonlocal used
+        if key in cache:
+            return cache[key]
+        if used >= budget:
+            return None  # out of lookups this run; try again tomorrow (not cached)
+        used += 1
+        try:
+            cache[key] = _geo_query(params)
+        except Exception as e:  # noqa: BLE001 - network trouble: skip, retry next run
+            log(f"  geo: {key}: {e}")
+            return None
+        return cache[key]
+
+    found = {"a": 0, "c": 0, None: 0}
+    for name in sorted(os.listdir(out_dir)):
+        path = os.path.join(out_dir, name, "stores.json")
+        if not os.path.isfile(path):
+            continue
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        for row in doc["stores"]:
+            city, address = row[2], row[4]
+            loc, prec = None, None
+            centre = lookup(f"|{city}", {"city": city}) if city else None
+            if address and city:
+                loc = lookup(f"{address}|{city}", {"street": address, "city": city})
+                if not loc:
+                    loc = lookup(f"q:{address}, {city}", {"q": f"{address}, {city}"})
+                # A street of the same name in another town: trust the city instead.
+                if loc and centre and _km(loc, centre) > 12:
+                    loc = None
+                prec = "a" if loc else None
+            if not loc and centre:
+                loc, prec = centre, "c"
+            del row[5:]
+            if loc:
+                row += [loc[0], loc[1], prec]
+            found[prec if loc else None] += 1
+        write_json(path, doc)
+
+    write_json(cache_path, cache)
+    log(f"✓ locations: {found['a']} by address, {found['c']} by city, {found[None]} unknown ({used} lookups)")
+
+
 def write_json(path, obj):
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(obj, fh, ensure_ascii=False, separators=(",", ":"))
@@ -341,9 +434,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="catalog")
     ap.add_argument("--only", nargs="*", help="chain ids to build (default: all)")
+    ap.add_argument("--geocode-only", action="store_true", help="only add branch locations to existing files")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
     log = lambda s: print(s, flush=True)
+    if args.geocode_only:
+        geocode_stores(args.out, log, budget=10**6)
+        return
 
     # Keep previous entries for chains that fail today, so one broken site doesn't empty the app.
     index_path = os.path.join(args.out, "index.json")
@@ -368,6 +465,11 @@ def main():
             log(f"✗ {chain['id']}: {e}")
             if chain["id"] in previous:
                 results.append(previous[chain["id"]])
+
+    try:
+        geocode_stores(args.out, log)
+    except Exception as e:  # noqa: BLE001 - locations are a bonus; never fail the price build
+        log(f"✗ locations: {e}")
 
     with open(index_path, "w", encoding="utf-8") as fh:
         json.dump({"generated": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"), "chains": results},
