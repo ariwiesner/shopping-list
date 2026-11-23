@@ -5,7 +5,10 @@
       "firebase.json",
       "firestore.rules",
       "README.md",
+      ".git",
+      ".git/**",
       "**/.*",
+      "**/.*/**",
       "**/node_modules/**"
     ],
     "headers": [
