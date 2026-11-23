@@ -28,14 +28,15 @@
 
   // ---------- Helpers ----------
   const EMOJI = [
+    [/potato|תפוחי אדמה|תפו"א/i, "🥔"], // before "apple" so תפוחי אדמה isn't matched as תפוח
     [/milk|חלב/i, "🥛"], [/egg|ביצ/i, "🥚"], [/bread|לחם|פית/i, "🍞"], [/cheese|גבינ/i, "🧀"],
     [/butter|חמא/i, "🧈"], [/yog|יוגורט/i, "🥣"], [/apple|תפוח/i, "🍎"], [/banana|בננ/i, "🍌"],
-    [/tomato|עגבני/i, "🍅"], [/cucumber|מלפפון/i, "🥒"], [/potato|תפוחי אדמה|תפו"א/i, "🥔"],
+    [/tomato|עגבני/i, "🍅"], [/cucumber|מלפפון/i, "🥒"],
     [/onion|בצל/i, "🧅"], [/garlic|שום/i, "🧄"], [/carrot|גזר/i, "🥕"], [/lemon|לימון/i, "🍋"],
     [/orange|תפוז/i, "🍊"], [/grape|ענב/i, "🍇"], [/strawberr|תות/i, "🍓"], [/avocado|אבוקדו/i, "🥑"],
     [/pepper|פלפל/i, "🫑"], [/lettuce|salad|חסה|סלט/i, "🥬"], [/chicken|עוף|שניצל/i, "🍗"],
     [/meat|beef|steak|בשר/i, "🥩"], [/fish|salmon|tuna|דג|טונה/i, "🐟"], [/rice|אורז/i, "🍚"],
-    [/pasta|spaghetti|פסטה/i, "🍝"], [/coffee|קפה/i, "☕"], [/tea\b|תה/i, "🍵"],
+    [/pasta|spaghetti|פסטה/i, "🍝"], [/coffee|קפה/i, "☕"], [/\btea\b|^תה$/i, "🍵"],
     [/water|מים/i, "💧"], [/juice|מיץ/i, "🧃"], [/wine|יין/i, "🍷"], [/beer|בירה/i, "🍺"],
     [/chocolate|שוקולד/i, "🍫"], [/cookie|עוגי/i, "🍪"], [/cake|עוג/i, "🍰"], [/sugar|סוכר/i, "🍬"],
     [/salt|מלח/i, "🧂"], [/honey|דבש/i, "🍯"], [/oil|שמן/i, "🫒"], [/flour|קמח/i, "🌾"],
@@ -44,9 +45,12 @@
   ];
   const emojiFor = (name) => (EMOJI.find(([re]) => re.test(name)) || [, "🛒"])[1];
 
-  const SUGGESTIONS = ["Milk", "Eggs", "Bread", "Bananas", "Tomatoes", "Cheese", "Coffee", "Chicken"];
+  const SUGGESTIONS = ["חלב", "ביצים", "לחם", "בננות", "עגבניות", "גבינה", "קפה", "עוף"];
 
-  // "2 milk", "milk x3", "milk 3" → { name, qty }
+  // Hebrew plural helper: (1, "פריט", "פריטים") → "פריט אחד"
+  const plural = (n, one, many) => (n === 1 ? `${one} אחד` : `${n} ${many}`);
+
+  // "2 חלב", "חלב x3", "חלב 3" → { name, qty }
   function parseInput(text) {
     let s = text.trim().replace(/\s+/g, " ");
     let qty = 1;
@@ -75,7 +79,7 @@
 
   function greeting() {
     const h = new Date().getHours();
-    $("greeting").textContent = h < 5 ? "Late-night shopping? 🌙" : h < 12 ? "Good morning ☀️" : h < 18 ? "Good afternoon 👋" : "Good evening 🌆";
+    $("greeting").textContent = h < 5 ? "קניות בלילה? 🌙" : h < 12 ? "בוקר טוב ☀️" : h < 18 ? "צהריים טובים 👋" : "ערב טוב 🌆";
   }
 
   const CHECK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
@@ -84,18 +88,18 @@
     const name = escapeHtml(it.name);
     return `
       <li class="item${it.done ? " done" : ""}" data-id="${it.id}">
-        <div class="item-delete-hint" aria-hidden="true">Delete</div>
+        <div class="item-delete-hint" aria-hidden="true">מחיקה</div>
         <div class="item-body">
-          <button class="check" data-act="toggle" aria-label="${it.done ? "Move back to list" : "Mark as in cart"}: ${name}">
+          <button class="check" data-act="toggle" aria-label="${it.done ? "החזרה לרשימה" : "סימון כנמצא בעגלה"}: ${name}">
             <span class="check-box">${CHECK_SVG}</span>
           </button>
-          <button class="item-main" data-act="edit" aria-label="Edit ${name}">
+          <button class="item-main" data-act="edit" aria-label="עריכת ${name}">
             <div class="item-name"><span class="item-emoji" aria-hidden="true">${emojiFor(it.name)}</span>${name}</div>
           </button>
-          <div class="stepper" role="group" aria-label="Quantity">
-            <button data-act="dec" aria-label="Decrease quantity">−</button>
+          <div class="stepper" role="group" aria-label="כמות">
+            <button data-act="inc" aria-label="הגדלת כמות">+</button>
             <output aria-live="polite">${it.qty}</output>
-            <button data-act="inc" aria-label="Increase quantity">+</button>
+            <button data-act="dec" aria-label="הקטנת כמות">−</button>
           </div>
           ${it.qty > 1 ? `<span class="qty-badge">×${it.qty}</span>` : ""}
         </div>
@@ -121,10 +125,10 @@
     progressFill.style.width = pct + "%";
     progressCount.textContent = total ? `${done.length} / ${total}` : "";
     progressLabel.textContent =
-      !total ? "Nothing on the list yet" :
-      done.length === total ? "All done — great job! 🎉" :
-      done.length === 0 ? `${todo.length} item${todo.length > 1 ? "s" : ""} to get` :
-      `${todo.length} left to go`;
+      !total ? "הרשימה עדיין ריקה" :
+      done.length === total ? "סיימתם — כל הכבוד! 🎉" :
+      done.length === 0 ? `${plural(todo.length, "פריט", "פריטים")} לקנות` :
+      `נשארו עוד ${plural(todo.length, "פריט", "פריטים")}`;
 
     if (!total) {
       suggestions.innerHTML = SUGGESTIONS.map((s) => `<button class="chip" data-name="${s}">${emojiFor(s)} ${s}</button>`).join("");
@@ -141,7 +145,7 @@
     if (existing) {
       existing.qty = Math.min(existing.qty + qty, 999);
       commit();
-      showToast(`${existing.name} is already on the list — now ×${existing.qty}`, false);
+      showToast(`${existing.name} כבר ברשימה — עכשיו ×${existing.qty}`, false);
     } else {
       state.items.unshift({ id: uid(), name, qty, done: false, price: null, createdAt: Date.now() });
       commit();
@@ -178,7 +182,7 @@
     state.items = state.items.filter((it) => !ids.includes(it.id));
     lastRemoved = { items, indexes };
     commit();
-    showToast(message || (items.length === 1 ? `Removed ${items[0].name}` : `Removed ${items.length} items`), true);
+    showToast(message || (items.length === 1 ? `${items[0].name} הוסר` : `הוסרו ${items.length} פריטים`), true);
   }
 
   function undo() {
@@ -224,9 +228,9 @@
       state.items.forEach((i) => (i.done = false));
       commit();
     } else if (action === "clear-done") {
-      removeItems(state.items.filter((i) => i.done).map((i) => i.id), "Cleared the cart");
+      removeItems(state.items.filter((i) => i.done).map((i) => i.id), "העגלה נוקתה");
     } else if (action === "clear-all") {
-      removeItems(state.items.map((i) => i.id), "Started a new list");
+      removeItems(state.items.map((i) => i.id), "התחלנו רשימה חדשה");
     }
   });
 
@@ -292,7 +296,8 @@
     if (chip) addItem(chip.dataset.name);
   });
 
-  // Swipe left to delete
+  // Swipe toward the end side to delete: right in RTL (Hebrew), left in LTR.
+  const SWIPE_DIR = document.documentElement.dir === "rtl" ? 1 : -1;
   function enableSwipe(list) {
     let startX = 0, startY = 0, dx = 0, body = null, li = null, active = false, decided = false;
 
@@ -311,11 +316,11 @@
       if (!decided) {
         if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
         decided = true;
-        if (Math.abs(my) > Math.abs(mx) || mx > 0) { active = false; return; } // vertical scroll or right swipe
+        if (Math.abs(my) > Math.abs(mx) || mx * SWIPE_DIR < 0) { active = false; return; } // scroll or wrong way
         li.classList.add("dragging");
         body.setPointerCapture?.(e.pointerId);
       }
-      dx = Math.min(0, mx);
+      dx = SWIPE_DIR * Math.max(0, mx * SWIPE_DIR);
       body.style.transform = `translateX(${dx}px)`;
     });
 
@@ -327,8 +332,8 @@
       suppressClick = true;
       setTimeout(() => (suppressClick = false), 50);
       const threshold = Math.min(120, body.offsetWidth * 0.35);
-      if (-dx > threshold) {
-        body.style.transform = `translateX(-110%)`;
+      if (Math.abs(dx) > threshold) {
+        body.style.transform = `translateX(${SWIPE_DIR * 110}%)`;
         buzz(20);
         const id = li.dataset.id;
         setTimeout(() => removeItems([id]), 180);

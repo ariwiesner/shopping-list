@@ -1,6 +1,8 @@
 {
-  "name": "Basket — Shopping List",
-  "short_name": "Basket",
+  "name": "הסל שלי — רשימת קניות",
+  "short_name": "הסל שלי",
+  "lang": "he",
+  "dir": "rtl",
   "start_url": "./index.html",
   "display": "standalone",
   "orientation": "portrait",

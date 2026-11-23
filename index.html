@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="he" dir="rtl">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -7,14 +7,14 @@
   <meta name="theme-color" content="#16181d" media="(prefers-color-scheme: dark)" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <meta name="apple-mobile-web-app-title" content="Basket" />
-  <title>Basket</title>
+  <meta name="apple-mobile-web-app-title" content="הסל שלי" />
+  <title>הסל שלי</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -22,17 +22,17 @@
     <header class="top">
       <div class="top-row">
         <div>
-          <p class="greeting" id="greeting">Hello!</p>
-          <h1>My Basket</h1>
+          <p class="greeting" id="greeting">שלום!</p>
+          <h1>הסל שלי</h1>
         </div>
-        <button class="icon-btn" id="menuBtn" aria-label="More options" aria-haspopup="true">
+        <button class="icon-btn" id="menuBtn" aria-label="אפשרויות נוספות" aria-haspopup="true">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
         </button>
       </div>
 
       <div class="progress-card" id="progressCard">
         <div class="progress-text">
-          <span id="progressLabel">Nothing on the list yet</span>
+          <span id="progressLabel">הרשימה עדיין ריקה</span>
           <span class="progress-count" id="progressCount"></span>
         </div>
         <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
@@ -42,8 +42,8 @@
     <main class="content" id="content">
       <section id="emptyState" class="empty" hidden>
         <div class="empty-art" aria-hidden="true">🧺</div>
-        <h2>Your basket is empty</h2>
-        <p>Add something below, or tap a suggestion to get started.</p>
+        <h2>הסל שלך ריק</h2>
+        <p>הוסיפו משהו למטה, או הקישו על הצעה כדי להתחיל.</p>
         <div class="chips" id="suggestions"></div>
       </section>
 
@@ -53,7 +53,7 @@
 
       <section id="doneSection" hidden>
         <button class="section-head" id="doneToggle" aria-expanded="true">
-          <span>In the cart <span class="pill" id="doneCount">0</span></span>
+          <span>בעגלה <span class="pill" id="doneCount">0</span></span>
           <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
         </button>
         <ul class="list done" id="doneList"></ul>
@@ -63,8 +63,8 @@
     <form class="composer" id="composer" autocomplete="off">
       <div class="composer-inner">
         <input id="itemInput" type="text" inputmode="text" enterkeyhint="done"
-               placeholder="Add an item… e.g. 2 milk" aria-label="Item name" maxlength="60" />
-        <button type="submit" class="add-btn" aria-label="Add item">
+               placeholder="הוסיפו פריט… למשל: 2 חלב" aria-label="שם הפריט" maxlength="60" />
+        <button type="submit" class="add-btn" aria-label="הוספת פריט">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
         </button>
       </div>
@@ -75,40 +75,40 @@
   <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
   <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
     <div class="sheet-handle" aria-hidden="true"></div>
-    <h3 id="sheetTitle">List options</h3>
-    <button class="sheet-item" data-action="uncheck-all">↩️ <span>Move everything back to the list</span></button>
-    <button class="sheet-item" data-action="clear-done">🧹 <span>Remove items in the cart</span></button>
-    <button class="sheet-item danger" data-action="clear-all">🗑️ <span>Start a new list</span></button>
-    <button class="sheet-item cancel" data-action="close">Cancel</button>
+    <h3 id="sheetTitle">אפשרויות רשימה</h3>
+    <button class="sheet-item" data-action="uncheck-all">↩️ <span>להחזיר הכל לרשימה</span></button>
+    <button class="sheet-item" data-action="clear-done">🧹 <span>להסיר את מה שבעגלה</span></button>
+    <button class="sheet-item danger" data-action="clear-all">🗑️ <span>להתחיל רשימה חדשה</span></button>
+    <button class="sheet-item cancel" data-action="close">ביטול</button>
   </div>
 
   <!-- Edit sheet -->
   <div class="sheet" id="editSheet" role="dialog" aria-modal="true" aria-labelledby="editTitle" hidden>
     <div class="sheet-handle" aria-hidden="true"></div>
-    <h3 id="editTitle">Edit item</h3>
+    <h3 id="editTitle">עריכת פריט</h3>
     <form id="editForm" class="edit-form">
       <label class="field">
-        <span>Name</span>
+        <span>שם</span>
         <input id="editName" type="text" maxlength="60" required />
       </label>
       <div class="field">
-        <span>Quantity</span>
+        <span>כמות</span>
         <div class="stepper big">
-          <button type="button" data-step="-1" aria-label="Decrease">−</button>
+          <button type="button" data-step="1" aria-label="הגדלה">+</button>
           <output id="editQty">1</output>
-          <button type="button" data-step="1" aria-label="Increase">+</button>
+          <button type="button" data-step="-1" aria-label="הקטנה">−</button>
         </div>
       </div>
       <div class="edit-actions">
-        <button type="button" class="btn ghost danger" id="editDelete">Delete</button>
-        <button type="submit" class="btn primary">Save</button>
+        <button type="button" class="btn ghost danger" id="editDelete">מחיקה</button>
+        <button type="submit" class="btn primary">שמירה</button>
       </div>
     </form>
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden>
     <span id="toastText"></span>
-    <button id="toastUndo">Undo</button>
+    <button id="toastUndo">ביטול</button>
   </div>
 
   <script src="app.js"></script>

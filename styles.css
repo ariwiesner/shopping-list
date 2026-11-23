@@ -39,7 +39,7 @@ html, body { margin: 0; height: 100%; }
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: "Nunito", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: "Rubik", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 17px;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
@@ -110,14 +110,14 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
 .item-delete-hint {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: flex-end;
-  padding-right: 22px;
+  padding-inline-end: 22px;
   color: #fff; font-weight: 800; font-size: 15px;
 }
 .item-body {
   position: relative;
   display: flex; align-items: center; gap: 12px;
   min-height: 64px;
-  padding: 8px 8px 8px 12px;
+  padding-block: 8px; padding-inline: 12px 8px;
   background: var(--surface);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
@@ -143,9 +143,9 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
 .done .check-box { background: var(--accent); border-color: var(--accent); }
 .done .check-box svg { opacity: 1; transform: none; }
 
-.item-main { flex: 1; min-width: 0; padding: 6px 0; text-align: left; }
+.item-main { flex: 1; min-width: 0; padding: 6px 0; text-align: start; }
 .item-name { font-weight: 700; font-size: 17px; line-height: 1.25; overflow-wrap: anywhere; }
-.item-emoji { margin-right: 6px; }
+.item-emoji { margin-inline-end: 6px; }
 .done .item-name { color: var(--muted); text-decoration: line-through; text-decoration-thickness: 2px; }
 
 .stepper {
@@ -165,7 +165,7 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
 .stepper button:active { background: var(--line); }
 .stepper output { min-width: 22px; text-align: center; font-weight: 800; font-variant-numeric: tabular-nums; }
 .done .stepper { display: none; }
-.qty-badge { display: none; color: var(--muted); font-weight: 700; padding-right: 12px; }
+.qty-badge { display: none; color: var(--muted); font-weight: 700; padding-inline-end: 12px; }
 .done .qty-badge { display: block; }
 
 @keyframes pop { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }
@@ -177,11 +177,11 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 4px 12px;
   font-weight: 800; color: var(--muted); font-size: 15px;
-  text-transform: uppercase; letter-spacing: .6px;
+  
 }
-.pill { display: inline-block; margin-left: 6px; padding: 1px 9px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); font-size: 13px; }
+.pill { display: inline-block; margin-inline-start: 6px; padding: 1px 9px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); font-size: 13px; }
 .chev { transition: transform .2s; }
-.section-head[aria-expanded="false"] .chev { transform: rotate(-90deg); }
+.section-head[aria-expanded="false"] .chev { transform: rotate(90deg); }
 .list.done .item-body { box-shadow: none; background: var(--surface-2); }
 
 /* ---------- Empty state ---------- */
@@ -260,7 +260,7 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
   display: flex; align-items: center; gap: 14px;
   padding: 0 14px;
   border-radius: 14px;
-  font-weight: 700; text-align: left;
+  font-weight: 700; text-align: start;
 }
 .sheet-item:active { background: var(--surface-2); }
 .sheet-item.danger { color: var(--danger); }
@@ -293,7 +293,7 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
   bottom: calc(var(--safe-b) + 88px);
   max-width: 528px; margin: 0 auto;
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 12px 12px 12px 18px;
+  padding-block: 12px; padding-inline: 18px 12px;
   border-radius: 16px;
   background: #1f2328; color: #fff;
   box-shadow: 0 8px 24px rgba(0, 0, 0, .25);
