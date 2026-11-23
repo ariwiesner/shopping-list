@@ -9,6 +9,9 @@ A mobile-first, Hebrew (RTL) shopping list. Lists are shared live between people
 |------|--------------|
 | `index.html`, `styles.css` | Screens: login, list, sheets |
 | `app.js` | UI logic; works with a local (on-device) or cloud backend |
+| `catalog.js` | Store catalogs: loading, product search, item prices |
+| `compare-worker.js` | "Where is it cheapest?": prices the list in every chain and the nearest branches, in the background |
+| `scripts/build_catalog.py` | Daily price build (GitHub Action), incl. branch locations from OpenStreetMap |
 | `cloud.js` | Firebase: Google sign-in, Firestore lists, live updates, invites |
 | `firebase-config.js` | Your Firebase web config (`null` = local mode, no sign-in) |
 | `firestore.rules` | Who can read/edit what (members only) |

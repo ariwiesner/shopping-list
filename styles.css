@@ -401,7 +401,7 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
   display: flex; flex-direction: column;
   flex: 0 1 auto; min-height: 0;
 }
-.sheet .products, #listSwitcher, #shareBody .members {
+.sheet .products, #listSwitcher, #shareBody .members, #dealsBody {
   flex: 0 1 auto; min-height: 96px; max-height: none;
   overflow-y: auto; overscroll-behavior: contain;
 }
@@ -615,3 +615,57 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
 .branch-btn:active { transform: scale(.97); }
 .stores-note { margin-top: 6px; }
 #branchSheet .field { margin: 0 4px 10px; }
+
+/* ---------- Where is it cheapest? ---------- */
+.deals-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  margin: 12px auto 0; padding: 11px 18px;
+  border-radius: 99px;
+  background: var(--accent-soft); color: var(--accent);
+  font-weight: 800; font-size: 15px;
+  transition: transform .12s;
+}
+.deals-btn svg { width: 18px; height: 18px; stroke: currentColor; stroke-width: 2.4; fill: none; stroke-linecap: round; }
+.deals-btn:active { transform: scale(.97); }
+
+.seg { display: flex; gap: 4px; margin: 0 4px 12px; padding: 4px; border-radius: 14px; background: var(--surface-2); }
+.seg button { flex: 1; height: 38px; border-radius: 10px; font-weight: 700; font-size: 14px; color: var(--muted); }
+.seg button[aria-checked="true"] { background: var(--surface); color: var(--text, inherit); box-shadow: var(--shadow); }
+
+#dealsBody { min-height: 120px; padding: 0 4px 4px; }
+.deals-loading { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 36px 8px; color: var(--muted); font-weight: 600; }
+.spinner { width: 20px; height: 20px; border-radius: 50%; border: 2.5px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.deals-msg { margin: 6px 0 10px; color: var(--muted); line-height: 1.45; font-size: 15px; }
+.deals-retry { width: 100%; flex: none; margin-bottom: 4px; }
+.deals-current { margin: 0 0 12px; font-size: 15px; line-height: 1.45; }
+
+.deal { margin-bottom: 12px; padding: 14px; border-radius: 18px; border: 1.5px solid var(--line); }
+.deal-kicker { margin: 0 0 10px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.deal-head { display: flex; align-items: center; gap: 12px; }
+.deal-logo { flex: none; width: 44px; height: 44px; border-radius: 50%; object-fit: contain; background: #fff; border: 1px solid var(--line); }
+.deal-name { flex: 1; min-width: 0; display: flex; flex-direction: column; text-align: start; }
+.deal-name strong { font-size: 16px; }
+.deal-name small { color: var(--muted); font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.deal-total { flex: none; font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.deal-meta { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+.deal-save { margin: 8px 0 0; font-weight: 800; color: var(--accent); }
+.deal-actions { display: flex; gap: 8px; margin-top: 12px; }
+.deal-actions .btn { height: 46px; display: grid; place-items: center; font-size: 15px; text-decoration: none; color: inherit; }
+.deal-actions .btn.primary { color: var(--accent-ink); }
+
+.deal-list { list-style: none; margin: 0 0 8px; padding: 0; border: 1.5px solid var(--line); border-radius: 16px; overflow: hidden; }
+.deal-list li + li { border-top: 1px solid var(--line); }
+.deal-row { width: 100%; display: flex; align-items: center; gap: 12px; padding: 10px 12px; }
+.deal-row:active { background: var(--surface-2); }
+.deal-row .deal-logo { width: 36px; height: 36px; }
+.deal-row .deal-total { font-size: 16px; }
+.deals-foot { margin: 8px 0 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.deals-also { margin: -2px 4px 14px; font-weight: 700; color: var(--accent); }
+.deal-warn { margin: 8px 0 0; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); font-size: 13px; font-weight: 600; line-height: 1.4; }
+.deal-name small.row-warn { color: inherit; font-weight: 600; white-space: normal; }
+
+/* "No store" slot on the wheel: a plain list, no prices */
+.wheel .store-circle.no-store { color: var(--muted); }
+.wheel .store.top .store-circle.no-store { color: var(--text); }
+.store-circle.no-store svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }

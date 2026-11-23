@@ -16,7 +16,7 @@ const BASE = ["localhost", "127.0.0.1"].includes(location.hostname) ? LOCAL : RE
 const CACHE = "basket-catalog-v1";
 const hasCaches = typeof caches !== "undefined";
 
-async function fetchJson(path) {
+export async function fetchJson(path) {
   const url = BASE + path;
   try {
     const res = await fetch(url, { cache: "no-cache" });
@@ -58,6 +58,10 @@ const FILLER = new Set([
   "רגיל", "רגילה", "רגילים", "יבש", "יבשה", "במשקל", "משקל", "לקג", "קג", "ק.ג", "ק", "יח", "יח.", "יחידה", "יחידות",
   "ארוז", "ארוזה", "ארוזים", "ארוזות", "גרם", "גר", "ג", "ליטר", "ל", "מל",
 ]);
+// Query words the stemmer left alone ("חלב") must appear as-is in a product name:
+// otherwise "חלב" would match "חלבה" (halva), whose stem is also "חלב".
+const unstemmed = (s) => words(s).filter((w) => !FILLER.has(w) && stem(w) === w);
+const hasWords = (name, need) => { if (!need.length) return true; const ws = words(name); return need.every((w) => ws.includes(w)); };
 const coreOf = (s) => {
   const all = words(s);
   const core = all.filter((w) => !FILLER.has(w)).map(stem).sort();
@@ -75,18 +79,22 @@ export function loadIndex() {
   return indexPromise;
 }
 
+// A chain file → a searchable catalog. (loadChain caches it; the price-comparison
+// worker calls this directly so each chain can be dropped from memory after use.)
+export function parseChain(doc) {
+  const byCode = new Map();
+  const entries = doc.items.map(([code, name, price, brand, weighted]) => {
+    const it = { code, name, price, brand, weighted: !!weighted };
+    byCode.set(code, it);
+    const { core, filler } = coreOf(name);
+    return { it, stems: words(name).map(stem), coreKey: core.join(" "), filler };
+  });
+  return { ...doc, byCode, entries, estimates: new Map(), resolved: new Map() };
+}
+
 export function loadChain(id) {
   if (!chains.has(id)) {
-    const p = fetchJson(`${encodeURIComponent(id)}.json`).then((doc) => {
-      const byCode = new Map();
-      const entries = doc.items.map(([code, name, price, brand, weighted]) => {
-        const it = { code, name, price, brand, weighted: !!weighted };
-        byCode.set(code, it);
-        const { core, filler } = coreOf(name);
-        return { it, stems: words(name).map(stem), coreKey: core.join(" "), filler };
-      });
-      return { ...doc, byCode, entries, estimates: new Map(), resolved: new Map() };
-    });
+    const p = fetchJson(`${encodeURIComponent(id)}.json`).then(parseChain);
     p.catch(() => chains.delete(id));
     chains.set(id, p);
   }
@@ -96,31 +104,42 @@ export function loadChain(id) {
 // ---------- Branches ----------
 // Chain files carry each product's *common* price; a branch file lists only the
 // prices that differ in that branch. withBranch() returns a catalog with those applied.
+// Rows: [id, name, city, itemCount, address, lat?, lon?, precision?]
+// precision "a" = located by street address, "c" = only the city is known.
+export const parseStores = (d) =>
+  d.stores.map(([id, name, city, count, address, lat, lon, prec]) => ({
+    id, name, city: city || "", count, address: address || "",
+    ...(typeof lat === "number" ? { lat, lon, prec } : {}),
+  }));
+
 const storeLists = new Map();
 export function loadStores(chainId) {
   if (!storeLists.has(chainId)) {
-    const p = fetchJson(`${encodeURIComponent(chainId)}/stores.json`).then((d) =>
-      d.stores.map(([id, name, city, count, address]) => ({ id, name, city: city || "", count, address: address || "" })));
+    const p = fetchJson(`${encodeURIComponent(chainId)}/stores.json`).then(parseStores);
     p.catch(() => storeLists.delete(chainId));
     storeLists.set(chainId, p);
   }
   return storeLists.get(chainId);
 }
 
+// The chain catalog with one branch's differing prices applied.
+export function applyBranch(cat, storeId, diff) {
+  const byCode = new Map();
+  const entries = cat.entries.map((e) => {
+    const price = diff[e.it.code];
+    const it = price === undefined ? e.it : { ...e.it, price };
+    byCode.set(it.code, it);
+    return it === e.it ? e : { ...e, it };
+  });
+  return { ...cat, branch: storeId, byCode, entries, estimates: new Map(), resolved: new Map() };
+}
+
 const branchCats = new Map(); // `${chain}/${store}` -> Promise<catalog>
 export function loadBranch(cat, storeId) {
   const key = `${cat.id}/${storeId}`;
   if (!branchCats.has(key)) {
-    const p = fetchJson(`${encodeURIComponent(cat.id)}/${encodeURIComponent(storeId)}.json`).then(({ p: diff }) => {
-      const byCode = new Map();
-      const entries = cat.entries.map((e) => {
-        const price = diff[e.it.code];
-        const it = price === undefined ? e.it : { ...e.it, price };
-        byCode.set(it.code, it);
-        return it === e.it ? e : { ...e, it };
-      });
-      return { ...cat, branch: storeId, byCode, entries, estimates: new Map(), resolved: new Map() };
-    });
+    const p = fetchJson(`${encodeURIComponent(cat.id)}/${encodeURIComponent(storeId)}.json`)
+      .then(({ p: diff }) => applyBranch(cat, storeId, diff));
     p.catch(() => branchCats.delete(key));
     branchCats.set(key, p);
   }
@@ -163,7 +182,8 @@ export function resolve(cat, name) {
   let product = null;
   if (core.length) {
     const coreKey = core.join(" ");
-    const cands = cat.entries.filter((e) => e.coreKey === coreKey);
+    const need = unstemmed(name);
+    const cands = cat.entries.filter((e) => e.coreKey === coreKey && hasWords(e.it.name, need));
     if (cands.length) {
       // Prefer the plainest name ("בננה" over "בננה ארוזה"), then loose produce, then the middle price.
       const minFiller = Math.min(...cands.map((c) => c.filler));
@@ -171,32 +191,45 @@ export function resolve(cat, name) {
       const loose = plain.filter((p) => p.weighted);
       const pool = (loose.length ? loose : plain).sort((a, b) => a.price - b.price);
       product = pool[Math.floor((pool.length - 1) / 2)];
+      // A per-kg product far pricier than the packaged ones of that name is a bulk or deli
+      // item (coffee beans at ₪120/kg vs ₪20 jars), not what a plain "קפה" means.
+      if (product.weighted) {
+        const packed = estimatePool(cat, name).filter((p) => !p.weighted).map((p) => p.price).sort((a, b) => a - b);
+        if (packed.length >= 3 && product.price > 3 * packed[packed.length >> 1]) product = null;
+      }
     }
   }
   cat.resolved.set(key, product);
   return product;
 }
 
+// The products a vague item name like "גבינה" could mean.
+// Prefers packaged products; per-kg prices only if that's all there is (e.g. produce).
+export function estimatePool(cat, name) {
+  const all = words(name);
+  if (!all.length) return [];
+  const q = all.map(stem);
+  const first = stem(all[0]) === all[0] ? all[0] : null; // unstemmed: must match as-is
+  // Products whose name begins with the item's first word, and contain the rest.
+  let pool = cat.entries
+    .filter((e) => e.stems[0] === q[0] && q.slice(1).every((t) => e.stems.some((w) => w.startsWith(t)))
+      && (!first || words(e.it.name)[0] === first))
+    .map((e) => e.it);
+  if (!pool.length) pool = search(cat, name, 15);
+  const packaged = pool.filter((p) => !p.weighted);
+  return packaged.length ? packaged : pool;
+}
+
 // Typical price for a vague item name like "גבינה".
 export function estimate(cat, name) {
   const key = norm(name);
   if (cat.estimates.has(key)) return cat.estimates.get(key);
-  const q = words(name).map(stem);
+  const pool = estimatePool(cat, name);
   let result = null;
-  if (q.length) {
-    // Products whose name begins with the item's first word, and contain the rest.
-    let pool = cat.entries
-      .filter((e) => e.stems[0] === q[0] && q.slice(1).every((t) => e.stems.some((w) => w.startsWith(t))))
-      .map((e) => e.it);
-    if (!pool.length) pool = search(cat, name, 15);
-    // Prefer packaged products; per-kg prices only if that's all there is (e.g. produce).
-    const packaged = pool.filter((p) => !p.weighted);
-    if (packaged.length) pool = packaged;
-    if (pool.length) {
-      const prices = pool.map((p) => p.price).sort((a, b) => a - b);
-      const at = (f) => prices[Math.min(prices.length - 1, Math.floor(f * prices.length))];
-      result = { price: at(0.5), low: at(0.1), high: at(0.9), count: pool.length, weighted: !packaged.length };
-    }
+  if (pool.length) {
+    const prices = pool.map((p) => p.price).sort((a, b) => a - b);
+    const at = (f) => prices[Math.min(prices.length - 1, Math.floor(f * prices.length))];
+    result = { price: at(0.5), low: at(0.1), high: at(0.9), count: pool.length, weighted: pool.every((p) => p.weighted) };
   }
   cat.estimates.set(key, result);
   return result;
@@ -213,12 +246,17 @@ export function priceItem(cat, item, choice) {
   const code = item.barcode || choice?.code;
   const p = code && cat.byCode.get(code);
   if (p) return { kind: "exact", unit: p.price, total: round(p.price * qty), product: p, weighted: p.weighted, learned: !item.barcode };
-  // Not linked to a product: if the name clearly means one product in this store, use it.
-  const auto = resolve(cat, item.productName || item.name);
-  if (auto) return { kind: "exact", unit: auto.price, total: round(auto.price * qty), product: auto, weighted: auto.weighted, auto: true, missingProduct: !!item.barcode };
-  const est = estimate(cat, item.productName || item.name);
-  if (est) return { kind: "estimate", unit: est.price, total: round(est.price * qty), ...est, missingProduct: !!item.barcode };
-  return { kind: "none", total: 0, missingProduct: !!item.barcode };
+  // Not linked to a product here (or the chosen product isn't sold in this store):
+  // first by the chosen product's name, then by the item's own, plainer name, since
+  // chains word product names differently ("ביצים L 12 רגיל" may not exist, "ביצים" will).
+  const missingProduct = !!code;
+  for (const n of [...new Set([item.productName, item.name].filter(Boolean))]) {
+    const auto = resolve(cat, n);
+    if (auto) return { kind: "exact", unit: auto.price, total: round(auto.price * qty), product: auto, weighted: auto.weighted, auto: true, missingProduct, matchedBy: n };
+    const est = estimate(cat, n);
+    if (est) return { kind: "estimate", unit: est.price, total: round(est.price * qty), ...est, missingProduct };
+  }
+  return { kind: "none", total: 0, missingProduct };
 }
 
 export const round = (n) => Math.round(n * 100) / 100;

@@ -139,11 +139,15 @@ function priceLine(it) {
     const perKg = p.weighted ? " לק״ג" : "";
     // Same barcode = same product in every chain, but chains word names differently;
     // show the name the user picked so it doesn't look like a different product.
+    // The chosen product isn't sold here: say so, and name the product priced instead.
+    if (p.missingProduct) {
+      return `<div class="item-price">${amt(money(p.total))}${perKg}${qtyNote} <span class="pick">המוצר שבחרתם לא נמכר כאן · במקומו: ${escapeHtml(p.product.name)}</span></div>`;
+    }
     const label = it.productName || ui.choices[norm(it.name)]?.name || p.product.name;
     return `<div class="item-price">${amt(money(p.total))}${perKg}${qtyNote} <span class="muted">· ${escapeHtml(label)}</span></div>`;
   }
   if (p.kind === "estimate") {
-    const note = p.missingProduct ? "המוצר שבחרתם לא נמצא כאן · " : "";
+    const note = p.missingProduct ? "המוצר שבחרתם לא נמכר כאן — מחיר משוער למוצר דומה · " : "";
     const kinds = p.count > 1 ? `יש ${p.count} סוגים — ` : "";
     return `<div class="item-price est">${amt("~" + money(p.total))}${p.weighted ? " לק״ג" : ""}${qtyNote} <span class="pick">${note}${kinds}הקישו לבחירה</span></div>`;
   }
@@ -201,6 +205,7 @@ function render() {
 
   renderTotal(items);
   renderStores();
+  $("dealsBtn").hidden = !total || !ui.chains.length;
 
   // Suggestions: tapping one adds it and removes just that chip (it's now on the list).
   // They stay until the user types an item manually; an empty list brings them back.
@@ -242,7 +247,11 @@ function renderTotal(items) {
 }
 
 // ---------- Stores ----------
-const currentStoreId = () => (backend === cloud && ui.list?.store) || prefs.store || null;
+// The store choice: a chain id, NO_STORE ("none": a plain list, no prices) or null (never chosen).
+// A shared list's choice wins over this device's, so everyone on the list sees the same thing.
+const NO_STORE = "none";
+const storeChoice = () => (backend === cloud && ui.list?.store) || prefs.store || null;
+const currentStoreId = () => { const s = storeChoice(); return s && s !== NO_STORE ? s : null; };
 
 function renderStores() {
   const sel = currentStoreId();
@@ -253,7 +262,7 @@ function renderStores() {
   }
   buildWheel();
   // Someone else on a shared list picked a store: turn the wheel to it.
-  const k = ui.chains.findIndex((x) => x.id === sel);
+  const k = wheelItems().findIndex((x) => x.id === (sel || ""));
   if (k >= 0 && !wheel.dragging && !wheel.anim && wheelIndex() !== k) spinToChain(k, false);
   const c = ui.chains.find((x) => x.id === sel);
   const b = currentBranchId(sel);
@@ -262,7 +271,7 @@ function renderStores() {
   $("branchName").textContent = !b ? "כל הסניפים — מחיר נפוץ ברשת"
     : branch ? `סניף ${branch.name}${branch.city && !branch.name.includes(branch.city) ? `, ${branch.city}` : ""}` : `סניף ${b}`;
   $("storeNote").textContent = !sel
-    ? "בחרו חנות כדי לראות כמה הקנייה תעלה"
+    ? "רשימה בלי מחירים · סובבו לחנות כדי לראות כמה הקנייה תעלה"
     : ui.catError ? "לא הצלחנו לטעון את המחירים. נסו שוב."
     : ui.catId === sel && (!ui.cat || ui.cat.id !== sel || (ui.cat.branch || null) !== b) ? "טוען מחירים…"
     : c ? `עודכן ${new Date(c.updated).toLocaleDateString("he-IL")}` : "";
@@ -294,12 +303,14 @@ async function loadStore(id) {
   }
 }
 
+// id: a chain id, or null for a plain list with no store (no prices).
 function selectStore(id) {
-  if (!id || id === currentStoreId()) return loadStore(id);
-  prefs.store = id;
-  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), store: id });
-  if (backend === cloud && ui.list) cloud.setListStore(id, prefs.branches?.[id] || null).catch(fail);
-  loadStore(id);
+  const choice = id || NO_STORE;
+  if (choice === storeChoice()) return loadStore(id || null);
+  prefs.store = choice;
+  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), store: choice });
+  if (backend === cloud && ui.list) cloud.setListStore(choice, id ? prefs.branches?.[id] || null : null).catch(fail);
+  loadStore(id || null);
 }
 
 function selectBranch(branchId) {
@@ -352,6 +363,205 @@ $("branchList").addEventListener("click", (e) => {
   closeSheets();
 });
 
+// ---------- Where is it cheapest? ----------
+// Prices the list in every chain (common price) and in the branches nearest the user,
+// in a background worker. Drive time is estimated from straight-line distance;
+// the Waze button gives the real route.
+const dealsSheet = $("dealsSheet");
+const MIN_PER_KM = 1.25;          // rough driving pace: 20 km ≈ 25 minutes
+const RADII = [10, 25, 40];        // minutes the user can choose
+const deals = { worker: null, runId: 0, key: "", result: null, stage: null, progress: null, error: false, here: null, hereAt: 0, locError: null };
+const dealRadius = () => (RADII.includes(prefs.dealRadius) ? prefs.dealRadius : 25);
+const driveMin = (km) => Math.max(2, Math.round(km * MIN_PER_KM));
+const kmText = (km) => (km < 1 ? "פחות מק״מ" : `${km < 10 ? km.toFixed(1) : Math.round(km)} ק״מ`);
+const wazeUrl = (b) => `https://waze.com/ul?ll=${b.lat},${b.lon}&navigate=yes`;
+
+$("dealsBtn").addEventListener("click", () => { openSheet(dealsSheet); runDeals(); });
+$("dealsRadius").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-min]");
+  if (!b) return;
+  prefs.dealRadius = Number(b.dataset.min);
+  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), dealRadius: prefs.dealRadius });
+  buzz(8);
+  renderDeals(); // nearby branches are already priced up to the largest radius
+});
+$("dealsBody").addEventListener("click", (e) => {
+  const pick = e.target.closest("[data-pick]");
+  if (pick) {
+    const [chain, branch] = JSON.parse(pick.dataset.pick);
+    chooseStore(chain, branch);
+    closeSheets();
+    showToast(`עברנו ל${ui.chains.find((c) => c.id === chain)?.name || "חנות"}`);
+    return;
+  }
+  if (e.target.closest("[data-act='deals-retry']")) runDeals(true);
+});
+
+function chooseStore(chain, branch) {
+  prefs.store = chain;
+  prefs.branches = { ...(prefs.branches || {}), [chain]: branch || null };
+  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), store: chain, branches: prefs.branches });
+  if (backend === cloud && ui.list) cloud.setListStore(chain, branch || null).catch(fail);
+  buzz(8);
+  loadStore(chain);
+}
+
+// One location reading per comparison (reused for 10 minutes); never tracked.
+function getLocation() {
+  if (deals.here && Date.now() - deals.hereAt < 10 * 60e3) return Promise.resolve(deals.here);
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) { deals.locError = "unsupported"; resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        deals.here = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+        deals.hereAt = Date.now(); deals.locError = null;
+        resolve(deals.here);
+      },
+      (err) => { deals.locError = err.code === 1 ? "denied" : "failed"; resolve(deals.here); },
+      { enableHighAccuracy: false, timeout: 12000, maximumAge: 10 * 60e3 });
+  });
+}
+
+async function runDeals(force = false) {
+  if (deals.stage) return; // already running
+  const items = ui.items.map(({ name, qty, barcode, productName, price }) => ({ name, qty, barcode, productName, price }));
+  if (!items.length) { renderDeals(); return; }
+  const current = currentStoreId() ? { chain: currentStoreId(), branch: currentBranchId() } : null;
+  // The list's own per-item prices in the current store (when its prices are loaded),
+  // so the comparison's "your purchase" matches the total shown on the list.
+  const anchor = current && ui.cat?.id === current.chain && (ui.cat.branch || null) === (current.branch || null)
+    ? ui.items.map((it) => priceItem(ui.cat, it, ui.choices[norm(it.name)]).total) : null;
+  deals.error = false; deals.stage = "locating"; renderDeals();
+  const here = await getLocation();
+  const key = JSON.stringify([items, ui.choices, current, anchor, here && [here.lat.toFixed(2), here.lon.toFixed(2)]]);
+  if (!force && key === deals.key && deals.result) { deals.stage = null; renderDeals(); return; }
+
+  deals.stage = "pricing"; deals.progress = null; renderDeals();
+  const id = ++deals.runId;
+  const w = deals.worker = new Worker(new URL("./compare-worker.js", import.meta.url), { type: "module" });
+  const finish = (result) => {
+    w.terminate(); // frees all the catalogs it loaded
+    if (deals.runId !== id) return;
+    deals.worker = null; deals.stage = null;
+    if (result) { deals.result = result; deals.key = key; } else deals.error = true;
+    renderDeals();
+  };
+  w.onmessage = ({ data }) => {
+    if (data.id !== id) return;
+    if (data.type === "progress") { deals.progress = data; renderDeals(); }
+    else if (data.type === "result") finish(data.result);
+    else { console.error(data.message); finish(null); }
+  };
+  w.onerror = (e) => { console.error(e); finish(null); };
+  w.postMessage({ id, items, choices: ui.choices, here, maxKm: Math.max(...RADII) / MIN_PER_KM, current, anchor });
+}
+
+function renderDeals() {
+  const r = dealRadius(), maxKm = r / MIN_PER_KM;
+  $("dealsRadius").querySelectorAll("[data-min]").forEach((b) => b.setAttribute("aria-checked", String(Number(b.dataset.min) === r)));
+  const body = $("dealsBody");
+  const msg = (text, retry) => `<p class="deals-msg">${text}</p>` +
+    (retry ? `<button type="button" class="btn ghost deals-retry" data-act="deals-retry">${retry}</button>` : "");
+  const loading = (text) => `<div class="deals-loading"><span class="spinner" aria-hidden="true"></span>${text}</div>`;
+
+  if (!ui.items.length) { body.innerHTML = msg("הוסיפו פריטים לרשימה כדי להשוות מחירים."); return; }
+  if (deals.stage === "locating") { body.innerHTML = loading("מאתרים איפה אתם…"); return; }
+  if (deals.stage === "pricing") {
+    const p = deals.progress;
+    body.innerHTML = loading(p ? `בודקים מחירים ב${escapeHtml(p.name)}… (${p.done + 1}/${p.total})` : "טוענים מחירים…");
+    return;
+  }
+  const res = deals.result;
+  if (deals.error || !res) { body.innerHTML = msg("לא הצלחנו להשוות מחירים. בדקו את החיבור לאינטרנט.", "לנסות שוב"); return; }
+  if (!res.counted) { body.innerHTML = msg("לא מצאנו מחירים לפריטים ברשימה באף רשת."); return; }
+
+  const ok = (x) => !x.missing && x.total > 0;
+  const byTotal = (a, b) => a.total - b.total || (a.km ?? 1e9) - (b.km ?? 1e9);
+  const cur = res.current;
+  const logo = (id) => `<img class="deal-logo" src="stores/${escapeHtml(id)}.png" alt="" />`;
+  const est = (x) => (x.est ? "~" : "");
+  const where = (b) => [b.name, b.city && !b.name.includes(b.city) ? b.city : ""].filter(Boolean).join(", ");
+  const trip = (b) => b.km == null ? "" :
+    `~${driveMin(b.km)} דק׳ נסיעה · ${kmText(b.km)}${b.prec === "c" ? " · מיקום משוער לפי העיר" : ""}`;
+  // Chosen products this store doesn't sell, priced by a similar product instead.
+  const subsNote = (x) => !x.subs || (cur && x.chain === cur.chain && cur.kind === "branch" && x.id === cur.id) ? "" :
+    `<p class="deal-warn">⚠️ ${x.subs === 1 ? "מוצר אחד שבחרתם לא נמכר כאן" : `${x.subs} מוצרים שבחרתם לא נמכרים כאן`} — חושב לפי מחיר של מוצר דומה</p>`;
+  const isCur = (b) => cur?.kind === "branch" && cur.chain === b.chain && cur.id === b.id;
+  const save = (x) => {
+    if (!cur || !ok(cur)) return "";
+    const d = Math.round((cur.total - x.total) * 100) / 100;
+    return d >= 1 ? `<p class="deal-save">חוסכים ${amt(money(d))} לעומת ${escapeHtml(cur.chainName)}</p>` : "";
+  };
+  const actions = (chain, b) => `<div class="deal-actions">
+      <button type="button" class="btn primary" data-pick='${escapeHtml(JSON.stringify([chain, b?.id || null]))}'>לקנות כאן</button>
+      ${b?.lat !== undefined ? `<a class="btn ghost" href="${wazeUrl(b)}" target="_blank" rel="noopener">ניווט ב-Waze</a>` : ""}
+    </div>`;
+
+  let html = "";
+  if (cur) {
+    const label = cur.kind === "branch" ? `${escapeHtml(cur.chainName)}, ${escapeHtml(where(cur))}` : `${escapeHtml(cur.chainName)} (מחיר נפוץ ברשת)`;
+    html += `<p class="deals-current">הקנייה שלך ב${label}: <strong>${amt(est(cur) + money(cur.total))}</strong>` +
+      (cur.missing ? ` <span class="muted">· חסרים שם ${plural(cur.missing, "פריט", "פריטים")}</span>` : "") + `</p>`;
+  }
+
+  // Cheapest within the chosen drive time.
+  const nearby = res.branches.filter((b) => b.km != null && b.km <= maxKm && ok(b)).sort(byTotal);
+  const best = nearby[0];
+  html += `<section class="deal"><p class="deal-kicker">📍 הכי זול לידך · עד ${r} דק׳ נסיעה</p>`;
+  if (best) {
+    html += `<div class="deal-head">${logo(best.chain)}
+        <div class="deal-name"><strong>${escapeHtml(best.chainName)}</strong><small>${escapeHtml(where(best))}</small></div>
+        <strong class="deal-total">${amt(est(best) + money(best.total))}</strong></div>
+      <p class="deal-meta">${trip(best)}</p>${subsNote(best)}
+      ${isCur(best) ? `<p class="deal-save">🎉 הסניף שלך הוא הכי זול באזור</p>` : save(best) + actions(best.chain, best)}`;
+  } else if (!deals.here) {
+    html += deals.locError === "denied"
+      ? msg("המיקום חסום. כדי למצוא סניפים לידך, אפשרו גישה למיקום בהגדרות הדפדפן ונסו שוב.", "לנסות שוב")
+      : msg("כדי למצוא את הכי זול לידך צריך את המיקום שלכם.", "לאפשר מיקום");
+  } else {
+    html += msg(r < 40 ? "לא מצאנו סניף עם כל הפריטים במרחק הזה. נסו מרחק גדול יותר." : "לא מצאנו סניף עם כל הפריטים במרחק הזה.");
+  }
+  html += `</section>`;
+
+  // Cheapest chain overall, wherever it is (each chain's common price).
+  const top = res.chains.filter(ok).sort(byTotal)[0];
+  if (top && best && top.id === best.chain && top.nearest?.id === best.id) {
+    html += `<p class="deals-also">🏆 ${escapeHtml(top.name)} היא גם הרשת הכי זולה בארץ</p>`;
+  } else if (top) {
+    const near = top.nearest;
+    html += `<section class="deal"><p class="deal-kicker">🏆 הכי זול בארץ · מחיר נפוץ ברשת</p>
+      <div class="deal-head">${logo(top.id)}
+        <div class="deal-name"><strong>${escapeHtml(top.name)}</strong>${near ? `<small>הסניף הקרוב: ${escapeHtml(where(near))}</small>` : ""}</div>
+        <strong class="deal-total">${amt(est(top) + money(top.total))}</strong></div>
+      ${near ? `<p class="deal-meta">${trip(near)}</p>` : ""}${subsNote(top)}
+      ${cur?.chain === top.id && (cur.kind === "chain" || cur.id === near?.id) ? `<p class="deal-save">🎉 זו הרשת שבחרת</p>` : save(top) + actions(top.id, near)}
+    </section>`;
+  }
+
+  // Other chains nearby: the cheapest branch of each.
+  const more = nearby.filter((b, k) => b.chain !== best?.chain && b.chain !== cur?.chain
+    && nearby.findIndex((x) => x.chain === b.chain) === k).slice(0, 5);
+  if (more.length) {
+    html += `<p class="sheet-label">רשתות אחרות לידך</p><ul class="deal-list">` + more.map((b) => `
+      <li><button type="button" class="deal-row" data-pick='${escapeHtml(JSON.stringify([b.chain, b.id]))}'>
+        ${logo(b.chain)}
+        <span class="deal-name"><strong>${escapeHtml(b.chainName)}</strong><small>${escapeHtml(where(b))} · ~${driveMin(b.km)} דק׳</small>${b.subs ? `<small class="row-warn">⚠️ ${b.subs === 1 ? "מוצר אחד שבחרתם לא נמכר כאן" : `${b.subs} מוצרים שבחרתם לא נמכרים כאן`}</small>` : ""}</span>
+        <strong class="deal-total">${amt(est(b) + money(b.total))}</strong>
+      </button></li>`).join("") + `</ul>`;
+  }
+
+  const notes = [`השוואה לפי ${res.counted} מתוך ${plural(res.itemCount, "פריט", "פריטים")}`];
+  if (cur && ok(cur)) notes.push(`המחירים בחנויות האחרות מחושבים לפי ההבדל בין המחירים שם לבין ${escapeHtml(cur.chainName)}, פריט אחרי פריט`);
+  else if ([best, top].some((x) => x?.est)) notes.push("פריטים כלליים מחושבים לפי מוצרים שנמכרים בכמה רשתות");
+  // Chains left out because they lack something on the list.
+  const lacking = res.chains.filter((c) => c.missing && c.id !== cur?.chain)
+    .map((c) => `${escapeHtml(c.name)} (${c.missing === 1 ? "חסר פריט אחד" : `חסרים ${c.missing} פריטים`})`);
+  if (lacking.length) notes.push(`לא הוצגו: ${lacking.join(", ")}`);
+  notes.push("זמן הנסיעה משוער לפי המרחק", "נבדקו 4 הסניפים הקרובים מכל רשת");
+  html += `<p class="deals-foot">${notes.join(" · ")}</p>`;
+  body.innerHTML = html;
+}
+
 // ---------- Store wheel ----------
 // Stores sit on the rim of a big circle. Drag to spin it; when it stops, the store
 // at the top is enlarged and its prices are shown. The ring repeats the stores so
@@ -363,28 +573,33 @@ const wheel = { el: $("storeRow"), btns: [], key: "", slots: 0, rot: 0, dragging
 // Chains with a logo in /stores (others show their initials).
 const STORE_LOGOS = new Set(["shufersal", "carrefour", "hazi-hinam", "rami-levy", "yochananof", "osher-ad", "tiv-taam"]);
 
+const NO_STORE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg>';
 const mod = (a, n) => ((a % n) + n) % n;
 const wrapDist = (d, n) => { d = mod(d, n); return d > n / 2 ? d - n : d; };
-const wheelIndex = () => (ui.chains.length ? mod(Math.round(wheel.rot), wheel.slots) % ui.chains.length : -1);
+// The first slot on the wheel is "no store": a plain list without prices.
+const NO_STORE_SLOT = { id: "", name: "בלי חנות", color: "#8a8f98" };
+const wheelItems = () => (ui.chains.length ? [NO_STORE_SLOT, ...ui.chains] : []);
+const wheelIndex = () => { const n = wheelItems().length; return n ? mod(Math.round(wheel.rot), wheel.slots) % n : -1; };
 
 function buildWheel() {
-  const key = ui.chains.map((c) => c.id + c.color).join("|");
+  const items = wheelItems();
+  const key = items.map((c) => c.id + c.color).join("|");
   if (key === wheel.key) return;
   wheel.key = key;
-  const n = ui.chains.length;
+  const n = items.length;
   wheel.slots = n * Math.ceil(WHEEL.minSlots / n);
-  const slots = Array.from({ length: wheel.slots }, (_, s) => ui.chains[s % n]);
+  const slots = Array.from({ length: wheel.slots }, (_, s) => items[s % n]);
   wheel.el.innerHTML = `<div class="wheel-arc" aria-hidden="true"></div><div class="wheel-marker" aria-hidden="true"></div>` +
     slots.map((c, s) => `
       <button class="store" data-slot="${s}" tabindex="-1" aria-hidden="${s >= n}"
               style="--store-color:${/^#[0-9a-f]{6}$/i.test(c.color) ? c.color : "#2f9e6b"}">
-        <span class="store-circle">${STORE_LOGOS.has(c.id)
-          ? `<img src="stores/${c.id}.png" alt="" draggable="false" />`
+        <span class="store-circle${c === NO_STORE_SLOT ? " no-store" : ""}">${c === NO_STORE_SLOT ? NO_STORE_ICON
+          : STORE_LOGOS.has(c.id) ? `<img src="stores/${c.id}.png" alt="" draggable="false" />`
           : escapeHtml(c.name.split(" ").map((w) => w[0]).join("").slice(0, 2))}</span>
         <span class="store-name">${escapeHtml(c.name)}</span>
       </button>`).join("");
   wheel.btns = [...wheel.el.querySelectorAll(".store")];
-  const k = ui.chains.findIndex((c) => c.id === currentStoreId());
+  const k = items.findIndex((c) => c.id === (currentStoreId() || ""));
   wheel.rot = k >= 0 ? k : 0;
   wheel.lastTick = Math.round(wheel.rot);
   layoutWheel();
@@ -408,7 +623,7 @@ function layoutWheel() {
     el.style.zIndex = String(100 - Math.round(Math.abs(d) * 10));
     el.classList.toggle("top", Math.abs(d) < 0.5);
   });
-  const c = ui.chains[top];
+  const c = wheelItems()[top];
   wheel.el.setAttribute("aria-valuetext", c ? c.name : "");
   // A little tick each time a store passes the top.
   const r = Math.round(wheel.rot);
@@ -432,10 +647,10 @@ function spinTo(target, animate = true) {
   wheel.anim = requestAnimationFrame(step);
 }
 
-// Spin to the nearest copy of chain k on the ring.
+// Spin to the nearest copy of wheel item k on the ring.
 function spinToChain(k, animate = true) {
   let best = null;
-  for (let s = k; s < wheel.slots; s += ui.chains.length) {
+  for (let s = k; s < wheel.slots; s += wheelItems().length) {
     const d = wrapDist(s - wheel.rot, wheel.slots);
     if (best === null || Math.abs(d) < Math.abs(best)) best = d;
   }
@@ -445,8 +660,8 @@ function spinToChain(k, animate = true) {
 function settleWheel() {
   wheel.rot = mod(Math.round(wheel.rot), wheel.slots);
   layoutWheel();
-  const c = ui.chains[wheelIndex()];
-  if (c && c.id !== currentStoreId()) { buzz(12); selectStore(c.id); }
+  const c = wheelItems()[wheelIndex()];
+  if (c && (c.id || null) !== currentStoreId()) { buzz(12); selectStore(c.id || null); }
 }
 
 (function wheelInput() {
@@ -510,8 +725,8 @@ async function initStores() {
     ui.catError = true;
   }
   render();
-  // The wheel always has a store at the top, so prices show right away.
-  if (ui.chains.length && !ui.chains.some((c) => c.id === currentStoreId())) selectStore(ui.chains[0].id);
+  // New users start on "no store" (a plain list); a store that no longer exists falls back to it too.
+  if (currentStoreId() && ui.chains.length && !ui.chains.some((c) => c.id === currentStoreId())) selectStore(null);
   else loadStore(currentStoreId());
 }
 
@@ -1042,7 +1257,7 @@ function openCloudList(id) {
       ui.list = list;
       render();
       if (!shareSheet.hidden) renderShare();
-      if (list.store) loadStore(list.store); // someone on the list picked a store or branch (no-op if unchanged)
+      if (list.store) loadStore(currentStoreId()); // someone on the list picked a store, a branch or "no store" (no-op if unchanged)
     },
     onMembers(members) { ui.members = members; render(); if (!shareSheet.hidden) renderShare(); },
     onRemote(changes) {
