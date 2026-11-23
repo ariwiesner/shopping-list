@@ -1,8 +1,14 @@
-// Paste your Firebase web app config here:
-// Firebase console → Project settings (⚙️) → "Your apps" → Web app → SDK setup and configuration → Config.
+// Firebase web app config (Firebase console → Project settings → Your apps → Web app).
 //
 // This config is NOT a secret (it ships to every browser). Access to the data is
 // protected by Google sign-in and the rules in firestore.rules.
 //
-// While this is null, the app runs in local mode (one list saved on this device, no sign-in).
-export const firebaseConfig = null;
+// Set this to null to run the app in local-only mode (no sign-in option).
+export const firebaseConfig = {
+  apiKey: "AIzaSyCvQEaC8pq3lHkYK0jDKxgvP69nAzpFwT4",
+  authDomain: "shopping-list-864e9.firebaseapp.com",
+  projectId: "shopping-list-864e9",
+  storageBucket: "shopping-list-864e9.firebasestorage.app",
+  messagingSenderId: "328276296360",
+  appId: "1:328276296360:web:3cd85b37048889c7e1789d",
+};
