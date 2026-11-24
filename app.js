@@ -159,14 +159,15 @@ function priceLine(it) {
   return `<div class="item-price none">לא נמצא ב${escapeHtml(ui.cat.name)}</div>`;
 }
 
-// On a list shared by several people: a tiny profile circle of whoever last added or
-// changed the item. (Someone who has left the list shows as their first initial.)
-function changedBy(it) {
-  if (ui.members.length < 2 || !it.updatedBy) return "";
-  const m = ui.members.find((x) => x.id === it.updatedBy);
-  const who = m?.name || it.updatedByName || "";
-  const label = it.updatedBy === cloud?.user?.uid ? "שונה על ידך" : `שונה על ידי ${who}`;
-  return `<span class="item-who" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${avatarHtml(m || { name: who }, "avatar xs")}</span>`;
+// On a list shared by several people, in small text under the item: who added it, and
+// who edited it if that was someone else ("נוסף ע״י ארי · ונערך ע״י מיכל").
+// Ticking it into the cart isn't an edit.
+function byLine(it) {
+  if (ui.members.length < 2) return "";
+  const parts = [];
+  if (it.createdByName) parts.push(`נוסף ע״י ${it.createdByName}`);
+  if (it.editedByName && it.editedBy !== it.createdBy) parts.push(`${parts.length ? "ונערך" : "נערך"} ע״י ${it.editedByName}`);
+  return parts.length ? `<div class="item-who">${escapeHtml(parts.join(" · "))}</div>` : "";
 }
 
 function itemHtml(it) {
@@ -179,8 +180,9 @@ function itemHtml(it) {
           <span class="check-box">${CHECK_SVG}</span>
         </button>
         <button class="item-main" data-act="edit" aria-label="עריכת ${name}">
-          <div class="item-name"><span class="item-emoji" aria-hidden="true">${emojiFor(it.name)}</span>${name}${changedBy(it)}</div>
+          <div class="item-name"><span class="item-emoji" aria-hidden="true">${emojiFor(it.name)}</span>${name}</div>
           ${priceLine(it)}
+          ${byLine(it)}
           ${ui.flash.has(it.id) && it.updatedByName ? `<div class="item-by">${escapeHtml(it.updatedByName)} עדכן/ה עכשיו</div>` : ""}
           ${it.importNote && Date.now() - it.importNote.at < 864e5 ? `<div class="item-by import-note">📥 שימו לב: ${it.importNote.added === 1 ? "נוסף 1" : `נוספו ${it.importNote.added}`} מהרשימה המיובאת</div>` : ""}
         </button>

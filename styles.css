@@ -690,7 +690,5 @@ details.deal-warn.in-row { margin: 0 12px 10px; }
 }
 .import-retry { width: 100%; height: 48px; margin-top: 8px; flex: none; }
 
-/* Who last added/changed an item, on lists shared by several people */
-.item-who { display: inline-flex; vertical-align: middle; margin-inline-start: 6px; }
-.avatar.xs { width: 20px; height: 20px; font-size: 11px; border-width: 1.5px; border-color: var(--surface); box-shadow: 0 0 0 1px var(--line); }
-.done .item-who { opacity: .6; }
+/* Who added / edited an item, on lists shared by several people */
+.item-who { margin-top: 2px; font-size: 11.5px; font-weight: 500; color: var(--muted); }
