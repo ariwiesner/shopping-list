@@ -38,7 +38,8 @@ function pricesIn(cat, items, choices, club = false) {
 }
 
 self.onmessage = async ({ data }) => {
-  const { id, items, choices, here, maxKm, current, clubs = {} } = data;
+  const { id, items, choices, here, maxKm, current, clubs = true } = data;
+  const club = (chain) => clubs === true || !!clubs[chain];
   try {
     const index = await fetchJson("index.json");
     const chains = [], branches = [];
@@ -56,7 +57,7 @@ self.onmessage = async ({ data }) => {
 
       chains.push({
         id: c.id, name: c.name, color: c.color,
-        prices: pricesIn(cat, items, choices, !!clubs[c.id]),
+        prices: pricesIn(cat, items, choices, club(c.id)),
         nearest: located[0] ? strip(located[0]) : null,
       });
 
@@ -69,7 +70,7 @@ self.onmessage = async ({ data }) => {
       for (const s of pick) {
         try {
           const { p: diff, d, c: cd } = await fetchJson(`${encodeURIComponent(c.id)}/${encodeURIComponent(s.id)}.json`);
-          branches.push({ chain: c.id, chainName: c.name, ...strip(s), prices: pricesIn(applyBranch(cat, s.id, diff, d, cd), items, choices, !!clubs[c.id]) });
+          branches.push({ chain: c.id, chainName: c.name, ...strip(s), prices: pricesIn(applyBranch(cat, s.id, diff, d, cd), items, choices, club(c.id)) });
         } catch (e) { console.warn("Skipping branch", c.id, s.id, e); }
       }
       cat = null; // let this chain's catalog go before loading the next
