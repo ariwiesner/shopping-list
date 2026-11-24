@@ -887,3 +887,13 @@ body.locked .content { padding-bottom: calc(var(--safe-b) + 24px); }
 .name-when { flex: none; font-size: 12px; font-weight: 700; color: #c2410c; white-space: nowrap; margin-top: 3px; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .name-when { color: #fdba74; } }
 :root[data-theme="dark"] .name-when { color: #fdba74; }
+/* Plan/lock controls: against the right edge, a bit smaller; more space above the list name */
+.title-sub { justify-items: start; }
+.title-sub .plan-btn, .title-sub .lock-mini { font-size: 11.5px; gap: 5px; }
+.title-sub .lead { width: 40px; height: 16px; }
+.title-sub .plan-btn .lead svg { width: 40px; height: 16px; }
+.title-sub .switch.sm { width: 26px; height: 15px; }
+.title-sub .switch.sm::after { width: 11px; height: 11px; }
+.title-sub .lock-mini.on .switch.sm::after { inset-inline-start: 13px; }
+.title-sub .lead-lock { font-size: 12px; }
+.list-head-center { margin-top: 18px; }
