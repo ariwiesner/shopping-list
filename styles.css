@@ -802,3 +802,15 @@ body.locked .content { padding-bottom: calc(var(--safe-b) + 24px); }
 .lock-state { font-size: 13px; font-weight: 700; color: var(--muted); }
 /* Share button: icon only */
 #shareBtn { padding: 0 10px; }
+
+/* List name with the participants beside it, and the lock under it */
+.title-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.title-row h1 { min-width: 0; }
+.title-row .people-btn { flex: none; margin-top: 2px; gap: 4px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.avatar.xs { width: 18px; height: 18px; font-size: 9.5px; border-width: 1.5px; border-color: var(--bg); }
+.title-row .avatars .avatar + .avatar { margin-inline-start: -5px; }
+.title-sub { margin-top: 3px; }
+.title-sub .lock-mini, .title-sub .lock-state { font-size: 12px; }
+.title-sub .switch.sm { width: 28px; height: 16px; }
+.title-sub .switch.sm::after { top: 2px; inset-inline-start: 2px; width: 12px; height: 12px; }
+.title-sub .lock-mini.on .switch.sm::after { inset-inline-start: 14px; }

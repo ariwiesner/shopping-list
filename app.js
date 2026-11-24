@@ -239,16 +239,18 @@ function render() {
   // Shared list: participants and (for the owner) the lock, under the total.
   const shared = backend === cloud && !!ui.list && ui.members.length > 1;
   const iOwn = shared && ui.list.ownerId === cloud?.user?.uid;
-  $("listBar").hidden = !shared;
+  $("peopleBtn").hidden = !shared;
+  $("titleSub").hidden = !shared || (!iOwn && !ui.list.locked);
   if (shared) {
-    $("peopleAvatars").innerHTML = ui.members.slice(0, 4).map((m) => avatarHtml(m, "avatar sm")).join("");
-    $("peopleCount").textContent = `${ui.members.length} משתתפים`;
+    $("peopleAvatars").innerHTML = ui.members.slice(0, 3).map((m) => avatarHtml(m, "avatar xs")).join("");
+    $("peopleCount").textContent = ui.members.length;
+    $("peopleBtn").setAttribute("aria-label", `${ui.members.length} משתתפים ברשימה`);
     $("lockBtn").hidden = !iOwn;
     $("lockBtn").setAttribute("aria-checked", String(!!ui.list.locked));
     $("lockBtn").classList.toggle("on", !!ui.list.locked);
     $("lockState").hidden = iOwn || !ui.list.locked;
   }
-  $("progressCard").hidden = $("totalBox").hidden && $("listBar").hidden;
+  $("progressCard").hidden = $("totalBox").hidden;
 }
 
 function renderTotal(items) {

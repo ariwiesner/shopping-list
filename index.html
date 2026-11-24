@@ -49,7 +49,21 @@
       <div class="top-row">
         <div class="title-wrap">
           <p class="greeting" id="greeting">שלום!</p>
-          <h1><button type="button" class="title-btn" id="listTitle" aria-haspopup="dialog">הסל שלי</button></h1>
+          <div class="title-row">
+            <h1><button type="button" class="title-btn" id="listTitle" aria-haspopup="dialog">הסל שלי</button></h1>
+            <!-- Shared list: who's on it, beside the name -->
+            <button type="button" class="people-btn" id="peopleBtn" aria-haspopup="dialog" hidden>
+              <span class="avatars" id="peopleAvatars" aria-hidden="true"></span>
+              <span id="peopleCount"></span>
+            </button>
+          </div>
+          <!-- Shared list: the owner's lock switch, or "locked" for everyone else -->
+          <div class="title-sub" id="titleSub" hidden>
+            <button type="button" class="lock-mini" id="lockBtn" role="switch" aria-checked="false" hidden>
+              <span class="switch sm" aria-hidden="true"></span><span>🔒 נעילת הרשימה</span>
+            </button>
+            <span class="lock-state" id="lockState" hidden>🔒 נעולה</span>
+          </div>
         </div>
         <div class="top-actions">
           <button class="share-btn import-btn" id="importBtn" aria-label="ייבוא רשימה מוואטסאפ או מצילום" aria-haspopup="dialog">
@@ -72,16 +86,6 @@
             <strong id="totalAmount" dir="ltr">₪0</strong>
           </div>
           <p class="total-note" id="totalNote"></p>
-        </div>
-        <div class="list-bar" id="listBar" hidden>
-          <button type="button" class="people-btn" id="peopleBtn" aria-haspopup="dialog">
-            <span class="avatars" id="peopleAvatars" aria-hidden="true"></span>
-            <span id="peopleCount"></span>
-          </button>
-          <button type="button" class="lock-mini" id="lockBtn" role="switch" aria-checked="false" hidden>
-            <span>🔒 נעילה</span><span class="switch sm" aria-hidden="true"></span>
-          </button>
-          <span class="lock-state" id="lockState" hidden>🔒 נעולה</span>
         </div>
       </div>
     </header>
