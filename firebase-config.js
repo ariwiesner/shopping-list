@@ -11,4 +11,5 @@ export const firebaseConfig = {
   storageBucket: "shopping-list-864e9.firebasestorage.app",
   messagingSenderId: "328276296360",
   appId: "1:328276296360:web:3cd85b37048889c7e1789d",
+  measurementId: "G-NGYX5LKJ4R", // Google Analytics (usage statistics)
 };

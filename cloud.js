@@ -29,6 +29,19 @@ export async function createCloud(config) {
   } = F;
 
   const app = initializeApp(config);
+  // Usage statistics (Google Analytics for Firebase), only when the project has it turned
+  // on (config.measurementId). Counts everyone, signed in or not. Events sent before it
+  // has loaded wait in a short queue.
+  let analytics = null, logEventFn = null;
+  const pending = [];
+  if (config.measurementId) {
+    import(`${SDK}/firebase-analytics.js`).then(async (M) => {
+      if (!(await M.isSupported())) return;
+      analytics = M.getAnalytics(app);
+      logEventFn = M.logEvent;
+      pending.splice(0).forEach(([n, p]) => logEventFn(analytics, n, p));
+    }).catch((e) => console.warn("Analytics unavailable", e));
+  }
   const auth = getAuth(app);
   auth.languageCode = "he";
   let db;
@@ -155,6 +168,13 @@ export async function createCloud(config) {
     // Lock / unlock the open list (owner only; enforced by the database rules).
     setLocked(locked) {
       return updateDoc(listRef(), { locked: !!locked });
+    },
+    // Count a usage event (no-op when Analytics is off).
+    track(name, params = {}) {
+      try {
+        if (analytics) logEventFn(analytics, name, params);
+        else if (config.measurementId && pending.length < 50) pending.push([name, params]);
+      } catch (_) {}
     },
     // Rename the open list (for everyone on it) and update my own list index.
     async renameList(name) {

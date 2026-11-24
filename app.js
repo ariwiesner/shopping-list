@@ -17,6 +17,8 @@ const store = {
   get(k, fallback) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fallback; } catch (_) { return fallback; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} },
 };
+// Usage statistics: count an action (does nothing when Analytics is off).
+const track = (name, params) => { try { cloud?.track?.(name, params); } catch (_) {} };
 const plural = (n, one, many) => (n === 1 ? `${one} אחד` : `${n} ${many}`);
 const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -392,6 +394,7 @@ async function loadStore(id) {
 
 // id: a chain id, or null for a plain list with no store (no prices).
 function selectStore(id) {
+  if (id) track("select_store", { store: id });
   const choice = id || NO_STORE;
   if (choice === storeChoice()) return loadStore(id || null);
   prefs.store = choice;
@@ -408,6 +411,7 @@ $("clubBtn").addEventListener("click", () => {
   const chain = currentStoreId();
   if (!chain) return;
   prefs.clubs = { ...(prefs.clubs || {}), [chain]: !isClubMember(chain) };
+  track("club_toggle", { store: chain, on: prefs.clubs[chain] ? 1 : 0 });
   store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), clubs: prefs.clubs });
   buzz(8);
   render();
@@ -519,7 +523,7 @@ const driveMin = (km) => Math.max(2, Math.round(km * MIN_PER_KM));
 const kmText = (km) => (km < 1 ? "פחות מק״מ" : `${km < 10 ? km.toFixed(1) : Math.round(km)} ק״מ`);
 const wazeUrl = (b) => `https://waze.com/ul?ll=${b.lat},${b.lon}&navigate=yes`;
 
-$("dealsBtn").addEventListener("click", () => { openSheet(dealsSheet); runDeals(); });
+$("dealsBtn").addEventListener("click", () => { track("compare_open"); openSheet(dealsSheet); runDeals(); });
 $("dealsRadius").addEventListener("click", (e) => {
   const b = e.target.closest("[data-min]");
   if (!b) return;
@@ -541,6 +545,7 @@ $("dealsBody").addEventListener("click", (e) => {
 });
 
 function chooseStore(chain, branch) {
+  track("compare_pick_store", { store: chain });
   prefs.store = chain;
   saveBranch(chain, branch || null, false);
   store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), store: chain });
@@ -1107,6 +1112,7 @@ async function commitImport() {
   const now = Date.now();
   // First item on top: the list shows the highest sortKey first.
   const make = (it, k) => ({ id: uid(), name: it.name, qty: it.qty, done: !!it.done, price: null, createdAt: now, sortKey: now - k });
+  track("import_list", { source: imp.photo ? "photo" : "text", items: rows.length });
   if (intoNewList()) {
     imp.busy = true;
     renderImport();
@@ -1150,6 +1156,7 @@ const fail = (e) => { console.error(e); showToast("משהו השתבש — נס�
 function addItem(text) {
   const { name, qty } = parseInput(text);
   if (!name) return;
+  track("add_item", { shared: ui.members.length > 1 ? 1 : 0 });
   const existing = ui.items.find((i) => !i.done && i.name.toLowerCase() === name.toLowerCase());
   // Shared list, and someone else asked for it: ask whether to add for me too.
   if (existing && askedByOthers(existing)) return askDuplicate(existing, qty);
@@ -1486,6 +1493,7 @@ $("clearAll").addEventListener("click", () => {
 // New list: create it, open it, and ask for its name.
 async function newList() {
   if (!cloud?.user) return;
+  track("list_create");
   try {
     const id = await cloud.createList([], "רשימה חדשה");
     openCloudList(id);
@@ -1504,6 +1512,7 @@ function askDeleteList(id) {
   const run = async (mine) => {
     try {
       if (mine) await cloud.deleteList(id); else await cloud.leaveList(id);
+      track(mine ? "list_delete" : "list_leave");
       delete ui.userLists[id];
       if (current) await openFallbackList(id);
       showToast(mine ? `הרשימה "${name}" נמחקה` : `יצאת מהרשימה "${name}"`, false);
@@ -1801,6 +1810,7 @@ async function toggleLock() {
     if (!next && passed) await cloud.setPlan({ shopAt: shopAtMs(), lockAt: null, locked: false });
     else await cloud.setLocked(next);
   } catch (err) { fail(err); return; }
+  track("lock_list", { on: next ? 1 : 0 });
   buzz(12);
   showToast(next ? "🔒 הרשימה נעולה. אפשר לתת הרשאת עריכה ב״משתתפים״" : "🔓 הרשימה פתוחה לעריכה לכולם", false);
 }
@@ -1885,6 +1895,7 @@ $("planForm").addEventListener("submit", async (e) => {
   render();
   try {
     await cloud.setPlan({ shopAt: shop, lockAt: lock });
+    track("plan_shopping", { auto_lock: lock ? 1 : 0 });
     buzz(10);
     showToast(shop ? `נשמר: הקניות ${fmtWhen(shop)}${lock ? `, נעילה ${fmtWhen(lock)}` : ""}` : "נשמר", false);
   } catch (err) { fail(err); }
@@ -1910,6 +1921,7 @@ async function onSheetAction(e) {
     }
     else if (act === "sign-in") { closeSheets(); await signIn(); }
     else if (act === "copy") {
+      track("share", { method: "copy" });
       await navigator.clipboard.writeText(shareLink());
       showToast("הקישור הועתק 📋", false);
     } else if (act === "native") {
