@@ -49,7 +49,21 @@
       <div class="top-row">
         <div class="title-wrap">
           <p class="greeting" id="greeting">שלום!</p>
-          <h1><button type="button" class="title-btn" id="listTitle" aria-haspopup="dialog">הסל שלי</button></h1>
+          <div class="title-row">
+            <h1><button type="button" class="title-btn" id="listTitle" aria-haspopup="dialog">הסל שלי</button></h1>
+            <!-- Shared list: who's on it, beside the name -->
+            <button type="button" class="people-btn" id="peopleBtn" aria-haspopup="dialog" hidden>
+              <span class="avatars" id="peopleAvatars" aria-hidden="true"></span>
+              <span id="peopleCount"></span>
+            </button>
+          </div>
+          <!-- Shared list: the owner's lock switch, or "locked" for everyone else -->
+          <div class="title-sub" id="titleSub" hidden>
+            <button type="button" class="lock-mini" id="lockBtn" role="switch" aria-checked="false" hidden>
+              <span class="switch sm" aria-hidden="true"></span><span>🔒 נעילת הרשימה</span>
+            </button>
+            <span class="lock-state" id="lockState" hidden>🔒 נעולה</span>
+          </div>
         </div>
         <div class="top-actions">
           <button class="share-btn import-btn" id="importBtn" aria-label="ייבוא רשימה מוואטסאפ או מצילום" aria-haspopup="dialog">
@@ -57,9 +71,7 @@
             <span>ייבוא</span>
           </button>
           <button class="share-btn" id="shareBtn" aria-label="שיתוף הרשימה">
-            <span class="avatars" id="avatars" aria-hidden="true"></span>
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.9-5 5.5-5s4.9 1.8 5.5 5"/><path d="M18 8v6M15 11h6"/></svg>
-            <span class="share-label">שיתוף</span>
           </button>
           <button class="icon-btn" id="menuBtn" aria-label="אפשרויות נוספות" aria-haspopup="true">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
@@ -103,6 +115,7 @@
       </section>
 
       <section id="todoSection">
+        <p class="lock-banner" id="lockBanner" hidden></p>
         <div class="list-head" id="todoHead" hidden>
           <span>לקנות <span class="pill" id="todoCount">0</span></span>
           <button type="button" class="list-clear" id="clearAll">🗑️ מחק רשימה</button>
@@ -181,6 +194,12 @@
     <div id="importBody"></div>
     <input type="file" id="importCamera" accept="image/*" capture="environment" hidden />
     <input type="file" id="importGallery" accept="image/*" hidden />
+  </div>
+
+  <!-- Participants of a shared list (content rendered by app.js) -->
+  <div class="sheet" id="peopleSheet" role="dialog" aria-modal="true" aria-labelledby="peopleTitle" hidden>
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <div id="peopleBody"></div>
   </div>
 
   <!-- Confirm deleting the whole list -->

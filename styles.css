@@ -348,7 +348,6 @@ h1 { margin: 2px 0 0; font-size: 18px; font-weight: 800; letter-spacing: 0; }
 }
 .share-btn svg { width: 20px; height: 20px; }
 .share-btn:active { transform: scale(.96); }
-.share-btn.shared .share-label, .share-btn.shared > svg { display: none; }
 .avatars { display: flex; }
 .avatars:empty { display: none; }
 .avatars .avatar + .avatar { margin-inline-start: -6px; }
@@ -769,3 +768,49 @@ details.deal-warn.in-row { margin: 0 12px 10px; }
 /* Show the full product name under the price: wrap instead of cutting with "…" */
 .item-price { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
 .item-price .muted { font-size: 12.5px; }
+
+/* Locked shared list */
+.lock-banner { margin: 0 4px 10px; padding: 8px 12px; border-radius: 12px; background: var(--surface-2); font-size: 13px; font-weight: 600; color: var(--muted); line-height: 1.4; }
+body.locked .composer, body.locked #importBtn, body.locked #clearAll,
+body.locked #cartActions [data-action="clear-done"], body.locked .list .stepper { display: none; }
+body.locked .content { padding-bottom: calc(var(--safe-b) + 24px); }
+.lock-toggle { width: 100%; display: flex; align-items: center; gap: 12px; margin: 10px 0 4px; padding: 12px 14px; border-radius: 14px; background: var(--surface-2); text-align: start; }
+.lock-text { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.lock-text small { color: var(--muted); font-weight: 500; font-size: 13px; line-height: 1.4; }
+.switch { flex: none; width: 44px; height: 26px; border-radius: 99px; background: var(--line); position: relative; transition: background .2s; }
+.switch::after { content: ""; position: absolute; top: 3px; inset-inline-start: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: inset-inline-start .2s; }
+.lock-toggle.on .switch { background: var(--accent); }
+.lock-toggle.on .switch::after { inset-inline-start: 21px; }
+
+/* Per-member "can edit" switch on a locked list */
+.edit-perm { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 4px 2px; font-size: 12.5px; font-weight: 700; color: var(--muted); }
+.edit-perm.on { color: var(--accent); }
+.switch.sm { width: 34px; height: 20px; }
+.switch.sm::after { top: 2px; inset-inline-start: 2px; width: 16px; height: 16px; }
+.edit-perm.on .switch { background: var(--accent); }
+.edit-perm.on .switch.sm::after { inset-inline-start: 16px; }
+
+/* Participants + lock row under the total (shared lists) */
+.list-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.total:not([hidden]) + .list-bar { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.people-btn { display: inline-flex; align-items: center; gap: 8px; padding: 2px 0; font-size: 13.5px; font-weight: 700; color: var(--muted); }
+.people-btn:active { opacity: .6; }
+.lock-mini { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.lock-mini.on { color: var(--accent); }
+.lock-mini.on .switch { background: var(--accent); }
+.lock-mini.on .switch.sm::after { inset-inline-start: 16px; }
+.lock-state { font-size: 13px; font-weight: 700; color: var(--muted); }
+/* Share button: icon only */
+#shareBtn { padding: 0 10px; }
+
+/* List name with the participants beside it, and the lock under it */
+.title-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.title-row h1 { min-width: 0; }
+.title-row .people-btn { flex: none; margin-top: 2px; gap: 4px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.avatar.xs { width: 18px; height: 18px; font-size: 9.5px; border-width: 1.5px; border-color: var(--bg); }
+.title-row .avatars .avatar + .avatar { margin-inline-start: -5px; }
+.title-sub { margin-top: 3px; }
+.title-sub .lock-mini, .title-sub .lock-state { font-size: 12px; }
+.title-sub .switch.sm { width: 28px; height: 16px; }
+.title-sub .switch.sm::after { top: 2px; inset-inline-start: 2px; width: 12px; height: 12px; }
+.title-sub .lock-mini.on .switch.sm::after { inset-inline-start: 14px; }

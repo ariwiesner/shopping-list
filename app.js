@@ -209,6 +209,14 @@ function render() {
 
   todoList.innerHTML = todo.map(itemHtml).join("");
   $("todoHead").hidden = !total;
+  const locked = backend === cloud && !!ui.list?.locked;
+  document.body.classList.toggle("locked", lockedForMe());
+  $("lockBanner").hidden = !locked;
+  $("lockBanner").textContent = !locked ? ""
+    : lockedForMe() ? `🔒 הרשימה נעולה על ידי ${ownerFirstName()}. אפשר לסמן מה בעגלה, אבל לא לשנות את הרשימה.`
+    : ui.list.ownerId !== cloud?.user?.uid ? `🔒 הרשימה נעולה, אבל ${ownerFirstName()} נתן/ה לך הרשאת עריכה.`
+    : (ui.list.editors || []).length ? "🔒 הרשימה נעולה: רק את/ה ומי שקיבל הרשאה יכולים לשנות פריטים. השאר יכולים לסמן מה בעגלה."
+    : "🔒 הרשימה נעולה: רק את/ה יכול/ה לשנות פריטים. השאר יכולים לסמן מה בעגלה.";
   $("todoCount").textContent = todo.length;
   doneList.innerHTML = done.map(itemHtml).join("");
 
@@ -226,16 +234,29 @@ function render() {
   $("listTitle").innerHTML = `<span class="title-text">${escapeHtml(listName())}</span>`;
   $("listTitle").setAttribute("aria-label", `${listName()} — שינוי שם הרשימה`);
   const others = ui.members.filter((m) => m.id !== cloud?.user?.uid);
-  $("avatars").innerHTML = others.slice(0, 3).map((m) => avatarHtml(m, "avatar sm")).join("");
-  $("shareBtn").classList.toggle("shared", others.length > 0);
-  $("shareBtn").setAttribute("aria-label", others.length ? `משותף עם ${others.length} — ניהול שיתוף` : "שיתוף הרשימה");
+  $("shareBtn").setAttribute("aria-label", "שיתוף הרשימה");
+
+  // Shared list: participants and (for the owner) the lock, under the total.
+  const shared = backend === cloud && !!ui.list && ui.members.length > 1;
+  const iOwn = shared && ui.list.ownerId === cloud?.user?.uid;
+  $("peopleBtn").hidden = !shared;
+  $("titleSub").hidden = !shared || (!iOwn && !ui.list.locked);
+  if (shared) {
+    $("peopleAvatars").innerHTML = ui.members.slice(0, 3).map((m) => avatarHtml(m, "avatar xs")).join("");
+    $("peopleCount").textContent = ui.members.length;
+    $("peopleBtn").setAttribute("aria-label", `${ui.members.length} משתתפים ברשימה`);
+    $("lockBtn").hidden = !iOwn;
+    $("lockBtn").setAttribute("aria-checked", String(!!ui.list.locked));
+    $("lockBtn").classList.toggle("on", !!ui.list.locked);
+    $("lockState").hidden = iOwn || !ui.list.locked;
+  }
+  $("progressCard").hidden = $("totalBox").hidden;
 }
 
 function renderTotal(items) {
   const box = $("totalBox");
   const anyManual = items.some((i) => i._price.kind === "manual");
   box.hidden = !items.length || (!ui.cat && !anyManual);
-  $("progressCard").hidden = box.hidden; // the card holds only the total now
   if (box.hidden) return;
   let sum = 0, inCart = 0, estCount = 0, noneCount = 0;
   for (const it of items) {
@@ -257,7 +278,14 @@ function renderTotal(items) {
 // The store choice: a chain id, NO_STORE ("none": a plain list, no prices) or null (never chosen).
 // A shared list's choice wins over this device's, so everyone on the list sees the same thing.
 const NO_STORE = "none";
-const storeChoice = () => (backend === cloud && ui.list?.store) || prefs.store || null;
+// A shared list its owner has locked: others can only tick items (and pick their own store view).
+const isEditor = (uid) => (ui.list?.editors || []).includes(uid);
+const lockedForMe = () => backend === cloud && !!ui.list?.locked && !!cloud?.user
+  && ui.list.ownerId !== cloud.user.uid && !isEditor(cloud.user.uid);
+const canWriteList = () => backend === cloud && !!ui.list && !lockedForMe();
+const ownerFirstName = () => (ui.members.find((m) => m.id === ui.list?.ownerId)?.name || "").split(" ")[0] || "יוצר/ת הרשימה";
+function lockedNotice() { buzz(20); showToast(`🔒 הרשימה נעולה. רק ${ownerFirstName()} יכול/ה לשנות אותה`, false); }
+const storeChoice = () => (lockedForMe() ? prefs.store || ui.list?.store : (backend === cloud && ui.list?.store) || prefs.store) || null;
 const currentStoreId = () => { const s = storeChoice(); return s && s !== NO_STORE ? s : null; };
 
 function renderStores() {
@@ -287,7 +315,8 @@ function renderStores() {
 
 // The branch picked for a chain: the shared list's choice, else this device's last choice.
 const currentBranchId = (chain = currentStoreId()) =>
-  (backend === cloud && ui.list?.store === chain && ui.list?.branch) || prefs.branches?.[chain] || null;
+  (lockedForMe() && prefs.branches && Object.prototype.hasOwnProperty.call(prefs.branches, chain) ? prefs.branches[chain] : null)
+  || (backend === cloud && ui.list?.store === chain && ui.list?.branch) || prefs.branches?.[chain] || null;
 
 async function loadStore(id) {
   if (!id) { ui.cat = null; ui.catId = null; ui.catKey = null; render(); return; }
@@ -318,7 +347,7 @@ function selectStore(id) {
   prefs.store = choice;
   store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), store: choice });
   // (A branch picked automatically as the nearest is this device's only; don't share it.)
-  if (backend === cloud && ui.list) cloud.setListStore(choice, id && !isAutoBranch(id) ? prefs.branches?.[id] || null : null).catch(fail);
+  if (canWriteList()) cloud.setListStore(choice, id && !isAutoBranch(id) ? prefs.branches?.[id] || null : null).catch(fail);
   loadStore(id || null);
   if (id) nearestBranch(id, true);
 }
@@ -327,7 +356,7 @@ function selectBranch(branchId) {
   const chain = currentStoreId();
   if (!chain) return;
   saveBranch(chain, branchId || null, false);
-  if (backend === cloud && ui.list) cloud.setListStore(chain, branchId || null).catch(fail);
+  if (canWriteList()) cloud.setListStore(chain, branchId || null).catch(fail);
   buzz(8);
   loadStore(chain);
 }
@@ -453,7 +482,7 @@ function chooseStore(chain, branch) {
   prefs.store = chain;
   saveBranch(chain, branch || null, false);
   store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), store: chain });
-  if (backend === cloud && ui.list) cloud.setListStore(chain, branch || null).catch(fail);
+  if (canWriteList()) cloud.setListStore(chain, branch || null).catch(fail);
   buzz(8);
   loadStore(chain);
 }
@@ -1249,6 +1278,7 @@ function renderMenu() {
 // Delete the whole list (to buy + cart), after asking. Undo is still offered in the toast.
 const confirmSheet = $("confirmSheet");
 $("clearAll").addEventListener("click", () => {
+  if (lockedForMe()) return lockedNotice();
   const n = ui.items.length;
   $("confirmText").textContent = `${n === 1 ? "הפריט היחיד ברשימה יימחק" : `כל ${n} הפריטים ברשימה יימחקו`}, כולל מה שבעגלה.` +
     (ui.members.length > 1 ? " הרשימה תתרוקן לכל מי שמשותף בה." : "");
@@ -1395,6 +1425,7 @@ $("editDelete").addEventListener("click", () => {
 const listName = () => (backend === cloud && ui.list ? ui.list.name : prefs.listName) || "הסל שלי";
 const renameSheet = $("renameSheet");
 $("listTitle").addEventListener("click", () => {
+  if (lockedForMe()) return lockedNotice();
   $("renameInput").value = listName();
   $("renameNote").textContent = backend === cloud && ui.members.length > 1 ? "השם משתנה לכל מי שברשימה" : "";
   openSheet(renameSheet);
@@ -1456,9 +1487,6 @@ function renderShare() {
     body.innerHTML = `<h3 id="shareTitle">שיתוף הרשימה</h3><p class="sheet-note">טוען…</p>`;
     return;
   }
-  const myId = cloud.user.uid;
-  const iOwn = ui.list.ownerId === myId;
-  const members = ui.members.slice().sort((a, b) => (a.id === ui.list.ownerId ? -1 : b.id === ui.list.ownerId ? 1 : 0));
   const wa = `https://wa.me/?text=${encodeURIComponent(shareMessage())}`;
   const mail = `mailto:?subject=${encodeURIComponent("רשימת קניות משותפת 🛒")}&body=${encodeURIComponent(shareMessage())}`;
 
@@ -1485,31 +1513,72 @@ function renderShare() {
       </button>` : ""}
     </div>
 
-    <p class="sheet-label">משתתפים (${members.length})</p>
+    <button class="sheet-item cancel" data-share="close">סגירה</button>`;
+}
+
+// ---------- Participants (shared lists) ----------
+const peopleSheet = $("peopleSheet");
+$("peopleBtn").addEventListener("click", () => { renderPeople(); openSheet(peopleSheet); });
+function renderPeople() {
+  if (!ui.list || !cloud?.user) return;
+  const myId = cloud.user.uid;
+  const iOwn = ui.list.ownerId === myId;
+  const members = ui.members.slice().sort((a, b) => (a.id === ui.list.ownerId ? -1 : b.id === ui.list.ownerId ? 1 : 0));
+  $("peopleBody").innerHTML = `
+    <h3 id="peopleTitle">משתתפים ברשימה (${members.length})</h3>
+    ${ui.list.locked ? `<p class="sheet-note">🔒 הרשימה נעולה${iOwn ? ". אפשר לתת למשתתפים הרשאת עריכה." : isEditor(myId) ? `, ו${escapeHtml(ownerFirstName())} נתן/ה לך הרשאת עריכה.` : `: אפשר לסמן מה בעגלה, אבל לא לשנות אותה.`}</p>` : ""}
     <ul class="members">
       ${members.map((m) => `
         <li class="member">
           ${avatarHtml(m)}
           <div class="member-text">
             <strong>${escapeHtml(m.name || m.email)}${m.id === myId ? " (אני)" : ""}</strong>
-            <span>${m.id === ui.list.ownerId ? "יוצר/ת הרשימה" : escapeHtml(m.email || "")}</span>
+            <span>${m.id === ui.list.ownerId ? "יוצר/ת הרשימה" : ui.list.locked && isEditor(m.id) ? "יכול/ה לערוך" : escapeHtml(m.email || "")}</span>
           </div>
+          ${iOwn && m.id !== myId && ui.list.locked ? `
+          <button type="button" class="edit-perm${isEditor(m.id) ? " on" : ""}" data-share="editor" data-uid="${escapeHtml(m.id)}"
+                  role="switch" aria-checked="${isEditor(m.id)}" aria-label="${escapeHtml(m.name || m.email)} יכול/ה לערוך">
+            <span>יכול/ה לערוך</span><span class="switch sm" aria-hidden="true"></span>
+          </button>` : ""}
           ${iOwn && m.id !== myId ? `<button class="link-btn danger" data-share="remove" data-uid="${escapeHtml(m.id)}">הסרה</button>` : ""}
         </li>`).join("")}
     </ul>
-
     ${iOwn
-      ? `<button class="link-btn muted" data-share="reset">🔒 איפוס קישור ההזמנה (הקישור הישן יפסיק לעבוד)</button>`
+      ? `<button class="link-btn muted" data-share="reset">🔗 איפוס קישור ההזמנה (הקישור הישן יפסיק לעבוד)</button>`
       : `<button class="link-btn danger" data-share="leave">עזיבת הרשימה</button>`}
     <button class="sheet-item cancel" data-share="close">סגירה</button>`;
 }
+const refreshSheets = () => { if (!shareSheet.hidden) renderShare(); if (!peopleSheet.hidden) renderPeople(); };
 
-shareSheet.addEventListener("click", async (e) => {
+// Lock / unlock (owner), from the home screen.
+async function toggleLock() {
+  const next = !ui.list.locked;
+  ui.list = { ...ui.list, locked: next }; // show it right away; the database confirms
+  refreshSheets(); render();
+  try { await cloud.setLocked(next); } catch (err) { fail(err); return; }
+  buzz(12);
+  showToast(next ? "🔒 הרשימה נעולה. אפשר לתת הרשאת עריכה ב״משתתפים״" : "🔓 הרשימה פתוחה לעריכה לכולם", false);
+}
+$("lockBtn").addEventListener("click", toggleLock);
+
+async function onSheetAction(e) {
   const el = e.target.closest("[data-share]");
   if (!el) return;
   const act = el.dataset.share;
   try {
     if (act === "close") closeSheets();
+    else if (act === "editor") {
+      const uid = el.dataset.uid;
+      const editors = new Set(ui.list.editors || []);
+      const allow = !editors.has(uid);
+      if (allow) editors.add(uid); else editors.delete(uid);
+      ui.list = { ...ui.list, editors: [...editors] };
+      refreshSheets(); render();
+      await cloud.setEditors([...editors]);
+      buzz(8);
+      const who = (ui.members.find((m) => m.id === uid)?.name || "").split(" ")[0];
+      showToast(allow ? `${who} יכול/ה לערוך את הרשימה` : `${who} יכול/ה רק לסמן מה בעגלה`, false);
+    }
     else if (act === "sign-in") { closeSheets(); await signIn(); }
     else if (act === "copy") {
       await navigator.clipboard.writeText(shareLink());
@@ -1533,7 +1602,9 @@ shareSheet.addEventListener("click", async (e) => {
       }
     }
   } catch (err) { fail(err); }
-});
+}
+shareSheet.addEventListener("click", onSheetAction);
+peopleSheet.addEventListener("click", onSheetAction);
 
 // ---------- List interactions ----------
 let suppressClick = false;
@@ -1543,6 +1614,7 @@ function onListClick(e) {
   const li = e.target.closest(".item");
   if (!btn || !li) return;
   const id = li.dataset.id;
+  if (lockedForMe() && btn.dataset.act !== "toggle") return lockedNotice();
   switch (btn.dataset.act) {
     case "toggle": return toggle(id);
     case "edit": return openEdit(id);
@@ -1567,7 +1639,7 @@ function enableSwipe(list) {
   list.addEventListener("pointerdown", (e) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     body = e.target.closest(".item-body");
-    if (!body) return;
+    if (!body || lockedForMe()) { body = null; return; } // locked: no swipe-to-delete
     li = body.parentElement;
     startX = e.clientX; startY = e.clientY; dx = 0;
     active = true; decided = false;
@@ -1663,10 +1735,10 @@ function openCloudList(id) {
         cloud.setIndexName(list.id, list.name);
       }
       render();
-      if (!shareSheet.hidden) renderShare();
+      refreshSheets();
       if (list.store) loadStore(currentStoreId()); // someone on the list picked a store, a branch or "no store" (no-op if unchanged)
     },
-    onMembers(members) { ui.members = members; render(); if (!shareSheet.hidden) renderShare(); },
+    onMembers(members) { ui.members = members; render(); refreshSheets(); },
     onRemote(changes) {
       changes.forEach((c) => {
         if (c.type === "removed") return;
