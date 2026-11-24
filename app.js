@@ -140,20 +140,19 @@ function priceLine(it) {
     // show the name the user picked so it doesn't look like a different product.
     // The chosen product isn't sold here: say so, and name the product priced instead.
     if (p.missingProduct) {
-      return `<div class="item-price">${amt(money(p.total))}${perKg}${qtyNote} <span class="pick">המוצר שבחרתם לא נמכר כאן · במקומו: ${escapeHtml(p.product.name)}</span></div>`;
+      return `<div class="item-price">${amt(money(p.total))}${perKg}${qtyNote} <span class="warn">· המוצר שבחרתם לא נמכר כאן, במקומו: ${escapeHtml(p.product.name)}</span></div>`;
     }
     const label = it.productName || ui.choices[norm(it.name)]?.name || p.product.name;
     return `<div class="item-price">${amt(money(p.total))}${perKg}${qtyNote} <span class="muted">· ${escapeHtml(label)}</span></div>`;
   }
   if (p.kind === "estimate") {
-    // How close the match is: every detail found, some ("בלי: פרווה"), or just the product type.
-    const fit = p.missingProduct ? "המוצר שבחרתם לא נמכר כאן — מחיר משוער למוצר דומה · "
-      : p.fit === "partial" ? `לא מצאנו בדיוק (בלי: ${escapeHtml(p.missing.join(" "))}) — מחיר לפי מוצרים דומים · `
-      : p.fit === "general" ? `לא מצאנו ${escapeHtml(p.missing.join(" "))} — מחיר כללי לסוג המוצר · `
-      : "";
-    const note = fit;
-    const kinds = p.count > 1 ? `יש ${p.count} סוגים — ` : "";
-    return `<div class="item-price est">${amt("~" + money(p.total))}${p.weighted ? " לק״ג" : ""}${qtyNote} <span class="pick">${note}${kinds}הקישו לבחירה</span></div>`;
+    // One short, quiet line: the typical price, then how close the match is ("בלי: פרווה",
+    // "מחיר כללי") or how many kinds there are. Tapping the item opens the product choice.
+    const note = p.missingProduct ? `<span class="warn">· המוצר שבחרתם לא נמכר כאן</span>`
+      : p.fit === "partial" ? `<span class="warn">· בלי: ${escapeHtml(p.missing.join(" "))}</span>`
+      : p.fit === "general" ? `<span class="warn">· מחיר כללי</span>`
+      : p.count > 1 ? `<span class="muted">· ${p.count} סוגים</span>` : "";
+    return `<div class="item-price est">${amt("~" + money(p.total))}${p.weighted ? " לק״ג" : ""}${qtyNote} ${note}</div>`;
   }
   return `<div class="item-price none">לא נמצא ב${escapeHtml(ui.cat.name)}</div>`;
 }
@@ -169,7 +168,7 @@ function byLine(it) {
   if (!parts.length) return "";
   const label = parts.map(([verb, who]) => `${verb} ע״י ${who}`).join(", ");
   return `<div class="item-who" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">` +
-    parts.map(([verb, who]) => `<span>${verb}</span><b>${escapeHtml(who)}</b>`).join("") + `</div>`;
+    parts.map(([verb, who]) => `<span>${verb} ע״י</span><b>${escapeHtml(who)}</b>`).join("") + `</div>`;
 }
 
 function itemHtml(it) {
