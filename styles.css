@@ -920,10 +920,6 @@ s.was { color: var(--muted); font-weight: 600; text-decoration-thickness: 1.5px;
 :root[data-theme="dark"] .deal-tag.club { color: #c4b5fd; }
 .done .deal-tag { color: var(--muted); }
 .product-price small { display: block; }
-.club-btn { display: flex; align-items: center; gap: 6px; margin: 8px auto 0; font-size: 13px; font-weight: 700; color: var(--muted); }
-.club-btn.on { color: #7c3aed; }
-.club-btn.on .switch { background: #7c3aed; }
-.club-btn.on .switch.sm::after { inset-inline-start: 16px; }
 /* "Where is it cheapest?": a little smaller, with space above it */
 .deals-btn { margin-top: 22px; padding: 8px 15px; font-size: 14px; gap: 6px; }
 .deals-btn svg { width: 16px; height: 16px; }
@@ -948,3 +944,4 @@ body.asking-consent .content { padding-bottom: 180px; }
 .consent-actions { align-items: center; justify-content: space-between; }
 .consent-actions .btn.primary { flex: 0 0 auto; padding: 0 22px; }
 .consent-off { color: var(--muted); font-size: 13.5px; padding: 8px 4px; }
+.deals-note { font-size: 13.5px; margin: -6px 4px 12px; }

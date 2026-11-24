@@ -349,12 +349,6 @@ function renderStores() {
   const b = currentBranchId(sel);
   const branch = b && ui.storeLists[sel]?.find((s) => s.id === b);
   $("branchBtn").hidden = !sel || !c?.branches;
-  $("clubBtn").hidden = !sel;
-  if (sel) {
-    $("clubLabel").textContent = `💳 חבר/ה במועדון ${c?.name || ""}`;
-    $("clubBtn").setAttribute("aria-checked", String(isClubMember(sel)));
-    $("clubBtn").classList.toggle("on", isClubMember(sel));
-  }
   $("branchName").textContent = !b ? "כל הסניפים — מחיר נפוץ ברשת"
     : (branch ? `סניף ${branch.name}${branch.city && !branch.name.includes(branch.city) ? `, ${branch.city}` : ""}` : `סניף ${b}`)
       + (isAutoBranch(sel) && !userPickedBranch(sel) ? " · הקרוב אליך" : "");
@@ -405,18 +399,9 @@ function selectStore(id) {
   if (id) nearestBranch(id, true);
 }
 
-// ---------- Club membership (per chain, this device) ----------
-const isClubMember = (chain) => !!(chain && prefs.clubs?.[chain]);
-$("clubBtn").addEventListener("click", () => {
-  const chain = currentStoreId();
-  if (!chain) return;
-  prefs.clubs = { ...(prefs.clubs || {}), [chain]: !isClubMember(chain) };
-  track("club_toggle", { store: chain, on: prefs.clubs[chain] ? 1 : 0 });
-  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), clubs: prefs.clubs });
-  buzz(8);
-  render();
-  showToast(isClubMember(chain) ? "💳 מחירי מועדון נכללים בחישוב" : "מחירי מועדון לא נכללים", false);
-});
+// ---------- Club prices ----------
+// Club-only deals always count (marked "💳 מועדון"); there's no membership switch.
+const isClubMember = (chain) => !!chain;
 
 function selectBranch(branchId) {
   const chain = currentStoreId();
@@ -597,7 +582,7 @@ async function runDeals(force = false) {
     else { console.error(data.message); finish(null); }
   };
   w.onerror = (e) => { console.error(e); finish(null); };
-  w.postMessage({ id, items, choices: ui.choices, clubs: prefs.clubs || {}, here, maxKm: Math.max(...RADII) / MIN_PER_KM, current });
+  w.postMessage({ id, items, choices: ui.choices, clubs: false, here, maxKm: Math.max(...RADII) / MIN_PER_KM, current });
 }
 
 function renderDeals() {
