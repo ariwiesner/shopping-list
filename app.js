@@ -165,6 +165,12 @@ function priceLine(it) {
 // ("נוסף / ארי / נערך / מיכל"). Ticking it into the cart isn't an edit.
 function byLine(it) {
   if (ui.members.length < 2) return "";
+  const reqs = requestsOf(it);
+  if (reqs) {
+    const label = "ביקשו: " + reqs.map((r) => `${r.name} ${r.qty}`).join(", ");
+    return `<div class="item-who asked" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"><span>ביקשו</span>` +
+      reqs.map((r) => `<b>${escapeHtml(r.name)} ${r.qty}</b>`).join("") + `</div>`;
+  }
   const parts = [];
   if (it.createdByName) parts.push(["נוסף", it.createdByName]);
   if (it.editedByName && it.editedBy !== it.createdBy) parts.push(["נערך", it.editedByName]);
@@ -1071,6 +1077,8 @@ function addItem(text) {
   const { name, qty } = parseInput(text);
   if (!name) return;
   const existing = ui.items.find((i) => !i.done && i.name.toLowerCase() === name.toLowerCase());
+  // Shared list, and someone else asked for it: ask whether to add for me too.
+  if (existing && askedByOthers(existing)) return askDuplicate(existing, qty);
   if (existing) {
     const next = Math.min(existing.qty + qty, 999);
     backend.patch([existing.id], { qty: next }).catch(fail);
@@ -1082,6 +1090,96 @@ function addItem(text) {
   buzz();
 }
 
+// ---------- The same item, asked for by several people (shared lists) ----------
+// One item keeps the total amount, and askedBy remembers who asked for how much
+// ({ uid: { name, qty } }); whoever added it first asked for the rest.
+const myUid = () => cloud?.user?.uid;
+const askedByOthers = (it) => backend === cloud && ui.members.length > 1 && !!myUid()
+  && ((it.createdBy && it.createdBy !== myUid()) || Object.keys(it.askedBy || {}).some((u) => u !== myUid()));
+// [{ uid, name, qty }] in order: the first adder, then the others; null when nobody else asked.
+function requestsOf(it) {
+  const extra = Object.entries(it.askedBy || {}).map(([uid, r]) => ({ uid, name: r.name, qty: r.qty }));
+  if (!extra.length) return null;
+  const firstQty = it.qty - extra.filter((r) => r.uid !== it.createdBy).reduce((a, r) => a + r.qty, 0);
+  const list = extra.filter((r) => r.uid !== it.createdBy);
+  if (it.createdByName && firstQty > 0) list.unshift({ uid: it.createdBy, name: it.createdByName, qty: firstQty });
+  return list;
+}
+
+let dup = null; // { id, qty } waiting for an answer
+const dupSheet = $("dupSheet");
+function askDuplicate(it, qty) {
+  dup = { id: it.id, qty };
+  const reqs = requestsOf(it);
+  const who = reqs ? reqs.map((r) => `${r.name} (${r.qty})`).join(", ")
+    : `${it.createdByName || "מישהו אחר"}`;
+  $("dupTitle").textContent = `${it.name} כבר ברשימה`;
+  $("dupText").textContent = reqs
+    ? `כבר ביקשו: ${who}. סה״כ עכשיו ×${it.qty}.`
+    : `${who} כבר הוסיף/ה ${it.name} (×${it.qty}). אפשר להוסיף גם בשבילך, וכך מי שקונה יידע מי ביקש כמה.`;
+  $("dupYes").textContent = `להוסיף גם בשבילי (+${qty})`;
+  buzz(12);
+  openSheet(dupSheet);
+}
+$("dupNo").addEventListener("click", () => { dup = null; closeSheets(); });
+$("dupYes").addEventListener("click", () => {
+  const it = dup && find(dup.id);
+  const add = dup?.qty || 1;
+  dup = null;
+  closeSheets();
+  if (!it) return;
+  const me = myUid();
+  const myName = (cloud.user.displayName || "").split(" ")[0] || "אני";
+  const askedBy = { ...(it.askedBy || {}) };
+  // The first adder's share is "the rest", so it grows by itself; others are recorded.
+  if (it.createdBy !== me) askedBy[me] = { name: myName, qty: (askedBy[me]?.qty || 0) + add };
+  const next = Math.min(it.qty + add, 999);
+  backend.patch([it.id], { qty: next, askedBy }).catch(fail);
+  buzz();
+  showToast(`נוסף בשבילך: ${it.name} — עכשיו ×${next}`, false);
+});
+
+// +/- on an item others asked for: whose share does it change?
+let whoFor = null; // { id, delta }
+const whoSheet = $("whoSheet");
+const myFirstName = () => (cloud?.user?.displayName || "").split(" ")[0] || "אני";
+function askWho(it, delta) {
+  whoFor = { id: it.id, delta };
+  const me = myUid();
+  const people = requestsOf(it) || [{ uid: it.createdBy, name: it.createdByName || "מי שהוסיף", qty: it.qty }];
+  const options = delta > 0 ? [...people] : people.filter((p) => p.qty > 0);
+  if (delta > 0 && !options.some((p) => p.uid === me)) options.push({ uid: me, name: "בשבילי", qty: 0, mine: true });
+  $("whoTitle").textContent = delta > 0 ? `+1 ${it.name} — בשביל מי?` : `−1 ${it.name} — ממי להוריד?`;
+  $("whoList").innerHTML = options.map((p) => `
+    <button type="button" class="sheet-item who-opt" data-uid="${escapeHtml(p.uid)}">
+      <span>${p.mine ? "🙋 בשבילי" : escapeHtml(p.uid === me ? `${p.name} (אני)` : p.name)}</span>
+      ${p.mine ? "" : `<span class="who-qty">${p.qty} ${delta > 0 ? "→" : "→"} ${p.qty + delta}</span>`}
+    </button>`).join("");
+  buzz(8);
+  openSheet(whoSheet);
+}
+$("whoCancel").addEventListener("click", () => { whoFor = null; closeSheets(); });
+$("whoList").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-uid]");
+  const it = b && whoFor && find(whoFor.id);
+  const delta = whoFor?.delta || 0;
+  whoFor = null;
+  closeSheets();
+  if (!it || !delta) return;
+  const uid = b.dataset.uid;
+  const next = it.qty + delta;
+  if (next < 1) return removeItems([it.id]);
+  // The first adder's share is "the rest" (it moves with the total); everyone else's is recorded.
+  const askedBy = { ...(it.askedBy || {}) };
+  if (uid !== it.createdBy) {
+    const n = (askedBy[uid]?.qty || 0) + delta;
+    if (n > 0) askedBy[uid] = { name: askedBy[uid]?.name || myFirstName(), qty: n };
+    else delete askedBy[uid];
+  }
+  buzz(5);
+  backend.patch([it.id], { qty: Math.min(next, 999), askedBy }).catch(fail);
+});
+
 function toggle(id) {
   const it = find(id);
   if (!it) return;
@@ -1092,6 +1190,8 @@ function toggle(id) {
 function changeQty(id, delta) {
   const it = find(id);
   if (!it) return;
+  // Shared item that others asked for: ask whose amount this changes.
+  if (askedByOthers(it)) return askWho(it, delta);
   const next = it.qty + delta;
   if (next < 1) return removeItems([id]);
   buzz(5);
