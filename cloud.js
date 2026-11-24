@@ -141,6 +141,14 @@ export async function createCloud(config) {
     indexList(id, name) {
       return setDoc(userRef(), { activeListId: id, lists: { [id]: name || "רשימה" } }, { merge: true });
     },
+    // Members the owner lets edit a locked list (owner only; enforced by the database rules).
+    setEditors(uids) {
+      return updateDoc(listRef(), { editors: uids });
+    },
+    // Lock / unlock the open list (owner only; enforced by the database rules).
+    setLocked(locked) {
+      return updateDoc(listRef(), { locked: !!locked });
+    },
     // Rename the open list (for everyone on it) and update my own list index.
     async renameList(name) {
       await updateDoc(listRef(), { name });

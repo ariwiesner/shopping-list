@@ -209,6 +209,14 @@ function render() {
 
   todoList.innerHTML = todo.map(itemHtml).join("");
   $("todoHead").hidden = !total;
+  const locked = backend === cloud && !!ui.list?.locked;
+  document.body.classList.toggle("locked", lockedForMe());
+  $("lockBanner").hidden = !locked;
+  $("lockBanner").textContent = !locked ? ""
+    : lockedForMe() ? `🔒 הרשימה נעולה על ידי ${ownerFirstName()}. אפשר לסמן מה בעגלה, אבל לא לשנות את הרשימה.`
+    : ui.list.ownerId !== cloud?.user?.uid ? `🔒 הרשימה נעולה, אבל ${ownerFirstName()} נתן/ה לך הרשאת עריכה.`
+    : (ui.list.editors || []).length ? "🔒 הרשימה נעולה: רק את/ה ומי שקיבל הרשאה יכולים לשנות פריטים. השאר יכולים לסמן מה בעגלה."
+    : "🔒 הרשימה נעולה: רק את/ה יכול/ה לשנות פריטים. השאר יכולים לסמן מה בעגלה.";
   $("todoCount").textContent = todo.length;
   doneList.innerHTML = done.map(itemHtml).join("");
 
@@ -257,7 +265,14 @@ function renderTotal(items) {
 // The store choice: a chain id, NO_STORE ("none": a plain list, no prices) or null (never chosen).
 // A shared list's choice wins over this device's, so everyone on the list sees the same thing.
 const NO_STORE = "none";
-const storeChoice = () => (backend === cloud && ui.list?.store) || prefs.store || null;
+// A shared list its owner has locked: others can only tick items (and pick their own store view).
+const isEditor = (uid) => (ui.list?.editors || []).includes(uid);
+const lockedForMe = () => backend === cloud && !!ui.list?.locked && !!cloud?.user
+  && ui.list.ownerId !== cloud.user.uid && !isEditor(cloud.user.uid);
+const canWriteList = () => backend === cloud && !!ui.list && !lockedForMe();
+const ownerFirstName = () => (ui.members.find((m) => m.id === ui.list?.ownerId)?.name || "").split(" ")[0] || "יוצר/ת הרשימה";
+function lockedNotice() { buzz(20); showToast(`🔒 הרשימה נעולה. רק ${ownerFirstName()} יכול/ה לשנות אותה`, false); }
+const storeChoice = () => (lockedForMe() ? prefs.store || ui.list?.store : (backend === cloud && ui.list?.store) || prefs.store) || null;
 const currentStoreId = () => { const s = storeChoice(); return s && s !== NO_STORE ? s : null; };
 
 function renderStores() {
@@ -287,7 +302,8 @@ function renderStores() {
 
 // The branch picked for a chain: the shared list's choice, else this device's last choice.
 const currentBranchId = (chain = currentStoreId()) =>
-  (backend === cloud && ui.list?.store === chain && ui.list?.branch) || prefs.branches?.[chain] || null;
+  (lockedForMe() && prefs.branches && Object.prototype.hasOwnProperty.call(prefs.branches, chain) ? prefs.branches[chain] : null)
+  || (backend === cloud && ui.list?.store === chain && ui.list?.branch) || prefs.branches?.[chain] || null;
 
 async function loadStore(id) {
   if (!id) { ui.cat = null; ui.catId = null; ui.catKey = null; render(); return; }
@@ -318,7 +334,7 @@ function selectStore(id) {
   prefs.store = choice;
   store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), store: choice });
   // (A branch picked automatically as the nearest is this device's only; don't share it.)
-  if (backend === cloud && ui.list) cloud.setListStore(choice, id && !isAutoBranch(id) ? prefs.branches?.[id] || null : null).catch(fail);
+  if (canWriteList()) cloud.setListStore(choice, id && !isAutoBranch(id) ? prefs.branches?.[id] || null : null).catch(fail);
   loadStore(id || null);
   if (id) nearestBranch(id, true);
 }
@@ -327,7 +343,7 @@ function selectBranch(branchId) {
   const chain = currentStoreId();
   if (!chain) return;
   saveBranch(chain, branchId || null, false);
-  if (backend === cloud && ui.list) cloud.setListStore(chain, branchId || null).catch(fail);
+  if (canWriteList()) cloud.setListStore(chain, branchId || null).catch(fail);
   buzz(8);
   loadStore(chain);
 }
@@ -453,7 +469,7 @@ function chooseStore(chain, branch) {
   prefs.store = chain;
   saveBranch(chain, branch || null, false);
   store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), store: chain });
-  if (backend === cloud && ui.list) cloud.setListStore(chain, branch || null).catch(fail);
+  if (canWriteList()) cloud.setListStore(chain, branch || null).catch(fail);
   buzz(8);
   loadStore(chain);
 }
@@ -1249,6 +1265,7 @@ function renderMenu() {
 // Delete the whole list (to buy + cart), after asking. Undo is still offered in the toast.
 const confirmSheet = $("confirmSheet");
 $("clearAll").addEventListener("click", () => {
+  if (lockedForMe()) return lockedNotice();
   const n = ui.items.length;
   $("confirmText").textContent = `${n === 1 ? "הפריט היחיד ברשימה יימחק" : `כל ${n} הפריטים ברשימה יימחקו`}, כולל מה שבעגלה.` +
     (ui.members.length > 1 ? " הרשימה תתרוקן לכל מי שמשותף בה." : "");
@@ -1395,6 +1412,7 @@ $("editDelete").addEventListener("click", () => {
 const listName = () => (backend === cloud && ui.list ? ui.list.name : prefs.listName) || "הסל שלי";
 const renameSheet = $("renameSheet");
 $("listTitle").addEventListener("click", () => {
+  if (lockedForMe()) return lockedNotice();
   $("renameInput").value = listName();
   $("renameNote").textContent = backend === cloud && ui.members.length > 1 ? "השם משתנה לכל מי שברשימה" : "";
   openSheet(renameSheet);
@@ -1494,12 +1512,24 @@ function renderShare() {
             <strong>${escapeHtml(m.name || m.email)}${m.id === myId ? " (אני)" : ""}</strong>
             <span>${m.id === ui.list.ownerId ? "יוצר/ת הרשימה" : escapeHtml(m.email || "")}</span>
           </div>
+          ${iOwn && m.id !== myId && ui.list.locked ? `
+          <button type="button" class="edit-perm${isEditor(m.id) ? " on" : ""}" data-share="editor" data-uid="${escapeHtml(m.id)}"
+                  role="switch" aria-checked="${isEditor(m.id)}" aria-label="${escapeHtml(m.name || m.email)} יכול/ה לערוך">
+            <span>יכול/ה לערוך</span><span class="switch sm" aria-hidden="true"></span>
+          </button>` : ""}
           ${iOwn && m.id !== myId ? `<button class="link-btn danger" data-share="remove" data-uid="${escapeHtml(m.id)}">הסרה</button>` : ""}
         </li>`).join("")}
     </ul>
 
+    ${iOwn ? `
+      <button type="button" class="lock-toggle${ui.list.locked ? " on" : ""}" data-share="lock" role="switch" aria-checked="${!!ui.list.locked}">
+        <span class="lock-text"><strong>🔒 נעילת הרשימה</strong>
+          <small>${ui.list.locked ? "נעולה: רק את/ה יכול/ה להוסיף, לערוך ולמחוק. השאר יכולים לסמן מה בעגלה." : "כשהרשימה נעולה, רק את/ה יכול/ה לשנות אותה. השאר יוכלו רק לסמן מה בעגלה."}</small></span>
+        <span class="switch" aria-hidden="true"></span>
+      </button>` : ui.list.locked ? `<p class="sheet-note">🔒 ${escapeHtml(ownerFirstName())} נעל/ה את הרשימה${isEditor(myId)
+        ? ", ונתן/ה לך הרשאת עריכה." : ": אפשר לסמן מה בעגלה, אבל לא לשנות אותה."}</p>` : ""}
     ${iOwn
-      ? `<button class="link-btn muted" data-share="reset">🔒 איפוס קישור ההזמנה (הקישור הישן יפסיק לעבוד)</button>`
+      ? `<button class="link-btn muted" data-share="reset">🔗 איפוס קישור ההזמנה (הקישור הישן יפסיק לעבוד)</button>`
       : `<button class="link-btn danger" data-share="leave">עזיבת הרשימה</button>`}
     <button class="sheet-item cancel" data-share="close">סגירה</button>`;
 }
@@ -1510,6 +1540,26 @@ shareSheet.addEventListener("click", async (e) => {
   const act = el.dataset.share;
   try {
     if (act === "close") closeSheets();
+    else if (act === "editor") {
+      const uid = el.dataset.uid;
+      const editors = new Set(ui.list.editors || []);
+      const allow = !editors.has(uid);
+      if (allow) editors.add(uid); else editors.delete(uid);
+      ui.list = { ...ui.list, editors: [...editors] };
+      renderShare(); render();
+      await cloud.setEditors([...editors]);
+      buzz(8);
+      const who = (ui.members.find((m) => m.id === uid)?.name || "").split(" ")[0];
+      showToast(allow ? `${who} יכול/ה לערוך את הרשימה` : `${who} יכול/ה רק לסמן מה בעגלה`, false);
+    }
+    else if (act === "lock") {
+      const next = !ui.list.locked;
+      ui.list = { ...ui.list, locked: next }; // show it right away; the database confirms
+      renderShare(); render();
+      await cloud.setLocked(next);
+      buzz(12);
+      showToast(next ? "🔒 הרשימה נעולה. רק את/ה יכול/ה לשנות אותה" : "🔓 הרשימה פתוחה לעריכה לכולם", false);
+    }
     else if (act === "sign-in") { closeSheets(); await signIn(); }
     else if (act === "copy") {
       await navigator.clipboard.writeText(shareLink());
@@ -1543,6 +1593,7 @@ function onListClick(e) {
   const li = e.target.closest(".item");
   if (!btn || !li) return;
   const id = li.dataset.id;
+  if (lockedForMe() && btn.dataset.act !== "toggle") return lockedNotice();
   switch (btn.dataset.act) {
     case "toggle": return toggle(id);
     case "edit": return openEdit(id);
@@ -1567,7 +1618,7 @@ function enableSwipe(list) {
   list.addEventListener("pointerdown", (e) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     body = e.target.closest(".item-body");
-    if (!body) return;
+    if (!body || lockedForMe()) { body = null; return; } // locked: no swipe-to-delete
     li = body.parentElement;
     startX = e.clientX; startY = e.clientY; dx = 0;
     active = true; decided = false;
