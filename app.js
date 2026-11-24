@@ -646,16 +646,13 @@ function renderDeals() {
     }
   }
 
-  // Side by side: the cheapest branch within the chosen distance (the main box), and
-  // the cheapest chain in the country (smaller, next to it).
+  // The cheapest branch within the chosen distance.
   const nearby = res.branches.filter((b) => b.km != null && b.km <= maxKm && ok(b)).sort(byTotal);
   const best = nearby[0];
-  const top = res.chains.filter(ok).sort(byTotal)[0];
-  const sameAsBest = top && best && top.id === best.chain && top.nearest?.id === best.id;
   const box = (kicker, inner, cls = "") => `<section class="deal${cls}"><p class="deal-kicker">${kicker}</p>${inner}</section>`;
   const head = (id, name, sub, total) => `<div class="deal-head">${logo(id)}
-      <strong class="deal-total">${amt(total)}</strong></div>
-    <div class="deal-name"><strong>${escapeHtml(name)}</strong>${sub ? `<small>${escapeHtml(sub)}</small>` : ""}</div>`;
+      <div class="deal-name"><strong>${escapeHtml(name)}</strong>${sub ? `<small>${escapeHtml(sub)}</small>` : ""}</div>
+      <strong class="deal-total">${amt(total)}</strong></div>`;
   let nearHtml;
   if (best) {
     nearHtml = head(best.chain, best.chainName, where(best), est(best) + money(best.total)) +
@@ -668,17 +665,7 @@ function renderDeals() {
   } else {
     nearHtml = msg(r ? "לא מצאנו סניף עם כל הפריטים במרחק הזה. נסו מרחק גדול יותר." : "לא מצאנו סניף עם כל הפריטים.");
   }
-  let topHtml = "";
-  if (top && sameAsBest) {
-    topHtml = box("🏆 הכי זול בארץ", `<p class="deal-same">${logo(top.id)}<span>${escapeHtml(top.name)} היא גם הרשת הכי זולה בארץ</span></p>`, " small");
-  } else if (top) {
-    const near = top.nearest;
-    topHtml = box("🏆 הכי זול בארץ", head(top.id, top.name, near ? `הקרוב: ${where(near)}` : "", est(top) + money(top.total)) +
-      (near ? `<p class="deal-meta">${trip(near)}</p>` : "") + subsNote(top, true) +
-      (cur?.chain === top.id && (cur.kind === "chain" || cur.id === near?.id) ? `<p class="deal-save">🎉 זו הרשת שבחרת</p>` : save(top) + actions(top.id, near)),
-      " small");
-  }
-  html += `<div class="deal-pair">${box(`📍 הכי זול לידך · ${within}`, nearHtml, " main")}${topHtml}</div>`;
+  html += box(`📍 הכי זול לידך · ${within}`, nearHtml, " main");
 
   // Other chains nearby: the cheapest branch of each.
   const more = nearby.filter((b, k) => b.chain !== best?.chain && b.chain !== cur?.chain
@@ -699,7 +686,7 @@ function renderDeals() {
       `</ul><p>רוצים מוצר אחר? הקישו על הפריט ברשימה ובחרו.</p></details>`;
   }
   const notes = [`המחירים כאן הם בדיוק מה שהרשימה תראה אחרי מעבר לחנות`];
-  const general = Math.max(cur?.est || 0, best?.est || 0, top?.est || 0);
+  const general = Math.max(cur?.est || 0, best?.est || 0);
   if (general) notes.push(`${general === 1 ? "פריט אחד כללי" : `${general} פריטים כלליים`} (כמו "גבינה") מתומחרים לפי מחיר טיפוסי, אז ההשוואה משוערת. להשוואה מדויקת, הקישו על פריט ברשימה ובחרו מוצר`);
   // Chains left out because they lack something on the list.
   const lacking = res.chains.filter((c) => c.missing && c.id !== cur?.chain)
