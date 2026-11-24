@@ -14,6 +14,11 @@ const MAX_BASE64 = 5_000_000; // ~3.7 MB image; the app sends ~0.3 MB after shri
 const MIMES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 const PROMPT = `This photo should show a shopping list: handwritten or printed, usually in Hebrew, sometimes English.
+Handwritten Hebrew is often in cursive script (כתב רהוט), whose letters look very different from print
+(e.g. cursive א looks like a small "k", ע like "y", ש like "e", ם like "p", ו and י are short strokes).
+Read each line slowly, letter by letter: first write the letters you actually see in "raw" (in Hebrew print letters),
+then give the item in "name". The name must match those letters: a real Hebrew grocery word with the same letters
+(like "ופלים", "שעועית", "בייגלה", "ירקות"), never a different, more common product that merely looks similar.
 List every item to buy, in the order written.
 - Write each item in the language it is written in (usually Hebrew), fixing obvious spelling, as a short general product name, e.g. "חלב", "גבינה צהובה", "עגבניות". Keep a brand or detail only if it is written (e.g. "קוטג' 5%").
 - qty: the number written next to the item (e.g. "2", "x3", "שני"); otherwise 1. A weight like "2 ק"ג" counts as 2.
@@ -28,8 +33,9 @@ const SCHEMA = {
       type: "ARRAY",
       items: {
         type: "OBJECT",
-        properties: { name: { type: "STRING" }, qty: { type: "INTEGER" } },
-        required: ["name", "qty"],
+        properties: { raw: { type: "STRING" }, name: { type: "STRING" }, qty: { type: "INTEGER" } },
+        required: ["raw", "name", "qty"],
+        propertyOrdering: ["raw", "name", "qty"],
       },
     },
   },
@@ -49,6 +55,13 @@ export default {
 
     if (request.method === "OPTIONS") return new Response(null, { status: allowed.includes(origin) ? 204 : 403, headers: cors });
     if (!allowed.includes(origin)) return reply(403, { error: "forbidden" });
+    // Testing from the developer's computer only: list the models this key can use.
+    const testing = origin === "http://localhost:3000";
+    if (testing && request.method === "GET") {
+      const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200", { headers: { "x-goog-api-key": env.GEMINI_API_KEY } });
+      const d = await r.json();
+      return reply(r.status, { models: (d.models || []).filter((m) => (m.supportedGenerationMethods || []).includes("generateContent")).map((m) => m.name.replace("models/", "")) });
+    }
     if (request.method !== "POST") return reply(405, { error: "bad_request" });
     if (!env.GEMINI_API_KEY) return reply(500, { error: "failed" });
 
@@ -58,42 +71,76 @@ export default {
     if (typeof image !== "string" || !MIMES.has(mime)) return reply(400, { error: "bad_request" });
     if (image.length > MAX_BASE64) return reply(413, { error: "too_big" });
 
-    // Try each model in turn: the free tier limits each model separately, and is often
-    // briefly overloaded ("high demand", 503). If every model is busy, wait and go round again.
-    const models = (env.GEMINI_MODELS || "gemini-flash-latest,gemini-flash-lite-latest").split(",").map((s) => s.trim()).filter(Boolean);
-    let quota = false, busy = false;
-    for (let round = 0; round < 3; round++) {
-      if (round) await new Promise((r) => setTimeout(r, 1500 * round));
-      busy = false;
-      for (const model of models) {
-        const out = await ask(model);
-        if (out.items) return reply(200, { items: out.items });
-        if (out.quota) quota = true;
-        if (out.busy) busy = true;
+    // Two models at once, since the free tier is often briefly overloaded ("high demand", 503):
+    //   GEMINI_BEST   the most accurate free model (reads Hebrew cursive well), "model:thinking"
+    //   GEMINI_MODELS fast fallbacks, tried in turn
+    // The accurate answer wins if it comes in time; if the fast one is back first, wait up to
+    // 12 s more for it, then use the fast one. If everything is busy, wait and go round once more.
+    const spec = (s) => { const [model, think = ""] = s.trim().split(":"); return { model, think }; };
+    const best = spec(env.GEMINI_BEST || "gemini-3.6-flash:low");
+    const fallbacks = (env.GEMINI_MODELS || "gemini-3.5-flash-lite").split(",").map(spec).filter((m) => m.model);
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    let quota = false, busy = false, lastError = "";
+    const ok = (out) => (testing ? { items: out.items, model: out.model } : { items: out.items });
+
+    // Testing: one model (or a list) as asked, to compare them.
+    if (testing && Array.isArray(body.models) && body.models.length) {
+      for (const model of body.models) {
+        const out = await ask({ model: String(model), think: body.thinking ? String(body.thinking) : "" });
+        if (out.items) return reply(200, ok(out));
       }
+      return reply(busy ? 503 : quota ? 429 : 502, { error: busy ? "busy" : quota ? "quota" : "failed", detail: lastError });
+    }
+
+    for (let round = 0; round < 2; round++) {
+      if (round) await sleep(2000);
+      busy = false;
+      const primary = ask(best, 40000).then((o) => (o.items ? o : null));
+      const backup = (async () => {
+        for (const m of fallbacks) { const o = await ask(m, 25000); if (o.items) return o; }
+        return null;
+      })();
+      const first = await Promise.race([primary.then((r) => ({ isBest: true, r })), backup.then((r) => ({ isBest: false, r }))]);
+      const result = first.isBest ? first.r || (await backup)
+        : first.r ? (await Promise.race([primary, sleep(12000).then(() => null)])) || first.r
+        : await primary;
+      if (result) return reply(200, ok(result));
       if (!busy) break; // nothing temporary: don't retry
     }
-    return reply(busy ? 503 : quota ? 429 : 502, { error: busy ? "busy" : quota ? "quota" : "failed" });
+    return reply(busy ? 503 : quota ? 429 : 502, { error: busy ? "busy" : quota ? "quota" : "failed", ...(testing ? { detail: lastError } : {}) });
 
-    async function ask(model) {
+    // One request to one model, given up after `ms`.
+    async function ask({ model, think }, ms = 40000) {
       let res;
+      const stop = new AbortController();
+      const timer = setTimeout(() => stop.abort(), ms);
       try {
         res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
           method: "POST",
+          signal: stop.signal,
           headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
           body: JSON.stringify({
             contents: [{ role: "user", parts: [{ text: PROMPT }, { inline_data: { mime_type: mime, data: image } }] }],
-            generationConfig: { responseMimeType: "application/json", responseSchema: SCHEMA, temperature: 0 },
+            generationConfig: {
+              responseMimeType: "application/json", responseSchema: SCHEMA, temperature: 0,
+              ...(think ? { thinkingConfig: { thinkingLevel: think } } : {}),
+            },
           }),
         });
       } catch (e) {
-        console.log("gemini fetch failed", model, String(e));
-        return { busy: true };
+        clearTimeout(timer);
+        console.log("gemini fetch failed or timed out", model, String(e));
+        busy = true;
+        return {};
       }
-      if (res.status === 429) return { quota: true };
+      clearTimeout(timer);
+      if (res.status === 429) { quota = true; return {}; }
       if (!res.ok) {
-        console.log("gemini error", model, res.status, (await res.text()).slice(0, 200));
-        return { busy: res.status >= 500 };
+        const text = (await res.text()).slice(0, 300);
+        console.log("gemini error", model, res.status, text);
+        lastError = `${model} ${res.status} ${text}`;
+        if (res.status >= 500) busy = true;
+        return {};
       }
       try {
         const data = await res.json();
@@ -101,11 +148,13 @@ export default {
         const items = (JSON.parse(text).items || [])
           .filter((it) => it && typeof it.name === "string" && it.name.trim())
           .slice(0, 200)
-          .map((it) => ({ name: it.name.trim().slice(0, 60), qty: Math.min(Math.max(parseInt(it.qty, 10) || 1, 1), 999) }));
-        return { items };
+          .map((it) => ({ name: it.name.trim().slice(0, 60), qty: Math.min(Math.max(parseInt(it.qty, 10) || 1, 1), 999),
+            ...(testing && typeof it.raw === "string" ? { raw: it.raw.slice(0, 60) } : {}) }));
+        return { items, model };
       } catch (e) {
         console.log("gemini parse failed", model, String(e));
-        return { busy: true }; // an unreadable answer is usually a hiccup: worth another round
+        busy = true; // an unreadable answer is usually a hiccup: worth another round
+        return {};
       }
     }
   },
