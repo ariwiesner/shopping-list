@@ -68,7 +68,7 @@ svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width:
 }
 .top-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .greeting { margin: 0; color: var(--muted); font-weight: 600; font-size: 17px; }
-h1 { margin: 2px 0 0; font-size: 24px; font-weight: 800; letter-spacing: -.3px; }
+h1 { margin: 2px 0 0; font-size: 21px; font-weight: 800; letter-spacing: -.2px; }
 
 .icon-btn {
   width: var(--tap); height: var(--tap);
