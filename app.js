@@ -1,6 +1,6 @@
 import { firebaseConfig } from "./firebase-config.js";
 import { loadIndex, loadChain, loadStores, loadBranch, search, resolve, estimate, priceItem, norm, money } from "./catalog.js";
-import { parseList, cleanItems } from "./import-parse.js";
+import { parseList, cleanItems, looksLikeMessage } from "./import-parse.js";
 import { PHOTO_URL } from "./photo-config.js";
 
 const LOCAL_KEY = "basket.v1";
@@ -848,7 +848,7 @@ const intoNewList = () => backend === cloud && !!cloud?.user;
 const commitLabel = (n) => (intoNewList() ? `יצירת רשימה (${n})` : `הוספה לרשימה (${n})`);
 
 function openImport() {
-  Object.assign(imp, { step: "start", items: [], name: "", error: "", busy: false, retry: false, lastFile: null });
+  Object.assign(imp, { step: "start", items: [], name: "", error: "", busy: false, retry: false, lastFile: null, fallback: false });
   openSheet(importSheet);
   renderImport();
 }
@@ -877,12 +877,13 @@ function renderImport() {
   const err = imp.error ? `<p class="deal-warn import-error" role="alert">${escapeHtml(imp.error)}</p>` : "";
   if (imp.step === "reading") {
     body.innerHTML = `${imp.photo ? `<img class="import-photo" src="${imp.photo}" alt="" />` : ""}
-      <div class="deals-loading"><span class="spinner" aria-hidden="true"></span>קוראים את הרשימה מהתמונה…</div>`;
+      <div class="deals-loading"><span class="spinner" aria-hidden="true"></span>${imp.photo ? "קוראים את הרשימה מהתמונה…" : "קוראים את ההודעה…"}</div>`;
     return;
   }
   if (imp.step === "preview") {
     const n = imp.items.filter((it) => it.name.trim()).length;
     body.innerHTML = `<p class="sheet-note">מצאנו ${plural(n, "פריט", "פריטים")}. אפשר לתקן, למחוק או להוסיף לפני שממשיכים.</p>
+      ${imp.fallback ? `<p class="deal-warn import-error">הקריאה החכמה לא הייתה זמינה, אז פענחנו את ההודעה לבד. כדאי לעבור על הרשימה.</p>` : ""}
       ${intoNewList() ? `<label class="field import-name"><span>שם הרשימה החדשה</span>
         <input id="importName" type="text" maxlength="80" value="${escapeHtml(imp.name)}" placeholder="רשימה מיובאת" /></label>` : ""}
       <ul class="import-items">${imp.items.map((it, k) => `
@@ -940,7 +941,24 @@ importSheet.addEventListener("click", async (e) => {
     catch (_) { imp.error = "לא הצלחנו לקרוא מהלוח. לחצו לחיצה ארוכה בתיבה ובחרו 'הדבקה'."; }
     renderImport();
   } else if (act === "parse") {
-    imp.items = parseList(imp.text);
+    imp.fallback = false;
+    if (PHOTO_URL && looksLikeMessage(imp.text)) {
+      if (imp.photo) { URL.revokeObjectURL(imp.photo); imp.photo = ""; }
+      imp.step = "reading";
+      renderImport();
+      try {
+        const res = await fetch(PHOTO_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: imp.text }) });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error || "failed");
+        imp.items = cleanItems(out.items);
+        if (!imp.items.length) imp.items = parseList(imp.text); // the AI found nothing: let the rules try
+      } catch (err) {
+        console.warn("Smart reading unavailable, using the rules", err);
+        imp.items = parseList(imp.text);
+        imp.fallback = imp.items.length > 0;
+      }
+      imp.step = "start";
+    } else imp.items = parseList(imp.text);
     if (!imp.items.length) imp.error = imp.text.trim() ? "לא מצאנו פריטים בטקסט הזה." : "הדביקו קודם את הרשימה בתיבה.";
     else imp.step = "preview";
     renderImport();

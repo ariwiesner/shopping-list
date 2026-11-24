@@ -12,7 +12,7 @@ A mobile-first, Hebrew (RTL) shopping list. Lists are shared live between people
 | `catalog.js` | Store catalogs: loading, product search, item prices |
 | `import-parse.js` | Import a pasted list (WhatsApp, notes): one item per line or comma, quantities, chatter removed |
 | `photo-config.js` | Address of the photo-reading worker (`null` = not set up) |
-| `worker/` | Cloudflare Worker that reads photos of lists with Google Gemini (free tier) |
+| `worker/` | Cloudflare Worker that reads photos of lists, and chatty pasted messages, with Google Gemini (free tier) |
 | `compare-worker.js` | "Where is it cheapest?": prices the list in every chain and the nearest branches, in the background |
 | `scripts/build_catalog.py` | Daily price build (GitHub Action), incl. branch locations from OpenStreetMap |
 | `cloud.js` | Firebase: Google sign-in, Firestore lists, live updates, invites |

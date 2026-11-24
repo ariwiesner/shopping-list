@@ -3,7 +3,8 @@
 // Runs on Cloudflare Workers (free plan) and asks Google Gemini (free tier) to read the
 // photo. The Gemini key lives only here, as the secret GEMINI_API_KEY, never in the app.
 //
-// POST /  { image: "<base64 JPEG/PNG/WEBP>", mime: "image/jpeg" }
+// POST /  { image: "<base64 JPEG/PNG/WEBP>", mime: "image/jpeg" }   a photo of a list
+//      or { text: "<a message, e.g. pasted from WhatsApp>" }           free text
 //   200 -> { items: [{ name, qty }] }
 //   4xx/5xx -> { error: "too_big" | "bad_request" | "quota" | "busy" | "failed" | "forbidden" }
 //
@@ -25,6 +26,37 @@ List every item to buy, in the order written.
 - Leave out any item with a line drawn through it (crossed out / struck through): it was already bought.
 - Leave out titles ("לקנות", "רשימת קניות"), dates, prices, people's names and notes to someone, and doodles.
 - If you can't read an item at all, leave it out. If the photo is not a shopping list, return no items.`;
+
+// Free text: a chat message or note that asks for things (often in Hebrew).
+const TEXT_PROMPT = `Below is a message or note someone sent, usually in Hebrew (sometimes English), often copied from WhatsApp.
+It asks for things to buy, mixed with other talk. Return ONLY the things to buy, in the order they appear.
+- name: a short product name in the message's language, as a shopper would write it on a list ("צלחות גדולות", "חלב 3%",
+  "קוטג' 5%", "בשר טחון"). Keep details that describe the product (size, %, brand, kind, a cut number); drop everything else.
+- qty: the amount asked for ("4 צלחות" -> 4, "שני קוטג'" -> 2, "2 ק"ג עגבניות" -> 2); otherwise 1. When the amount
+  counts packages, leave the package word out of the name ("3 חבילות פיתות" -> "פיתות" ×3, "2 בקבוקי יין אדום" -> "יין אדום" ×2).
+- done: true only if the item is crossed out like ~חלב~; otherwise false.
+- Leave out things the message says are not needed or already bought ("לא צריך יותר חלב", "כבר קניתי").
+- Ignore greetings and small talk ("היי מה נשמע?", "תודה", "אהלן אחי"), request words ("תקנה", "תביא", "בבקשה", "אל תשכח"),
+  timing and conditions ("כשאתה חוזר", "אם יש מבצע", "מחר"), names of people, questions that aren't requests, links, and
+  WhatsApp metadata like "[12:30, 23/11/2026] אמא:".
+- If the same thing is asked twice, list it once with the total amount. If nothing is asked for, return no items.`;
+
+const TEXT_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    items: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: { name: { type: "STRING" }, qty: { type: "INTEGER" }, done: { type: "BOOLEAN" } },
+        required: ["name", "qty", "done"],
+        propertyOrdering: ["name", "qty", "done"],
+      },
+    },
+  },
+  required: ["items"],
+};
+const MAX_TEXT = 8000;
 
 const SCHEMA = {
   type: "OBJECT",
@@ -67,9 +99,20 @@ export default {
 
     let body;
     try { body = await request.json(); } catch { return reply(400, { error: "bad_request" }); }
-    const { image, mime } = body || {};
-    if (typeof image !== "string" || !MIMES.has(mime)) return reply(400, { error: "bad_request" });
-    if (image.length > MAX_BASE64) return reply(413, { error: "too_big" });
+    const { image, mime, text } = body || {};
+    const isText = typeof text === "string";
+    if (isText) {
+      if (!text.trim()) return reply(400, { error: "bad_request" });
+      if (text.length > MAX_TEXT) return reply(413, { error: "too_big" });
+    } else {
+      if (typeof image !== "string" || !MIMES.has(mime)) return reply(400, { error: "bad_request" });
+      if (image.length > MAX_BASE64) return reply(413, { error: "too_big" });
+    }
+    const parts = isText ? [{ text: TEXT_PROMPT }, { text: `<message>\n${text}\n</message>` }]
+      : [{ text: PROMPT }, { inline_data: { mime_type: mime, data: image } }];
+    const schema = isText ? TEXT_SCHEMA : SCHEMA;
+    // Text is easy for every model: wait less for the "best" one.
+    const waitForBest = isText ? 3000 : 12000;
 
     // Two models at once, since the free tier is often briefly overloaded ("high demand", 503):
     //   GEMINI_BEST   the most accurate free model (reads Hebrew cursive well), "model:thinking"
@@ -102,7 +145,7 @@ export default {
       })();
       const first = await Promise.race([primary.then((r) => ({ isBest: true, r })), backup.then((r) => ({ isBest: false, r }))]);
       const result = first.isBest ? first.r || (await backup)
-        : first.r ? (await Promise.race([primary, sleep(12000).then(() => null)])) || first.r
+        : first.r ? (await Promise.race([primary, sleep(waitForBest).then(() => null)])) || first.r
         : await primary;
       if (result) return reply(200, ok(result));
       if (!busy) break; // nothing temporary: don't retry
@@ -120,9 +163,9 @@ export default {
           signal: stop.signal,
           headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
           body: JSON.stringify({
-            contents: [{ role: "user", parts: [{ text: PROMPT }, { inline_data: { mime_type: mime, data: image } }] }],
+            contents: [{ role: "user", parts }],
             generationConfig: {
-              responseMimeType: "application/json", responseSchema: SCHEMA, temperature: 0,
+              responseMimeType: "application/json", responseSchema: schema, temperature: 0,
               ...(think ? { thinkingConfig: { thinkingLevel: think } } : {}),
             },
           }),
@@ -149,6 +192,7 @@ export default {
           .filter((it) => it && typeof it.name === "string" && it.name.trim())
           .slice(0, 200)
           .map((it) => ({ name: it.name.trim().slice(0, 60), qty: Math.min(Math.max(parseInt(it.qty, 10) || 1, 1), 999),
+            ...(it.done === true ? { done: true } : {}),
             ...(testing && typeof it.raw === "string" ? { raw: it.raw.slice(0, 60) } : {}) }));
         return { items, model };
       } catch (e) {

@@ -44,7 +44,10 @@ const NUMBER_WORDS = {
 // Words that open a remark: everything from here on is advice, not the product.
 const REMARK_WORDS = new Set(["אם", "ואם", "כי", "מה", "אבל", "בשביל", "למקרה", "לפי", "שיהיה", "שיש", "שזה", "שהוא",
   "שהיא", "שהם", "שיותר", "שפחות", "אולי", "אפשר", "עדיף", "רצוי", "בערך", "כמו", "כדי", "רק", "לא", "אלא", "תשאל",
-  "תשאלי", "תבדוק", "תבדקי", "תגיד", "תגידי", "מה שיש", "if", "because", "maybe", "or", "whatever", "like"]);
+  "תשאלי", "תבדוק", "תבדקי", "תגיד", "תגידי", "מה שיש", "if", "because", "maybe", "or", "whatever", "like",
+  // "...שאתה חוזר הביתה", "...כשאתה בדרך", "...כשתגיע": when, not what
+  "שאתה", "שאת", "שאתם", "שאתן", "כשאתה", "כשאת", "כשאתם", "כשתחזור", "כשתחזרי", "כשתגיע", "כשתגיעי", "כשתהיה",
+  "כשתהיי", "בדרך", "בחזרה", "אחרי", "לפני", "when", "on"]);
 const NUM_WORD_RE = new RegExp(`^(?:${Object.keys(NUMBER_WORDS).filter((w) => !w.includes(" ")).join("|")})$`);
 const isNum = (w) => /^\d+(?:[.,]\d+)?$/.test(w) || NUM_WORD_RE.test(w);
 const numOf = (w) => (/^\d/.test(w) ? parseFloat(w.replace(",", ".")) : NUMBER_WORDS[w]);
@@ -210,9 +213,16 @@ function parseQty(s) {
 }
 
 const CHAT_WORDS = new Set(["תודה", "ותודה", "רבה", "זהו", "זה", "הכל", "הכול", "בבקשה", "סבבה", "אוקיי", "אוקי",
-  "טוב", "כן", "לא", "שוב", "מאמי", "חמוד", "חמודה", "thanks", "thank", "you", "ok", "okay", "please", "that's", "all"]);
+  "טוב", "כן", "לא", "שוב", "מאמי", "חמוד", "חמודה", "thanks", "thank", "you", "ok", "okay", "please", "that's", "all",
+  // greetings and small talk: "היי מה נשמע?", "אהלן אחי, מה קורה?", "בוקר טוב"
+  "היי", "הי", "שלום", "אהלן", "הלו", "מה", "נשמע", "קורה", "שלומך", "שלומכם", "המצב", "העניינים", "בוקר", "ערב",
+  "צהריים", "לילה", "אחי", "אחותי", "חבר", "יאללה", "נו", "את", "אתה", "איך", "hey", "hi", "hello", "how", "are", "what's", "up"]);
+// A greeting in front of the request: "היי, תביא חלב" -> "תביא חלב"
+const GREETING = /^(?:היי|הי|שלום|אהלן|הלו|יאללה|hey|hi|hello)[\s,!.]+/i;
 // Requests around the item: "אל תשכח לחם", "תקנה גם חלב", "יש לנו חלב?"
-const REQUEST_PREFIX = /^(?:(?:אל\s+ת(?:שכח|שכחי|שכחו)|לא\s+לשכוח|ת(?:קנה|קני|קנו|ביא|ביאי|ביאו)|לקנות|צריך|צריכה|צריכים|חסר|חסרים|יש\s+לנו|אין\s+לנו|עוד|גם|קצת|please\s+buy|buy|get|need)\s+)+/i;
+const REQUEST_PREFIX = /^(?:(?:אל\s+ת(?:שכח|שכחי|שכחו)|לא\s+לשכוח|ת(?:קנה|קני|קנו|ביא|ביאי|ביאו)|לקנות|צריך|צריכה|צריכים|חסר|חסרים|יש\s+לנו|אין\s+לנו|עוד|ועוד|גם|וגם|קצת|בבקשה|can\s+you\s+(?:get|buy|bring|grab)|could\s+you\s+(?:get|buy|bring|grab)|please\s+buy|please|buy|get|grab|need)\s+)+/i;
+// ...and at the end: "חלב בבקשה", "milk please"
+const REQUEST_SUFFIX = /[\s,]+(?:בבקשה|תודה|please|thanks)[!.]*$/i;
 
 const isChatter = (s) => {
   const k = s.toLowerCase().replace(/[!.?,:;)(…'"\s]+/g, " ").trim();
@@ -244,8 +254,22 @@ function collector() {
 // Items read from a photo ([{ name, qty }]), cleaned the same way as pasted text.
 export function cleanItems(list) {
   const { items, add } = collector();
-  for (const it of list || []) if (it && typeof it.name === "string") add(it.name, Math.min(Math.max(+it.qty || 1, 1), 999), false);
+  for (const it of list || []) if (it && typeof it.name === "string") add(it.name, Math.min(Math.max(+it.qty || 1, 1), 999), !!it.done);
   return items;
+}
+
+// Is this a plain list (short lines, one thing each) or a message with sentences?
+// Messages are worth reading with the AI service: rules can't foresee every way people write.
+export function looksLikeMessage(text) {
+  const lines = String(text || "").split(/\r?\n/).map((l) => l.replace(INVISIBLE, "").trim()).filter(Boolean);
+  if (!lines.length) return false;
+  const chatty = lines.some((raw) => {
+    const l = raw.replace(WA_PREFIX, "").trim();
+    const words = l.split(/\s+/).filter(Boolean);
+    return words.length > 5 || /[?!]/.test(l) || /[.;]\s+\S/.test(l) || (WA_PREFIX.test(raw) && words.length > 3);
+  });
+  // Or the rules had to cut a line down a lot ("בשר- קילו מספר חמש או שמונה מה שהוא אומר…").
+  return chatty || parseList(text).some((it) => it.source && it.source.split(" ").length - it.name.split(" ").length >= 2);
 }
 
 export function parseList(text) {
@@ -267,11 +291,15 @@ export function parseList(text) {
       if (!colon[2]) continue;
       if (!/^\d{1,3}$/.test(colon[2].trim())) line = colon[2];
     }
-    if (isChatter(line)) continue;
-    for (const part of splitItems(line)) {
-      const p = stripMarkers(part);
-      const { name, qty } = parseQty(p.s);
-      add(name, qty, done || p.done, part);
+    for (const sentence of line.split(/(?<=[?!])\s+|(?<=\.)\s+(?=\D)/)) {
+      if (isChatter(sentence)) continue;
+      for (const part of splitItems(sentence.replace(/[?!]+$/, ""))) {
+        const p = stripMarkers(part);
+        const bare = p.s.replace(GREETING, "").replace(REQUEST_PREFIX, "").replace(REQUEST_SUFFIX, "").trim();
+        if (!bare || isChatter(bare)) continue;
+        const { name, qty } = parseQty(bare);
+        add(name, qty, done || p.done, part);
+      }
     }
   }
   return items;
