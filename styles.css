@@ -823,3 +823,12 @@ body.locked .content { padding-bottom: calc(var(--safe-b) + 24px); }
 .who-list { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 6px; }
 .who-opt { justify-content: space-between; }
 .who-qty { color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; direction: ltr; }
+
+/* Planned shopping */
+.title-sub { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.plan-btn { font-size: 12px; font-weight: 700; color: var(--muted); padding: 2px 0; }
+.plan-line { display: block; margin-top: 3px; padding: 0; font-size: 12px; font-weight: 700; color: var(--accent); text-align: start; }
+.plan-line:disabled { color: var(--accent); opacity: 1; cursor: default; }
+.plan-check { display: flex; align-items: center; gap: 10px; margin: 2px 4px; font-weight: 700; font-size: 15px; }
+.plan-check input { width: 20px; height: 20px; accent-color: var(--accent); }
+#planSheet input[type="datetime-local"] { font-size: 16px; }

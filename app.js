@@ -215,7 +215,7 @@ function render() {
 
   todoList.innerHTML = todo.map(itemHtml).join("");
   $("todoHead").hidden = !total;
-  const locked = backend === cloud && !!ui.list?.locked;
+  const locked = backend === cloud && isLockedNow();
   document.body.classList.toggle("locked", lockedForMe());
   $("lockBanner").hidden = !locked;
   $("lockBanner").textContent = !locked ? ""
@@ -246,17 +246,19 @@ function render() {
   const shared = backend === cloud && !!ui.list && ui.members.length > 1;
   const iOwn = shared && ui.list.ownerId === cloud?.user?.uid;
   $("peopleBtn").hidden = !shared;
-  $("titleSub").hidden = !shared || (!iOwn && !ui.list.locked);
+  $("titleSub").hidden = !shared || (!iOwn && !isLockedNow());
   if (shared) {
     $("peopleAvatars").innerHTML = ui.members.slice(0, 3).map((m) => avatarHtml(m, "avatar xs")).join("");
     $("peopleCount").textContent = ui.members.length;
     $("peopleBtn").setAttribute("aria-label", `${ui.members.length} משתתפים ברשימה`);
     $("lockBtn").hidden = !iOwn;
-    $("lockBtn").setAttribute("aria-checked", String(!!ui.list.locked));
-    $("lockBtn").classList.toggle("on", !!ui.list.locked);
-    $("lockState").hidden = iOwn || !ui.list.locked;
+    $("lockBtn").setAttribute("aria-checked", String(isLockedNow()));
+    $("lockBtn").classList.toggle("on", isLockedNow());
+    $("lockState").hidden = iOwn || !isLockedNow();
+    $("planBtn").hidden = !iOwn;
   }
   $("progressCard").hidden = $("totalBox").hidden;
+  renderPlanLine(shared, iOwn);
 }
 
 function renderTotal(items) {
@@ -286,7 +288,12 @@ function renderTotal(items) {
 const NO_STORE = "none";
 // A shared list its owner has locked: others can only tick items (and pick their own store view).
 const isEditor = (uid) => (ui.list?.editors || []).includes(uid);
-const lockedForMe = () => backend === cloud && !!ui.list?.locked && !!cloud?.user
+// Firestore timestamps, Dates or epoch ms -> epoch ms (or null).
+const msOf = (v) => (v == null ? null : typeof v === "number" ? v : v.toMillis ? v.toMillis() : +new Date(v));
+const lockAtMs = () => msOf(ui.list?.lockAt);
+const shopAtMs = () => msOf(ui.list?.shopAt);
+const isLockedNow = () => !!ui.list && (!!ui.list.locked || (lockAtMs() != null && Date.now() >= lockAtMs()));
+const lockedForMe = () => backend === cloud && isLockedNow() && !!cloud?.user
   && ui.list.ownerId !== cloud.user.uid && !isEditor(cloud.user.uid);
 const canWriteList = () => backend === cloud && !!ui.list && !lockedForMe();
 const ownerFirstName = () => (ui.members.find((m) => m.id === ui.list?.ownerId)?.name || "").split(" ")[0] || "יוצר/ת הרשימה";
@@ -1626,16 +1633,16 @@ function renderPeople() {
   const members = ui.members.slice().sort((a, b) => (a.id === ui.list.ownerId ? -1 : b.id === ui.list.ownerId ? 1 : 0));
   $("peopleBody").innerHTML = `
     <h3 id="peopleTitle">משתתפים ברשימה (${members.length})</h3>
-    ${ui.list.locked ? `<p class="sheet-note">🔒 הרשימה נעולה${iOwn ? ". אפשר לתת למשתתפים הרשאת עריכה." : isEditor(myId) ? `, ו${escapeHtml(ownerFirstName())} נתן/ה לך הרשאת עריכה.` : `: אפשר לסמן מה בעגלה, אבל לא לשנות אותה.`}</p>` : ""}
+    ${isLockedNow() ? `<p class="sheet-note">🔒 הרשימה נעולה${iOwn ? ". אפשר לתת למשתתפים הרשאת עריכה." : isEditor(myId) ? `, ו${escapeHtml(ownerFirstName())} נתן/ה לך הרשאת עריכה.` : `: אפשר לסמן מה בעגלה, אבל לא לשנות אותה.`}</p>` : ""}
     <ul class="members">
       ${members.map((m) => `
         <li class="member">
           ${avatarHtml(m)}
           <div class="member-text">
             <strong>${escapeHtml(m.name || m.email)}${m.id === myId ? " (אני)" : ""}</strong>
-            <span>${m.id === ui.list.ownerId ? "יוצר/ת הרשימה" : ui.list.locked && isEditor(m.id) ? "יכול/ה לערוך" : escapeHtml(m.email || "")}</span>
+            <span>${m.id === ui.list.ownerId ? "יוצר/ת הרשימה" : isLockedNow() && isEditor(m.id) ? "יכול/ה לערוך" : escapeHtml(m.email || "")}</span>
           </div>
-          ${iOwn && m.id !== myId && ui.list.locked ? `
+          ${iOwn && m.id !== myId && isLockedNow() ? `
           <button type="button" class="edit-perm${isEditor(m.id) ? " on" : ""}" data-share="editor" data-uid="${escapeHtml(m.id)}"
                   role="switch" aria-checked="${isEditor(m.id)}" aria-label="${escapeHtml(m.name || m.email)} יכול/ה לערוך">
             <span>יכול/ה לערוך</span><span class="switch sm" aria-hidden="true"></span>
@@ -1652,14 +1659,81 @@ const refreshSheets = () => { if (!shareSheet.hidden) renderShare(); if (!people
 
 // Lock / unlock (owner), from the home screen.
 async function toggleLock() {
-  const next = !ui.list.locked;
-  ui.list = { ...ui.list, locked: next }; // show it right away; the database confirms
+  const next = !isLockedNow();
+  const passed = lockAtMs() != null && Date.now() >= lockAtMs();
+  ui.list = { ...ui.list, locked: next, ...(!next && passed ? { lockAt: null } : {}) }; // show it right away
   refreshSheets(); render();
-  try { await cloud.setLocked(next); } catch (err) { fail(err); return; }
+  try {
+    if (!next && passed) await cloud.setPlan({ shopAt: shopAtMs(), lockAt: null, locked: false });
+    else await cloud.setLocked(next);
+  } catch (err) { fail(err); return; }
   buzz(12);
   showToast(next ? "🔒 הרשימה נעולה. אפשר לתת הרשאת עריכה ב״משתתפים״" : "🔓 הרשימה פתוחה לעריכה לכולם", false);
 }
 $("lockBtn").addEventListener("click", toggleLock);
+
+// ---------- Planning the shopping (shared lists) ----------
+// The owner sets when the shopping happens, and optionally a time the list locks by itself.
+// Everyone on the list sees it under the list's name.
+const fmtWhen = (ms) => {
+  const d = new Date(ms), now = new Date();
+  const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(d) - day(now)) / 864e5);
+  const dayName = diff === 0 ? "היום" : diff === 1 ? "מחר" : `יום ${d.toLocaleDateString("he-IL", { weekday: "short" }).replace("יום ", "")} ${d.getDate()}.${d.getMonth() + 1}`;
+  return `${dayName}, ${d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}`;
+};
+let planTimer = 0;
+function renderPlanLine(shared, iOwn) {
+  const shop = shopAtMs(), lock = lockAtMs();
+  const parts = [];
+  if (shared && shop) parts.push(`🛒 קניות: ${fmtWhen(shop)}`);
+  if (shared && lock && Date.now() < lock) parts.push(`🔒 ננעלת ${fmtWhen(lock)}`);
+  $("planLine").hidden = !parts.length;
+  $("planLine").textContent = parts.join(" · ");
+  $("planLine").disabled = !iOwn;
+  // Re-draw when the planned lock time comes, so the list locks on screen too.
+  clearTimeout(planTimer);
+  if (shared && lock && Date.now() < lock) planTimer = setTimeout(() => render(), Math.min(lock - Date.now() + 500, 2 ** 31 - 1));
+}
+const planSheet = $("planSheet");
+const toLocalInput = (ms) => { const d = new Date(ms - new Date(ms).getTimezoneOffset() * 6e4); return d.toISOString().slice(0, 16); };
+function openPlan() {
+  if (!ui.list || ui.list.ownerId !== cloud?.user?.uid) return;
+  const shop = shopAtMs(), lock = lockAtMs();
+  const nextHour = Math.ceil(Date.now() / 36e5) * 36e5;
+  $("planShop").value = toLocalInput(shop || nextHour + 36e5 * 2);
+  $("planLockOn").checked = !!lock;
+  $("planLock").value = toLocalInput(lock || (shop || nextHour + 36e5 * 2) - 36e5);
+  $("planLockField").hidden = !lock;
+  openSheet(planSheet);
+}
+$("planBtn").addEventListener("click", openPlan);
+$("planLine").addEventListener("click", openPlan);
+$("planLockOn").addEventListener("change", () => {
+  $("planLockField").hidden = !$("planLockOn").checked;
+  // Default: an hour before the shopping.
+  const shop = new Date($("planShop").value).getTime();
+  if ($("planLockOn").checked && shop) $("planLock").value = toLocalInput(shop - 36e5);
+});
+$("planClear").addEventListener("click", async () => {
+  closeSheets();
+  ui.list = { ...ui.list, shopAt: null, lockAt: null };
+  render();
+  try { await cloud.setPlan({ shopAt: null, lockAt: null }); showToast("התכנון נמחק", false); } catch (err) { fail(err); }
+});
+$("planForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const shop = $("planShop").value ? new Date($("planShop").value).getTime() : null;
+  const lock = $("planLockOn").checked && $("planLock").value ? new Date($("planLock").value).getTime() : null;
+  closeSheets();
+  ui.list = { ...ui.list, shopAt: shop, lockAt: lock };
+  render();
+  try {
+    await cloud.setPlan({ shopAt: shop, lockAt: lock });
+    buzz(10);
+    showToast(shop ? `נשמר: קניות ${fmtWhen(shop)}${lock ? ` · נעילה ${fmtWhen(lock)}` : ""}` : "נשמר", false);
+  } catch (err) { fail(err); }
+});
 
 async function onSheetAction(e) {
   const el = e.target.closest("[data-share]");

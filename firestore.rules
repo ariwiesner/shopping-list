@@ -10,6 +10,8 @@ rules_version = '2';
 //  - The owner can lock the list: then only the owner, and members the owner lets edit
 //    ("editors"), can add, edit or delete items, rename it or change its store. Everyone
 //    can still tick items in/out of the cart. Only the owner locks, unlocks and picks editors.
+//  - The owner can plan the shopping: when it happens (shopAt) and a time the list locks
+//    by itself (lockAt, checked against the server's clock). Only the owner sets these.
 service cloud.firestore {
   match /databases/{db}/documents {
 
@@ -22,10 +24,14 @@ service cloud.firestore {
     function isMemberAfter(listId) { return signedIn() && existsAfter(memberPath(listId, request.auth.uid)); }
     function isOwner(listId) { return signedIn() && get(listPath(listId)).data.ownerId == request.auth.uid; }
     function isOwnerAfter(listId) { return signedIn() && getAfter(listPath(listId)).data.ownerId == request.auth.uid; }
+    // Locked now: by hand, or its planned lock time has come.
+    function lockedNow(l) {
+      return l.get('locked', false) || (l.get('lockAt', null) != null && request.time >= l.lockAt);
+    }
     // Not locked, or I'm the owner or an editor. (getAfter: also works in the batch that creates the list.)
     function canChange(listId) {
       let l = getAfter(listPath(listId)).data;
-      return !l.get('locked', false) || l.ownerId == request.auth.uid || request.auth.uid in l.get('editors', []);
+      return !lockedNow(l) || l.ownerId == request.auth.uid || request.auth.uid in l.get('editors', []);
     }
     // An item update that only ticks it into / out of the cart.
     function onlyTicks() {
@@ -46,9 +52,11 @@ service cloud.firestore {
         && request.resource.data.ownerId == resource.data.ownerId
         && (request.resource.data.inviteCode == resource.data.inviteCode || isOwner(listId))
         // Locked: only the owner and editors change the list; only the owner locks/unlocks and picks editors.
-        && (!resource.data.get('locked', false) || isOwner(listId) || request.auth.uid in resource.data.get('editors', []))
+        && (!lockedNow(resource.data) || isOwner(listId) || request.auth.uid in resource.data.get('editors', []))
         && ((request.resource.data.get('locked', false) == resource.data.get('locked', false)
-             && request.resource.data.get('editors', []) == resource.data.get('editors', []))
+             && request.resource.data.get('editors', []) == resource.data.get('editors', [])
+             && request.resource.data.get('lockAt', null) == resource.data.get('lockAt', null)
+             && request.resource.data.get('shopAt', null) == resource.data.get('shopAt', null))
             || isOwner(listId));
       allow delete: if isOwner(listId);
 
