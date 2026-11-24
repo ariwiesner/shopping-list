@@ -1,5 +1,5 @@
 import { firebaseConfig } from "./firebase-config.js";
-import { loadIndex, loadChain, loadStores, loadBranch, search, resolve, priceItem, norm, money } from "./catalog.js";
+import { loadIndex, loadChain, loadStores, loadBranch, search, resolve, estimate, priceItem, norm, money } from "./catalog.js";
 import { parseList, cleanItems } from "./import-parse.js";
 import { PHOTO_URL } from "./photo-config.js";
 
@@ -103,7 +103,6 @@ const ui = {
 const todoList = $("todoList"), doneList = $("doneList");
 const doneSection = $("doneSection"), doneToggle = $("doneToggle"), doneCount = $("doneCount");
 const emptyState = $("emptyState");
-const progressLabel = $("progressLabel"), progressCount = $("progressCount"), progressFill = $("progressFill");
 const composer = $("composer"), input = $("itemInput");
 const backdrop = $("sheetBackdrop"), menuSheet = $("sheet"), editSheet = $("editSheet"), shareSheet = $("shareSheet");
 const toast = $("toast"), toastText = $("toastText"), toastUndo = $("toastUndo");
@@ -112,8 +111,7 @@ function greeting() {
   const h = new Date().getHours();
   const name = cloud?.user?.displayName?.split(" ")[0];
   const base = h < 5 ? "קניות בלילה?" : h < 12 ? "בוקר טוב" : h < 18 ? "צהריים טובים" : "ערב טוב";
-  const icon = h < 5 ? "🌙" : h < 12 ? "☀️" : h < 18 ? "👋" : "🌆";
-  $("greeting").textContent = name ? `${base}, ${name} ${icon}` : `${base} ${icon}`;
+  $("greeting").textContent = name ? `${base}, ${name}` : base;
 }
 
 function avatarHtml(m, cls = "avatar") {
@@ -141,33 +139,39 @@ function priceLine(it) {
     // show the name the user picked so it doesn't look like a different product.
     // The chosen product isn't sold here: say so, and name the product priced instead.
     if (p.missingProduct) {
-      return `<div class="item-price">${amt(money(p.total))}${perKg}${qtyNote} <span class="pick">המוצר שבחרתם לא נמכר כאן · במקומו: ${escapeHtml(p.product.name)}</span></div>`;
+      return `<div class="item-price">${amt(money(p.total))}${perKg}${qtyNote}</div>` +
+        `<div class="item-note">המוצר שבחרתם לא נמכר כאן. במקומו: ${escapeHtml(p.product.name)}</div>`;
     }
     const label = it.productName || ui.choices[norm(it.name)]?.name || p.product.name;
     return `<div class="item-price">${amt(money(p.total))}${perKg}${qtyNote} <span class="muted">· ${escapeHtml(label)}</span></div>`;
   }
   if (p.kind === "estimate") {
-    // How close the match is: every detail found, some ("בלי: פרווה"), or just the product type.
-    const fit = p.missingProduct ? "המוצר שבחרתם לא נמכר כאן — מחיר משוער למוצר דומה · "
-      : p.fit === "partial" ? `לא מצאנו בדיוק (בלי: ${escapeHtml(p.missing.join(" "))}) — מחיר לפי מוצרים דומים · `
-      : p.fit === "general" ? `לא מצאנו ${escapeHtml(p.missing.join(" "))} — מחיר כללי לסוג המוצר · `
-      : "";
-    const note = fit;
-    const kinds = p.count > 1 ? `יש ${p.count} סוגים — ` : "";
-    return `<div class="item-price est">${amt("~" + money(p.total))}${p.weighted ? " לק״ג" : ""}${qtyNote} <span class="pick">${note}${kinds}הקישו לבחירה</span></div>`;
+    // One short, quiet line: the typical price, then how close the match is ("בלי: פרווה",
+    // "מחיר כללי") or how many kinds there are. Tapping the item opens the product choice.
+    if (p.missingProduct) {
+      return `<div class="item-price est">${amt("~" + money(p.total))}${p.weighted ? " לק״ג" : ""}${qtyNote}</div>` +
+        `<div class="item-note">המוצר שבחרתם לא נמכר כאן. המחיר משוער, לפי מוצרים דומים</div>`;
+    }
+    const note = p.fit === "partial" ? `<span class="warn">· בלי: ${escapeHtml(p.missing.join(" "))}</span>`
+      : p.fit === "general" ? `<span class="warn">· מחיר כללי</span>`
+      : p.count > 1 ? `<span class="muted">·&nbsp;${p.count}&nbsp;סוגים</span>` : "";
+    return `<div class="item-price est">${amt("~" + money(p.total))}${p.weighted ? " לק״ג" : ""}${qtyNote} ${note}</div>`;
   }
   return `<div class="item-price none">לא נמצא ב${escapeHtml(ui.cat.name)}</div>`;
 }
 
-// On a list shared by several people, in small text under the item: who added it, and
-// who edited it if that was someone else ("נוסף ע״י ארי · ונערך ע״י מיכל").
-// Ticking it into the cart isn't an edit.
+// On a list shared by several people: who added the item, and who edited it if that was
+// someone else, in tiny words stacked at the card's edge beside the checkbox
+// ("נוסף / ארי / נערך / מיכל"). Ticking it into the cart isn't an edit.
 function byLine(it) {
   if (ui.members.length < 2) return "";
   const parts = [];
-  if (it.createdByName) parts.push(`נוסף ע״י ${it.createdByName}`);
-  if (it.editedByName && it.editedBy !== it.createdBy) parts.push(`${parts.length ? "ונערך" : "נערך"} ע״י ${it.editedByName}`);
-  return parts.length ? `<div class="item-who">${escapeHtml(parts.join(" · "))}</div>` : "";
+  if (it.createdByName) parts.push(["נוסף", it.createdByName]);
+  if (it.editedByName && it.editedBy !== it.createdBy) parts.push(["נערך", it.editedByName]);
+  if (!parts.length) return "";
+  const label = parts.map(([verb, who]) => `${verb} ע״י ${who}`).join(", ");
+  return `<div class="item-who" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">` +
+    parts.map(([verb, who]) => `<span>${verb} ע״י</span><b>${escapeHtml(who)}</b>`).join("") + `</div>`;
 }
 
 function itemHtml(it) {
@@ -176,13 +180,13 @@ function itemHtml(it) {
     <li class="item${it.done ? " done" : ""}${ui.flash.has(it.id) ? " flash" : ""}" data-id="${escapeHtml(it.id)}">
       <div class="item-delete-hint" aria-hidden="true">מחיקה</div>
       <div class="item-body">
+        ${byLine(it)}
         <button class="check" data-act="toggle" aria-label="${it.done ? "החזרה לרשימה" : "סימון כנמצא בעגלה"}: ${name}">
           <span class="check-box">${CHECK_SVG}</span>
         </button>
         <button class="item-main" data-act="edit" aria-label="עריכת ${name}">
           <div class="item-name"><span class="item-emoji" aria-hidden="true">${emojiFor(it.name)}</span>${name}</div>
           ${priceLine(it)}
-          ${byLine(it)}
           ${ui.flash.has(it.id) && it.updatedByName ? `<div class="item-by">${escapeHtml(it.updatedByName)} עדכן/ה עכשיו</div>` : ""}
           ${it.importNote && Date.now() - it.importNote.at < 864e5 ? `<div class="item-by import-note">📥 שימו לב: ${it.importNote.added === 1 ? "נוסף 1" : `נוספו ${it.importNote.added}`} מהרשימה המיובאת</div>` : ""}
         </button>
@@ -204,6 +208,8 @@ function render() {
   const total = items.length;
 
   todoList.innerHTML = todo.map(itemHtml).join("");
+  $("todoHead").hidden = !total;
+  $("todoCount").textContent = todo.length;
   doneList.innerHTML = done.map(itemHtml).join("");
 
   emptyState.hidden = total > 0;
@@ -212,21 +218,13 @@ function render() {
   doneToggle.setAttribute("aria-expanded", String(ui.doneOpen));
   doneList.hidden = !ui.doneOpen;
 
-  const pct = total ? Math.round((done.length / total) * 100) : 0;
-  progressFill.style.width = pct + "%";
-  progressCount.textContent = total ? `${done.length} / ${total}` : "";
-  progressLabel.textContent =
-    !total ? "הרשימה עדיין ריקה" :
-    done.length === total ? "סיימתם — כל הכבוד! 🎉" :
-    done.length === 0 ? `${plural(todo.length, "פריט", "פריטים")} לקנות` :
-    `נשארו עוד ${plural(todo.length, "פריט", "פריטים")}`;
-
   renderTotal(items);
   renderStores();
   $("dealsBtn").hidden = !total || !ui.chains.length;
 
   // Header: list name + who's in it
-  $("listTitle").textContent = ui.list?.name || "הסל שלי";
+  $("listTitle").innerHTML = `<span class="title-text">${escapeHtml(listName())}</span>`;
+  $("listTitle").setAttribute("aria-label", `${listName()} — שינוי שם הרשימה`);
   const others = ui.members.filter((m) => m.id !== cloud?.user?.uid);
   $("avatars").innerHTML = others.slice(0, 3).map((m) => avatarHtml(m, "avatar sm")).join("");
   $("shareBtn").classList.toggle("shared", others.length > 0);
@@ -237,6 +235,7 @@ function renderTotal(items) {
   const box = $("totalBox");
   const anyManual = items.some((i) => i._price.kind === "manual");
   box.hidden = !items.length || (!ui.cat && !anyManual);
+  $("progressCard").hidden = box.hidden; // the card holds only the total now
   if (box.hidden) return;
   let sum = 0, inCart = 0, estCount = 0, noneCount = 0;
   for (const it of items) {
@@ -283,7 +282,7 @@ function renderStores() {
     ? "רשימה בלי מחירים · סובבו לחנות כדי לראות כמה הקנייה תעלה"
     : ui.catError ? "לא הצלחנו לטעון את המחירים. נסו שוב."
     : ui.catId === sel && (!ui.cat || ui.cat.id !== sel || (ui.cat.branch || null) !== b) ? "טוען מחירים…"
-    : c ? `עודכן ${new Date(c.updated).toLocaleDateString("he-IL")}` : "";
+    : c ? `המחירים עודכנו ב־${new Date(c.updated).toLocaleDateString("he-IL")}` : "";
 }
 
 // The branch picked for a chain: the shared list's choice, else this device's last choice.
@@ -1247,6 +1246,30 @@ function renderMenu() {
       : "";
 }
 
+// Delete the whole list (to buy + cart), after asking. Undo is still offered in the toast.
+const confirmSheet = $("confirmSheet");
+$("clearAll").addEventListener("click", () => {
+  const n = ui.items.length;
+  $("confirmText").textContent = `${n === 1 ? "הפריט היחיד ברשימה יימחק" : `כל ${n} הפריטים ברשימה יימחקו`}, כולל מה שבעגלה.` +
+    (ui.members.length > 1 ? " הרשימה תתרוקן לכל מי שמשותף בה." : "");
+  openSheet(confirmSheet);
+});
+$("confirmNo").addEventListener("click", () => closeSheets());
+$("confirmYes").addEventListener("click", () => {
+  closeSheets();
+  removeItems(ui.items.map((i) => i.id), "הרשימה נמחקה");
+});
+
+$("cartActions").addEventListener("click", (e) => {
+  const action = e.target.closest("[data-action]")?.dataset.action;
+  if (action === "uncheck-all") {
+    const ids = ui.items.filter((i) => i.done).map((i) => i.id);
+    if (ids.length) { buzz(8); backend.patch(ids, { done: false }).catch(fail); }
+  } else if (action === "clear-done") {
+    removeItems(ui.items.filter((i) => i.done).map((i) => i.id), "העגלה נוקתה");
+  }
+});
+
 menuSheet.addEventListener("click", (e) => {
   const el = e.target.closest("[data-action]");
   if (!el) return;
@@ -1284,26 +1307,27 @@ function openEdit(id) {
   $("editPrice").value = typeof it.price === "number" && it.price > 0 ? it.price : "";
   const remembered = ui.choices[norm(it.name)];
   editProduct = it.barcode ? { code: it.barcode, name: it.productName } : remembered || null;
-  $("productField").hidden = !ui.cat;
-  if (ui.cat) {
-    $("productStore").textContent = `(${ui.cat.name})`;
-    $("productSearch").value = it.name;
-    renderProducts();
-  }
+  // The name field also searches the store's products (when a store is chosen).
+  $("productStore").textContent = ui.cat ? `(${ui.cat.name})` : "";
+  $("productList").hidden = !ui.cat;
+  if (ui.cat) renderProducts();
 }
 
 function renderProducts() {
-  const q = $("productSearch").value.trim();
+  const q = $("editName").value.trim();
   const results = ui.cat && q ? search(ui.cat, q, 40) : [];
   const sel = editProduct?.code;
   const selected = sel && ui.cat.byCode.get(sel);
   const list = selected && !results.includes(selected) ? [selected, ...results] : results;
   // First option: let the app decide (the clearly-meant product, or a typical price).
   const auto = ui.cat && resolve(ui.cat, $("editName").value.trim());
+  // Otherwise the typical price: the median (middle) price of the matching products.
+  const typical = !auto && ui.cat && estimate(ui.cat, $("editName").value.trim());
   $("productList").innerHTML = `
     <li><button type="button" class="product${!sel ? " selected" : ""}" data-code="" role="option" aria-selected="${!sel}">
       <span class="product-name">${auto ? `אוטומטי — ${escapeHtml(auto.name)}` : "לא משנה איזה — לפי הערכה"}</span>
-      <span class="product-price${auto ? "" : " muted"}">${auto ? amt(money(auto.price)) + (auto.weighted ? "<small>לק״ג</small>" : "") : "מחיר טיפוסי"}</span>
+      <span class="product-price${auto ? "" : " muted"}">${auto ? amt(money(auto.price)) + (auto.weighted ? "<small>לק״ג</small>" : "")
+        : typical ? amt("~" + money(typical.price)) + "<small>(חציון)</small>" : "מחיר טיפוסי"}</span>
     </button></li>` +
     list.map((p) => `
     <li><button type="button" class="product${p.code === sel ? " selected" : ""}" data-code="${escapeHtml(p.code)}" role="option" aria-selected="${p.code === sel}">
@@ -1314,11 +1338,11 @@ function renderProducts() {
 }
 
 let productSearchTimer;
-$("productSearch").addEventListener("input", () => {
+$("editName").addEventListener("input", () => {
+  if (!ui.cat) return;
   clearTimeout(productSearchTimer);
   productSearchTimer = setTimeout(renderProducts, 120);
 });
-$("productSearch").addEventListener("keydown", (e) => { if (e.key === "Enter") e.preventDefault(); });
 $("productList").addEventListener("click", (e) => {
   const b = e.target.closest("[data-code]");
   if (!b) return;
@@ -1363,6 +1387,37 @@ $("editDelete").addEventListener("click", () => {
   const id = editingId;
   closeSheets();
   removeItems([id]);
+});
+
+// ---------- Rename the list ----------
+// Tap the list's name. A shared list is renamed for everyone on it; a list kept only
+// on this phone keeps its name here.
+const listName = () => (backend === cloud && ui.list ? ui.list.name : prefs.listName) || "הסל שלי";
+const renameSheet = $("renameSheet");
+$("listTitle").addEventListener("click", () => {
+  $("renameInput").value = listName();
+  $("renameNote").textContent = backend === cloud && ui.members.length > 1 ? "השם משתנה לכל מי שברשימה" : "";
+  openSheet(renameSheet);
+  setTimeout(() => { $("renameInput").focus(); $("renameInput").select(); }, 250);
+});
+$("renameCancel").addEventListener("click", () => closeSheets());
+$("renameForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = $("renameInput").value.replace(/\s+/g, " ").trim().slice(0, 40);
+  closeSheets();
+  if (!name || name === listName()) return;
+  if (backend === cloud && ui.list) {
+    ui.list = { ...ui.list, name };
+    if (ui.userLists[cloud.listId] !== undefined) ui.userLists[cloud.listId] = name;
+    render();
+    try { await cloud.renameList(name); } catch (err) { fail(err); }
+  } else {
+    prefs.listName = name;
+    store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), listName: name });
+    render();
+  }
+  buzz(8);
+  showToast(`שם הרשימה: ${name}`, false);
 });
 
 // ---------- Sharing ----------
@@ -1603,6 +1658,10 @@ function openCloudList(id) {
     onItems(items) { ui.items = items; render(); },
     onList(list) {
       ui.list = list;
+      if (list?.name && ui.userLists[list.id] !== undefined && ui.userLists[list.id] !== list.name) {
+        ui.userLists[list.id] = list.name;
+        cloud.setIndexName(list.id, list.name);
+      }
       render();
       if (!shareSheet.hidden) renderShare();
       if (list.store) loadStore(currentStoreId()); // someone on the list picked a store, a branch or "no store" (no-op if unchanged)

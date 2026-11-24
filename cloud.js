@@ -75,7 +75,11 @@ export async function createCloud(config) {
     barcode: it.barcode ?? null, productName: it.productName ?? null,
     createdAt: it.createdAt || Date.now(), sortKey: it.sortKey || Date.now(), ...stamp(),
     // Who added the item (kept when it's restored by undo) and who last edited it.
-    createdBy: it.createdBy || me().uid, createdByName: it.createdByName || firstName(),
+    // A new item gets whoever adds it. An item put back (undo) keeps what it had,
+    // even "nobody recorded" for items saved before adders were tracked.
+    ...("createdBy" in it
+      ? { createdBy: it.createdBy ?? null, createdByName: it.createdByName ?? null }
+      : { createdBy: me().uid, createdByName: firstName() }),
     editedBy: it.editedBy ?? null, editedByName: it.editedByName ?? null,
   });
   const fromDoc = (d) => {
@@ -136,6 +140,15 @@ export async function createCloud(config) {
     },
     indexList(id, name) {
       return setDoc(userRef(), { activeListId: id, lists: { [id]: name || "רשימה" } }, { merge: true });
+    },
+    // Rename the open list (for everyone on it) and update my own list index.
+    async renameList(name) {
+      await updateDoc(listRef(), { name });
+      await this.setIndexName(listId, name);
+    },
+    // Keep my list index (the names in the list switcher) in step with a list's name.
+    setIndexName(id, name) {
+      return updateDoc(userRef(), { [`lists.${id}`]: name }).catch(() => {});
     },
     unindexList(id) {
       return updateDoc(userRef(), { [`lists.${id}`]: deleteField() }).catch(() => {});
