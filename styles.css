@@ -87,9 +87,7 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
   padding: 14px 16px;
   box-shadow: var(--shadow);
 }
-.progress-text { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-weight: 700; font-size: 15px; }
-.progress-count { color: var(--muted); font-weight: 600; white-space: nowrap; }
-.progress-track { margin-top: 10px; height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.progress-track { margin-top: 0; height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
 .progress-fill { height: 100%; width: 0; background: var(--accent); border-radius: inherit; transition: width .35s cubic-bezier(.2, .8, .2, 1); }
 
 /* ---------- Content ---------- */

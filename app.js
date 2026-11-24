@@ -103,7 +103,7 @@ const ui = {
 const todoList = $("todoList"), doneList = $("doneList");
 const doneSection = $("doneSection"), doneToggle = $("doneToggle"), doneCount = $("doneCount");
 const emptyState = $("emptyState");
-const progressLabel = $("progressLabel"), progressFill = $("progressFill");
+const progressFill = $("progressFill");
 const composer = $("composer"), input = $("itemInput");
 const backdrop = $("sheetBackdrop"), menuSheet = $("sheet"), editSheet = $("editSheet"), shareSheet = $("shareSheet");
 const toast = $("toast"), toastText = $("toastText"), toastUndo = $("toastUndo");
@@ -216,11 +216,6 @@ function render() {
 
   const pct = total ? Math.round((done.length / total) * 100) : 0;
   progressFill.style.width = pct + "%";
-  progressLabel.textContent =
-    !total ? "הרשימה עדיין ריקה" :
-    done.length === total ? "סיימתם — כל הכבוד! 🎉" :
-    done.length === 0 ? `${plural(todo.length, "פריט", "פריטים")} לקנות` :
-    `נשארו עוד ${plural(todo.length, "פריט", "פריטים")}`;
 
   renderTotal(items);
   renderStores();
