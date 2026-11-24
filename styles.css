@@ -766,3 +766,6 @@ details.deal-warn.in-row { margin: 0 12px 10px; }
 /* Confirm delete */
 .btn.danger-solid { background: var(--danger); color: #fff; }
 #confirmSheet .edit-actions { margin-top: 6px; }
+/* Show the full product name under the price: wrap instead of cutting with "…" */
+.item-price { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+.item-price .muted { font-size: 12.5px; }

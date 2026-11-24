@@ -154,7 +154,7 @@ function priceLine(it) {
     }
     const note = p.fit === "partial" ? `<span class="warn">· בלי: ${escapeHtml(p.missing.join(" "))}</span>`
       : p.fit === "general" ? `<span class="warn">· מחיר כללי</span>`
-      : p.count > 1 ? `<span class="muted">· ${p.count} סוגים</span>` : "";
+      : p.count > 1 ? `<span class="muted">·&nbsp;${p.count}&nbsp;סוגים</span>` : "";
     return `<div class="item-price est">${amt("~" + money(p.total))}${p.weighted ? " לק״ג" : ""}${qtyNote} ${note}</div>`;
   }
   return `<div class="item-price none">לא נמצא ב${escapeHtml(ui.cat.name)}</div>`;
