@@ -582,7 +582,7 @@ async function runDeals(force = false) {
     else { console.error(data.message); finish(null); }
   };
   w.onerror = (e) => { console.error(e); finish(null); };
-  w.postMessage({ id, items, choices: ui.choices, clubs: true, here, maxKm: Math.max(...RADII) / MIN_PER_KM, current });
+  w.postMessage({ id, items, choices: ui.choices, clubs: false, here, maxKm: Math.max(...RADII) / MIN_PER_KM, current });
 }
 
 function renderDeals() {

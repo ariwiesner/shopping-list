@@ -38,7 +38,7 @@ function pricesIn(cat, items, choices, club = false) {
 }
 
 self.onmessage = async ({ data }) => {
-  const { id, items, choices, here, maxKm, current, clubs = true } = data;
+  const { id, items, choices, here, maxKm, current, clubs = false } = data;
   const club = (chain) => clubs === true || !!clubs[chain];
   try {
     const index = await fetchJson("index.json");

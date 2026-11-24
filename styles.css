@@ -944,3 +944,4 @@ body.asking-consent .content { padding-bottom: 180px; }
 .consent-actions { align-items: center; justify-content: space-between; }
 .consent-actions .btn.primary { flex: 0 0 auto; padding: 0 22px; }
 .consent-off { color: var(--muted); font-size: 13.5px; padding: 8px 4px; }
+.deals-note { font-size: 13.5px; margin: -6px 4px 12px; }
