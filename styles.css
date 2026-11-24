@@ -800,3 +800,5 @@ body.locked .content { padding-bottom: calc(var(--safe-b) + 24px); }
 .lock-mini.on .switch { background: var(--accent); }
 .lock-mini.on .switch.sm::after { inset-inline-start: 16px; }
 .lock-state { font-size: 13px; font-weight: 700; color: var(--muted); }
+/* Share button: icon only */
+#shareBtn { padding: 0 10px; }
