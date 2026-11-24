@@ -1,5 +1,5 @@
 import { firebaseConfig } from "./firebase-config.js";
-import { loadIndex, loadChain, loadStores, loadBranch, search, resolve, priceItem, norm, money } from "./catalog.js";
+import { loadIndex, loadChain, loadStores, loadBranch, search, resolve, estimate, priceItem, norm, money } from "./catalog.js";
 import { parseList, cleanItems } from "./import-parse.js";
 import { PHOTO_URL } from "./photo-config.js";
 
@@ -111,8 +111,7 @@ function greeting() {
   const h = new Date().getHours();
   const name = cloud?.user?.displayName?.split(" ")[0];
   const base = h < 5 ? "קניות בלילה?" : h < 12 ? "בוקר טוב" : h < 18 ? "צהריים טובים" : "ערב טוב";
-  const icon = h < 5 ? "🌙" : h < 12 ? "☀️" : h < 18 ? "👋" : "🌆";
-  $("greeting").textContent = name ? `${base}, ${name} ${icon}` : `${base} ${icon}`;
+  $("greeting").textContent = name ? `${base}, ${name}` : base;
 }
 
 function avatarHtml(m, cls = "avatar") {
@@ -140,7 +139,8 @@ function priceLine(it) {
     // show the name the user picked so it doesn't look like a different product.
     // The chosen product isn't sold here: say so, and name the product priced instead.
     if (p.missingProduct) {
-      return `<div class="item-price">${amt(money(p.total))}${perKg}${qtyNote} <span class="warn">· המוצר שבחרתם לא נמכר כאן, במקומו: ${escapeHtml(p.product.name)}</span></div>`;
+      return `<div class="item-price">${amt(money(p.total))}${perKg}${qtyNote}</div>` +
+        `<div class="item-note">המוצר שבחרתם לא נמכר כאן. במקומו: ${escapeHtml(p.product.name)}</div>`;
     }
     const label = it.productName || ui.choices[norm(it.name)]?.name || p.product.name;
     return `<div class="item-price">${amt(money(p.total))}${perKg}${qtyNote} <span class="muted">· ${escapeHtml(label)}</span></div>`;
@@ -148,8 +148,11 @@ function priceLine(it) {
   if (p.kind === "estimate") {
     // One short, quiet line: the typical price, then how close the match is ("בלי: פרווה",
     // "מחיר כללי") or how many kinds there are. Tapping the item opens the product choice.
-    const note = p.missingProduct ? `<span class="warn">· המוצר שבחרתם לא נמכר כאן</span>`
-      : p.fit === "partial" ? `<span class="warn">· בלי: ${escapeHtml(p.missing.join(" "))}</span>`
+    if (p.missingProduct) {
+      return `<div class="item-price est">${amt("~" + money(p.total))}${p.weighted ? " לק״ג" : ""}${qtyNote}</div>` +
+        `<div class="item-note">המוצר שבחרתם לא נמכר כאן. המחיר משוער, לפי מוצרים דומים</div>`;
+    }
+    const note = p.fit === "partial" ? `<span class="warn">· בלי: ${escapeHtml(p.missing.join(" "))}</span>`
       : p.fit === "general" ? `<span class="warn">· מחיר כללי</span>`
       : p.count > 1 ? `<span class="muted">· ${p.count} סוגים</span>` : "";
     return `<div class="item-price est">${amt("~" + money(p.total))}${p.weighted ? " לק״ג" : ""}${qtyNote} ${note}</div>`;
@@ -279,7 +282,7 @@ function renderStores() {
     ? "רשימה בלי מחירים · סובבו לחנות כדי לראות כמה הקנייה תעלה"
     : ui.catError ? "לא הצלחנו לטעון את המחירים. נסו שוב."
     : ui.catId === sel && (!ui.cat || ui.cat.id !== sel || (ui.cat.branch || null) !== b) ? "טוען מחירים…"
-    : c ? `עודכן ${new Date(c.updated).toLocaleDateString("he-IL")}` : "";
+    : c ? `המחירים עודכנו ב־${new Date(c.updated).toLocaleDateString("he-IL")}` : "";
 }
 
 // The branch picked for a chain: the shared list's choice, else this device's last choice.
@@ -1243,8 +1246,19 @@ function renderMenu() {
       : "";
 }
 
-// Empty the whole list (to buy + cart). Undo is offered in the toast.
-$("clearAll").addEventListener("click", () => removeItems(ui.items.map((i) => i.id), "הרשימה רוקנה"));
+// Delete the whole list (to buy + cart), after asking. Undo is still offered in the toast.
+const confirmSheet = $("confirmSheet");
+$("clearAll").addEventListener("click", () => {
+  const n = ui.items.length;
+  $("confirmText").textContent = `${n === 1 ? "הפריט היחיד ברשימה יימחק" : `כל ${n} הפריטים ברשימה יימחקו`}, כולל מה שבעגלה.` +
+    (ui.members.length > 1 ? " הרשימה תתרוקן לכל מי שמשותף בה." : "");
+  openSheet(confirmSheet);
+});
+$("confirmNo").addEventListener("click", () => closeSheets());
+$("confirmYes").addEventListener("click", () => {
+  closeSheets();
+  removeItems(ui.items.map((i) => i.id), "הרשימה נמחקה");
+});
 
 $("cartActions").addEventListener("click", (e) => {
   const action = e.target.closest("[data-action]")?.dataset.action;
@@ -1307,10 +1321,13 @@ function renderProducts() {
   const list = selected && !results.includes(selected) ? [selected, ...results] : results;
   // First option: let the app decide (the clearly-meant product, or a typical price).
   const auto = ui.cat && resolve(ui.cat, $("editName").value.trim());
+  // Otherwise the typical price: the median (middle) price of the matching products.
+  const typical = !auto && ui.cat && estimate(ui.cat, $("editName").value.trim());
   $("productList").innerHTML = `
     <li><button type="button" class="product${!sel ? " selected" : ""}" data-code="" role="option" aria-selected="${!sel}">
       <span class="product-name">${auto ? `אוטומטי — ${escapeHtml(auto.name)}` : "לא משנה איזה — לפי הערכה"}</span>
-      <span class="product-price${auto ? "" : " muted"}">${auto ? amt(money(auto.price)) + (auto.weighted ? "<small>לק״ג</small>" : "") : "מחיר טיפוסי"}</span>
+      <span class="product-price${auto ? "" : " muted"}">${auto ? amt(money(auto.price)) + (auto.weighted ? "<small>לק״ג</small>" : "")
+        : typical ? amt("~" + money(typical.price)) + "<small>(חציון)</small>" : "מחיר טיפוסי"}</span>
     </button></li>` +
     list.map((p) => `
     <li><button type="button" class="product${p.code === sel ? " selected" : ""}" data-code="${escapeHtml(p.code)}" role="option" aria-selected="${p.code === sel}">
