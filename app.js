@@ -595,7 +595,9 @@ function renderDeals() {
   if (deals.stage === "locating") { body.innerHTML = loading("מאתרים איפה אתם…"); return; }
   if (deals.stage === "pricing") {
     const p = deals.progress;
-    body.innerHTML = loading(p ? `בודקים מחירים ב${escapeHtml(p.name)}… (${p.done + 1}/${p.total})` : "טוענים מחירים…");
+    body.innerHTML = loading(!p ? "טוענים מחירים…"
+      : p.phase === "match" ? `מתאימים מוצרים בין הרשתות… (${p.done + 1}/${p.total})`
+      : `בודקים מחירים ב${escapeHtml(p.name)}… (${p.done + 1}/${p.total})`);
     return;
   }
   const res = deals.result;

@@ -52,22 +52,24 @@ self.onmessage = async ({ data }) => {
   try {
     const index = await fetchJson("index.json");
     const chains = [], branches = [];
-    const steps = index.chains.length * 2;
+    const steps = index.chains.length;
     const general = items.map((it) => isGeneral(it, choices));
     const offers = items.map(() => []);
     let n = 0;
     if (general.some(Boolean)) {
+      // First pass: which product to compare each general item on.
       for (const c of index.chains) {
-        self.postMessage({ type: "progress", id, done: n++, total: steps, name: c.name });
+        self.postMessage({ type: "progress", id, phase: "match", done: n++, total: steps, name: c.name });
         try {
           const cat = parseChain(await fetchJson(`${encodeURIComponent(c.id)}.json`));
           items.forEach((it, i) => { if (general[i]) offers[i].push(chainOffer(cat, it.name)); });
         } catch (_) {}
       }
-    } else n = index.chains.length;
+    }
+    n = 0;
     const refs = items.map((it, i) => (general[i] ? referencesFrom(offers[i], it.name) : []));
     for (const c of index.chains) {
-      self.postMessage({ type: "progress", id, done: n, total: steps, name: c.name });
+      self.postMessage({ type: "progress", id, phase: "price", done: n, total: steps, name: c.name });
       let cat;
       try { cat = parseChain(await fetchJson(`${encodeURIComponent(c.id)}.json`)); }
       catch (e) { console.warn("Skipping chain", c.id, e); n++; continue; }
