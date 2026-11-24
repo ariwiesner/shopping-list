@@ -65,8 +65,6 @@
             <span class="lock-state" id="lockState" hidden>🔒 נעולה</span>
             <button type="button" class="plan-btn" id="planBtn" hidden>🗓️ תכנון קנייה</button>
           </div>
-          <!-- The planned shopping (everyone on the list sees it) -->
-          <button type="button" class="plan-line" id="planLine" hidden></button>
         </div>
         <div class="top-actions">
           <button class="share-btn import-btn" id="importBtn" aria-label="ייבוא רשימה מוואטסאפ או מצילום" aria-haspopup="dialog">
@@ -94,6 +92,11 @@
     </header>
 
     <main class="content" id="content">
+      <!-- The planned shopping, front and centre (everyone on the list sees it; the owner taps to change it) -->
+      <button type="button" class="plan-card" id="planLine" hidden>
+        <span class="plan-main" id="planMain"></span>
+        <span class="plan-sub" id="planSub"></span>
+      </button>
       <section class="stores" aria-labelledby="storesTitle">
         <p class="stores-title" id="storesTitle">איפה קונים היום?</p>
         <div class="wheel" id="storeRow" role="slider" tabindex="0" aria-labelledby="storesTitle"
