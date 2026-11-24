@@ -497,25 +497,22 @@ $("branchList").addEventListener("click", (e) => {
 
 // ---------- Where is it cheapest? ----------
 // Prices the list in every chain (common price) and in the branches nearest the user,
-// in a background worker. Drive time is estimated from straight-line distance;
-// the Waze button gives the real route.
+// in a background worker. Distances are straight-line; the Waze button gives the route.
 const dealsSheet = $("dealsSheet");
-const MIN_PER_KM = 1.25;          // rough driving pace: 20 km ≈ 25 minutes
-const RADII = [10, 25, 40];        // minutes the user can choose
+const RADII = [10, 20, 35, 0];     // km the user can choose; 0 = any distance (35+)
 const deals = { worker: null, runId: 0, key: "", result: null, stage: null, progress: null, error: false, here: null, hereAt: 0, locError: null };
-const dealRadius = () => (RADII.includes(prefs.dealRadius) ? prefs.dealRadius : 25);
-const driveMin = (km) => Math.max(2, Math.round(km * MIN_PER_KM));
+const dealRadius = () => (RADII.includes(prefs.dealKm) ? prefs.dealKm : 20);
 const kmText = (km) => (km < 1 ? "פחות מק״מ" : `${km < 10 ? km.toFixed(1) : Math.round(km)} ק״מ`);
 const wazeUrl = (b) => `https://waze.com/ul?ll=${b.lat},${b.lon}&navigate=yes`;
 
 $("dealsBtn").addEventListener("click", () => { track("compare_open"); openSheet(dealsSheet); runDeals(); });
 $("dealsRadius").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-min]");
+  const b = e.target.closest("[data-km]");
   if (!b) return;
-  prefs.dealRadius = Number(b.dataset.min);
-  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), dealRadius: prefs.dealRadius });
+  prefs.dealKm = Number(b.dataset.km);
+  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), dealKm: prefs.dealKm });
   buzz(8);
-  renderDeals(); // nearby branches are already priced up to the largest radius
+  renderDeals(); // the nearest branches of every chain are already priced
 });
 $("dealsBody").addEventListener("click", (e) => {
   const pick = e.target.closest("[data-pick]");
@@ -582,12 +579,13 @@ async function runDeals(force = false) {
     else { console.error(data.message); finish(null); }
   };
   w.onerror = (e) => { console.error(e); finish(null); };
-  w.postMessage({ id, items, choices: ui.choices, clubs: false, here, maxKm: Math.max(...RADII) / MIN_PER_KM, current });
+  w.postMessage({ id, items, choices: ui.choices, clubs: false, here, maxKm: Infinity, current });
 }
 
 function renderDeals() {
-  const r = dealRadius(), maxKm = r / MIN_PER_KM;
-  $("dealsRadius").querySelectorAll("[data-min]").forEach((b) => b.setAttribute("aria-checked", String(Number(b.dataset.min) === r)));
+  const r = dealRadius(), maxKm = r || Infinity;
+  const within = r ? `עד ${r} ק״מ` : "בכל מרחק";
+  $("dealsRadius").querySelectorAll("[data-km]").forEach((b) => b.setAttribute("aria-checked", String(Number(b.dataset.km) === r)));
   const body = $("dealsBody");
   const msg = (text, retry) => `<p class="deals-msg">${text}</p>` +
     (retry ? `<button type="button" class="btn ghost deals-retry" data-act="deals-retry">${retry}</button>` : "");
@@ -610,8 +608,7 @@ function renderDeals() {
   const logo = (id) => `<img class="deal-logo" src="stores/${escapeHtml(id)}.png" alt="" />`;
   const est = (x) => (x.est ? "~" : "");
   const where = (b) => [b.name, b.city && !b.name.includes(b.city) ? b.city : ""].filter(Boolean).join(", ");
-  const trip = (b) => b.km == null ? "" :
-    `~${driveMin(b.km)} דק׳ נסיעה · ${kmText(b.km)}${b.prec === "c" ? " · מיקום משוער לפי העיר" : ""}`;
+  const trip = (b) => b.km == null ? "" : `${kmText(b.km)} ממך${b.prec === "c" ? " · משוער לפי העיר" : ""}`;
   // Chosen products this store doesn't sell, priced by a similar product instead.
   // Tap to see, per product: what was chosen and its price where it's sold, and what was priced here instead.
   const subsNote = (x, short = false) => !x.subs || (cur && x.chain === cur.chain && cur.kind === "branch" && x.id === cur.id) ? "" :
@@ -649,39 +646,39 @@ function renderDeals() {
     }
   }
 
-  // Cheapest within the chosen drive time.
+  // Side by side: the cheapest branch within the chosen distance (the main box), and
+  // the cheapest chain in the country (smaller, next to it).
   const nearby = res.branches.filter((b) => b.km != null && b.km <= maxKm && ok(b)).sort(byTotal);
   const best = nearby[0];
-  html += `<section class="deal"><p class="deal-kicker">📍 הכי זול לידך · עד ${r} דק׳ נסיעה</p>`;
+  const top = res.chains.filter(ok).sort(byTotal)[0];
+  const sameAsBest = top && best && top.id === best.chain && top.nearest?.id === best.id;
+  const box = (kicker, inner, cls = "") => `<section class="deal${cls}"><p class="deal-kicker">${kicker}</p>${inner}</section>`;
+  const head = (id, name, sub, total) => `<div class="deal-head">${logo(id)}
+      <strong class="deal-total">${amt(total)}</strong></div>
+    <div class="deal-name"><strong>${escapeHtml(name)}</strong>${sub ? `<small>${escapeHtml(sub)}</small>` : ""}</div>`;
+  let nearHtml;
   if (best) {
-    html += `<div class="deal-head">${logo(best.chain)}
-        <div class="deal-name"><strong>${escapeHtml(best.chainName)}</strong><small>${escapeHtml(where(best))}</small></div>
-        <strong class="deal-total">${amt(est(best) + money(best.total))}</strong></div>
-      <p class="deal-meta">${trip(best)}</p>${subsNote(best)}
-      ${isCur(best) ? `<p class="deal-save">🎉 הסניף שלך הוא הכי זול באזור</p>` : save(best) + actions(best.chain, best)}`;
+    nearHtml = head(best.chain, best.chainName, where(best), est(best) + money(best.total)) +
+      `<p class="deal-meta">${trip(best)}</p>${subsNote(best, true)}` +
+      (isCur(best) ? `<p class="deal-save">🎉 הסניף שלך הוא הכי זול באזור</p>` : save(best) + actions(best.chain, best));
   } else if (!deals.here) {
-    html += deals.locError === "denied"
-      ? msg("המיקום חסום. כדי למצוא סניפים לידך, אפשרו גישה למיקום בהגדרות הדפדפן ונסו שוב.", "לנסות שוב")
+    nearHtml = deals.locError === "denied"
+      ? msg("המיקום חסום. אפשרו גישה למיקום בהגדרות הדפדפן ונסו שוב.", "לנסות שוב")
       : msg("כדי למצוא את הכי זול לידך צריך את המיקום שלכם.", "לאפשר מיקום");
   } else {
-    html += msg(r < 40 ? "לא מצאנו סניף עם כל הפריטים במרחק הזה. נסו מרחק גדול יותר." : "לא מצאנו סניף עם כל הפריטים במרחק הזה.");
+    nearHtml = msg(r ? "לא מצאנו סניף עם כל הפריטים במרחק הזה. נסו מרחק גדול יותר." : "לא מצאנו סניף עם כל הפריטים.");
   }
-  html += `</section>`;
-
-  // Cheapest chain overall, wherever it is (each chain's common price).
-  const top = res.chains.filter(ok).sort(byTotal)[0];
-  if (top && best && top.id === best.chain && top.nearest?.id === best.id) {
-    html += `<p class="deals-also">🏆 ${escapeHtml(top.name)} היא גם הרשת הכי זולה בארץ</p>`;
+  let topHtml = "";
+  if (top && sameAsBest) {
+    topHtml = box("🏆 הכי זול בארץ", `<p class="deal-same">${logo(top.id)}<span>${escapeHtml(top.name)} היא גם הרשת הכי זולה בארץ</span></p>`, " small");
   } else if (top) {
     const near = top.nearest;
-    html += `<section class="deal"><p class="deal-kicker">🏆 הכי זול בארץ · מחיר נפוץ ברשת</p>
-      <div class="deal-head">${logo(top.id)}
-        <div class="deal-name"><strong>${escapeHtml(top.name)}</strong>${near ? `<small>הסניף הקרוב: ${escapeHtml(where(near))}</small>` : ""}</div>
-        <strong class="deal-total">${amt(est(top) + money(top.total))}</strong></div>
-      ${near ? `<p class="deal-meta">${trip(near)}</p>` : ""}${subsNote(top)}
-      ${cur?.chain === top.id && (cur.kind === "chain" || cur.id === near?.id) ? `<p class="deal-save">🎉 זו הרשת שבחרת</p>` : save(top) + actions(top.id, near)}
-    </section>`;
+    topHtml = box("🏆 הכי זול בארץ", head(top.id, top.name, near ? `הקרוב: ${where(near)}` : "", est(top) + money(top.total)) +
+      (near ? `<p class="deal-meta">${trip(near)}</p>` : "") + subsNote(top, true) +
+      (cur?.chain === top.id && (cur.kind === "chain" || cur.id === near?.id) ? `<p class="deal-save">🎉 זו הרשת שבחרת</p>` : save(top) + actions(top.id, near)),
+      " small");
   }
+  html += `<div class="deal-pair">${box(`📍 הכי זול לידך · ${within}`, nearHtml, " main")}${topHtml}</div>`;
 
   // Other chains nearby: the cheapest branch of each.
   const more = nearby.filter((b, k) => b.chain !== best?.chain && b.chain !== cur?.chain
@@ -690,19 +687,25 @@ function renderDeals() {
     html += `<p class="sheet-label">רשתות אחרות לידך</p><ul class="deal-list">` + more.map((b) => `
       <li><button type="button" class="deal-row" data-pick='${escapeHtml(JSON.stringify([b.chain, b.id]))}'>
         ${logo(b.chain)}
-        <span class="deal-name"><strong>${escapeHtml(b.chainName)}</strong><small>${escapeHtml(where(b))} · ~${driveMin(b.km)} דק׳</small></span>
+        <span class="deal-name"><strong>${escapeHtml(b.chainName)}</strong><small>${escapeHtml(where(b))} · ${kmText(b.km)}</small></span>
         <strong class="deal-total">${amt(est(b) + money(b.total))}</strong>
       </button>${subsNote(b, true)}</li>`).join("") + `</ul>`;
   }
 
+  // General items ("חלב") are compared on one product, the same at every chain: say which.
+  if (res.refs?.length) {
+    html += `<details class="deal-refs"><summary>⚖️ פריטים כלליים הושוו לפי אותו מוצר בכל הרשתות <span class="more">פרטים</span></summary><ul>` +
+      res.refs.map((x) => `<li><b>${escapeHtml(x.item)}</b> ← ${escapeHtml(x.product)}</li>`).join("") +
+      `</ul><p>רוצים מוצר אחר? הקישו על הפריט ברשימה ובחרו.</p></details>`;
+  }
   const notes = [`המחירים כאן הם בדיוק מה שהרשימה תראה אחרי מעבר לחנות`];
   const general = Math.max(cur?.est || 0, best?.est || 0, top?.est || 0);
-  if (general) notes.push(`${general === 1 ? "פריט אחד כללי" : `${general} פריטים כלליים`} (כמו "גבינה") מתומחרים לפי מוצר טיפוסי, אז ההשוואה משוערת. להשוואה מדויקת, הקישו על פריט ברשימה ובחרו מוצר`);
+  if (general) notes.push(`${general === 1 ? "פריט אחד כללי" : `${general} פריטים כלליים`} (כמו "גבינה") מתומחרים לפי מחיר טיפוסי, אז ההשוואה משוערת. להשוואה מדויקת, הקישו על פריט ברשימה ובחרו מוצר`);
   // Chains left out because they lack something on the list.
   const lacking = res.chains.filter((c) => c.missing && c.id !== cur?.chain)
     .map((c) => `${escapeHtml(c.name)} (${c.missing === 1 ? "חסר פריט אחד" : `חסרים ${c.missing} פריטים`})`);
   if (lacking.length) notes.push(`לא הוצגו: ${lacking.join(", ")}`);
-  notes.push("זמן הנסיעה משוער לפי המרחק", "נבדקו 4 הסניפים הקרובים מכל רשת");
+  notes.push("המרחק בקו אווירי", "נבדקו 4 הסניפים הקרובים מכל רשת");
   html += `<p class="deals-foot">${notes.join(" · ")}</p>`;
   body.innerHTML = html;
 }

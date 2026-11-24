@@ -946,3 +946,33 @@ body.asking-consent .content { padding-bottom: 180px; }
 .consent-off { color: var(--muted); font-size: 13.5px; padding: 8px 4px; }
 .privacy-body a { color: var(--accent); font-weight: 700; }
 .deals-note { font-size: 13.5px; margin: -6px 4px 12px; }
+
+/* Comparison: nearby and country-wide cheapest, box by box (the country box smaller) */
+#dealsRadius button { font-size: 13px; padding: 0 2px; }
+.deal-pair { display: grid; grid-template-columns: 1.35fr 1fr; gap: 8px; align-items: stretch; margin-bottom: 12px; }
+.deal-pair .deal { margin: 0; padding: 12px 10px; display: flex; flex-direction: column; min-width: 0; }
+.deal-pair .deal.main { border-color: var(--accent); }
+.deal-pair .deal-kicker { font-size: 12px; margin-bottom: 8px; }
+.deal-pair .deal-head { justify-content: space-between; gap: 6px; }
+.deal-pair .deal-logo { width: 36px; height: 36px; }
+.deal-pair .deal-total { font-size: 19px; }
+.deal-pair .deal-name { margin-top: 6px; }
+.deal-pair .deal-name strong { font-size: 15px; }
+.deal-pair .deal-name small { font-size: 12px; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.deal-pair .deal-meta { font-size: 12px; margin: 4px 0 0; }
+.deal-pair .deal-save { font-size: 13px; margin: 6px 0 0; }
+.deal-pair .deal-actions { flex-direction: column; gap: 6px; margin-top: auto; padding-top: 10px; }
+.deal-pair .deal-actions .btn { height: 40px; font-size: 14px; }
+.deal-pair .deal-actions .btn.ghost { height: 34px; font-size: 13px; }
+.deal-pair .deal.small .deal-total { font-size: 16px; }
+.deal-pair .deal.small .deal-logo { width: 30px; height: 30px; }
+.deal-pair .deal.small .deal-name strong { font-size: 14px; }
+.deal-pair .deals-msg { font-size: 13px; }
+.deal-pair .deal-warn.in-row { font-size: 12px; margin-top: 6px; }
+.deal-same { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: auto 0; text-align: center; font-weight: 700; font-size: 13px; color: var(--accent); }
+.deal-refs { margin: 0 0 12px; padding: 10px 12px; border-radius: 14px; background: var(--chip, rgba(0,0,0,.04)); font-size: 13px; }
+.deal-refs summary { cursor: pointer; font-weight: 700; }
+.deal-refs .more { color: var(--accent); font-weight: 700; }
+.deal-refs ul { margin: 8px 0 4px; padding-inline-start: 18px; }
+.deal-refs li { margin: 3px 0; }
+.deal-refs p { margin: 4px 0 0; color: var(--muted); }
