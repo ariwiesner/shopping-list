@@ -1,13 +1,13 @@
 {
- "generated": "2026-11-24T11:03Z",
+ "generated": "2026-11-24T11:45Z",
  "chains": [
   {
    "id": "shufersal",
    "name": "שופרסל",
    "color": "#d71f26",
-   "count": 38741,
-   "branches": 412,
-   "updated": "2026-11-23T09:08Z"
+   "count": 38754,
+   "branches": 414,
+   "updated": "2026-11-24T11:44Z"
   },
   {
    "id": "rami-levy",
