@@ -176,6 +176,7 @@
     <h3 id="sheetTitle">אפשרויות רשימה</h3>
     <div id="listSwitcher"></div>
     <div id="accountRow"></div>
+    <button class="sheet-item" data-action="privacy">🔒 <span>פרטיות</span></button>
     <button class="sheet-item cancel" data-action="close">ביטול</button>
   </div>
 
@@ -267,6 +268,23 @@
     </form>
   </div>
 
+  <!-- Privacy: what's kept, what's sent, and the usage-statistics switch -->
+  <div class="sheet" id="privacySheet" role="dialog" aria-modal="true" aria-labelledby="privacyTitle" hidden>
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <h3 id="privacyTitle">פרטיות</h3>
+    <div class="privacy-body">
+      <p><strong>הרשימות שלך.</strong> בלי התחברות הן נשמרות רק בטלפון. עם התחברות הן נשמרות ב־Firebase של Google, ורק מי שברשימה יכול לראות אותן.</p>
+      <p><strong>נתוני שימוש.</strong> כל עוד לא כיבית את זה כאן למטה, האפליקציה שולחת ל־Google Analytics נתונים על השימוש בה (למשל: נוסף פריט, נפתחה השוואת מחירים), יחד עם מידע טכני כמו סוג המכשיר ואזור משוער. לא נשלחים שמות, אימיילים, שמות פריטים או תוכן הרשימות.</p>
+      <p><strong>ייבוא מתמונה או מהודעה.</strong> התמונה או הטקסט נשלחים לשירות Gemini של Google כדי לקרוא את הרשימה, ולא נשמרים אצלנו. בשימוש החינמי Google עשויה להשתמש בהם לשיפור השירותים שלה.</p>
+      <p><strong>מיקום.</strong> רק כשמחפשים סניפים קרובים, נשאר בטלפון ולא נשמר.</p>
+    </div>
+    <button type="button" class="lock-toggle" id="analyticsToggle" role="switch" aria-checked="false">
+      <span class="lock-text"><strong>📊 שליחת נתוני שימוש</strong><small>עוזר לנו להבין מה שימושי ולשפר את האפליקציה</small></span>
+      <span class="switch" aria-hidden="true"></span>
+    </button>
+    <button class="sheet-item cancel" id="privacyClose">סגירה</button>
+  </div>
+
   <!-- Confirm deleting the whole list -->
   <div class="sheet" id="confirmSheet" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmText" hidden>
     <div class="sheet-handle" aria-hidden="true"></div>
@@ -325,6 +343,15 @@
         <button type="submit" class="btn primary">שמירה</button>
       </div>
     </form>
+  </div>
+
+  <!-- One-time notice about usage statistics (until the user chooses) -->
+  <div class="consent-bar" id="consentBar" role="region" aria-label="נתוני שימוש" hidden>
+    <p>📊 האפליקציה אוספת נתוני שימוש אנונימיים כדי להשתפר. לא נשלחים שמות, אימיילים או תוכן הרשימות. <button type="button" class="link-btn" id="consentMore">פרטים</button></p>
+    <div class="consent-actions">
+      <button type="button" class="link-btn consent-off" id="consentNo">לכבות</button>
+      <button type="button" class="btn primary" id="consentYes">הבנתי</button>
+    </div>
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden>

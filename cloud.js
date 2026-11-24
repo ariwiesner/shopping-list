@@ -29,18 +29,29 @@ export async function createCloud(config) {
   } = F;
 
   const app = initializeApp(config);
-  // Usage statistics (Google Analytics for Firebase), only when the project has it turned
-  // on (config.measurementId). Counts everyone, signed in or not. Events sent before it
-  // has loaded wait in a short queue.
-  let analytics = null, logEventFn = null;
-  const pending = [];
-  if (config.measurementId) {
-    import(`${SDK}/firebase-analytics.js`).then(async (M) => {
-      if (!(await M.isSupported())) return;
-      analytics = M.getAnalytics(app);
-      logEventFn = M.logEvent;
-      pending.splice(0).forEach(([n, p]) => logEventFn(analytics, n, p));
-    }).catch((e) => console.warn("Analytics unavailable", e));
+  // Usage statistics (Google Analytics for Firebase): only after the user agrees
+  // (setAnalytics(true)), and only when the project has it (config.measurementId).
+  // Until then nothing is loaded, stored or sent, not even Google's cookies.
+  let analytics = null, logEventFn = null, setCollection = null, analyticsOn = false, loading = null;
+  async function setAnalytics(on) {
+    analyticsOn = !!on && !!config.measurementId;
+    if (analyticsOn && !analytics) {
+      loading ||= import(`${SDK}/firebase-analytics.js`).then(async (M) => {
+        if (!(await M.isSupported())) return;
+        analytics = M.getAnalytics(app); // also logs the first page view
+        logEventFn = M.logEvent;
+        setCollection = M.setAnalyticsCollectionEnabled;
+      }).catch((e) => console.warn("Analytics unavailable", e));
+      await loading;
+    }
+    if (analytics) setCollection(analytics, analyticsOn);
+    if (!analyticsOn) {
+      // Forget this device: remove Google Analytics' cookies.
+      document.cookie.split(";").map((c) => c.split("=")[0].trim()).filter((n) => /^_ga/.test(n)).forEach((n) => {
+        document.cookie = `${n}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+        document.cookie = `${n}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; domain=${location.hostname.split(".").slice(-2).join(".")}`;
+      });
+    }
   }
   const auth = getAuth(app);
   auth.languageCode = "he";
@@ -169,12 +180,10 @@ export async function createCloud(config) {
     setLocked(locked) {
       return updateDoc(listRef(), { locked: !!locked });
     },
-    // Count a usage event (no-op when Analytics is off).
+    // Usage statistics on/off (the user's choice), and counting an event (no-op when off).
+    setAnalytics,
     track(name, params = {}) {
-      try {
-        if (analytics) logEventFn(analytics, name, params);
-        else if (config.measurementId && pending.length < 50) pending.push([name, params]);
-      } catch (_) {}
+      try { if (analyticsOn && analytics) logEventFn(analytics, name, params); } catch (_) {}
     },
     // Rename the open list (for everyone on it) and update my own list index.
     async renameList(name) {

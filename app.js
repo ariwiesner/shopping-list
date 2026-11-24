@@ -1551,6 +1551,8 @@ menuSheet.addEventListener("click", (e) => {
     removeItems(ui.items.map((i) => i.id), "הרשימה רוקנה");
   } else if (action === "switch") {
     openCloudList(el.dataset.list);
+  } else if (action === "privacy") {
+    openPrivacy();
   } else if (action === "new-list") {
     newList();
   } else if (action === "delete-list") {
@@ -1668,6 +1670,45 @@ $("editDelete").addEventListener("click", () => {
   closeSheets();
   removeItems([id]);
 });
+
+// ---------- Privacy & usage statistics ----------
+// Usage statistics are on unless the user turns them off: a one-time notice says so
+// ("הבנתי" / "לכבות"), and the privacy page has a switch. Turning them off stops sending
+// and removes Google Analytics' cookies from this device.
+const CONSENT_KEY = "basket.analytics"; // "yes" | "no" | unset (not asked yet)
+const consent = () => store.get(CONSENT_KEY, null);
+const analyticsAvailable = () => !!cloud?.setAnalytics && !!firebaseConfig?.measurementId;
+function applyConsent() {
+  if (!analyticsAvailable()) return;
+  cloud.setAnalytics(consent() !== "no");
+  $("consentBar").hidden = consent() !== null;
+  document.body.classList.toggle("asking-consent", consent() === null);
+}
+function setConsent(yes) {
+  store.set(CONSENT_KEY, yes ? "yes" : "no");
+  $("consentBar").hidden = true;
+  document.body.classList.remove("asking-consent");
+  if (analyticsAvailable()) cloud.setAnalytics(yes);
+  $("analyticsToggle").setAttribute("aria-checked", String(yes));
+  $("analyticsToggle").classList.toggle("on", yes);
+}
+$("consentYes").addEventListener("click", () => setConsent(true));
+$("consentNo").addEventListener("click", () => setConsent(false));
+$("consentMore").addEventListener("click", openPrivacy);
+const privacySheet = $("privacySheet");
+function openPrivacy() {
+  const on = consent() !== "no";
+  $("analyticsToggle").hidden = !analyticsAvailable();
+  $("analyticsToggle").setAttribute("aria-checked", String(on));
+  $("analyticsToggle").classList.toggle("on", on);
+  openSheet(privacySheet);
+}
+$("analyticsToggle").addEventListener("click", () => {
+  const yes = consent() === "no";
+  setConsent(yes);
+  showToast(yes ? "📊 נתוני שימוש נשלחים. תודה!" : "נתוני שימוש לא נשלחים", false);
+});
+$("privacyClose").addEventListener("click", () => closeSheets());
 
 // ---------- Rename the list ----------
 // Tap the list's name. A shared list is renamed for everyone on it; a list kept only
@@ -2169,6 +2210,7 @@ async function boot() {
     cloud = null;
     return enterLocal();
   }
+  applyConsent();
 
   $("googleBtn").addEventListener("click", async () => {
     $("loginError").hidden = true;
