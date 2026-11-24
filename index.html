@@ -49,24 +49,19 @@
       <div class="top-row">
         <div class="title-wrap">
           <p class="greeting" id="greeting">שלום!</p>
-          <div class="title-row">
-            <h1><button type="button" class="title-btn" id="listTitle" aria-haspopup="dialog">הסל שלי</button></h1>
-            <!-- Shared list: who's on it, beside the name -->
-            <button type="button" class="people-btn" id="peopleBtn" aria-haspopup="dialog" hidden>
-              <span class="avatars" id="peopleAvatars" aria-hidden="true"></span>
-              <span id="peopleCount"></span>
-            </button>
-          </div>
           <!-- Shared list: the owner's lock switch, or "locked" for everyone else -->
           <div class="title-sub" id="titleSub" hidden>
+            <!-- Owner's controls, one above the other, their labels lined up -->
+            <button type="button" class="plan-btn" id="planBtn" hidden>
+              <span class="lead" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg></span>
+              <span>תכנון זמן הקנייה</span>
+            </button>
             <button type="button" class="lock-mini" id="lockBtn" role="switch" aria-checked="false" hidden>
-              <span class="switch sm" aria-hidden="true"></span><span>🔒 נעילת הרשימה</span>
+              <span class="lead" aria-hidden="true"><span class="switch sm"></span><span class="lead-lock">🔒</span></span>
+              <span>נעילת הרשימה</span>
             </button>
             <span class="lock-state" id="lockState" hidden>🔒 נעולה</span>
-            <button type="button" class="plan-btn" id="planBtn" hidden>🗓️ תכנון קנייה</button>
           </div>
-          <!-- The planned shopping (everyone on the list sees it) -->
-          <button type="button" class="plan-line" id="planLine" hidden></button>
         </div>
         <div class="top-actions">
           <button class="share-btn import-btn" id="importBtn" aria-label="ייבוא רשימה מוואטסאפ או מצילום" aria-haspopup="dialog">
@@ -82,6 +77,20 @@
         </div>
       </div>
 
+      <!-- The list's name, centred above the total (with who's on it, and the owner's controls) -->
+      <div class="list-head-center">
+      <div class="title-row">
+        <h1><button type="button" class="title-btn" id="listTitle" aria-haspopup="dialog">הסל שלי</button></h1>
+        <!-- When the shopping is set for (small, beside the name) -->
+        <span class="name-when" id="nameWhen" hidden></span>
+        <!-- Shared list: who's on it, beside the name -->
+        <button type="button" class="people-btn" id="peopleBtn" aria-haspopup="dialog" hidden>
+          <span class="avatars" id="peopleAvatars" aria-hidden="true"></span>
+          <span id="peopleCount"></span>
+        </button>
+      </div>
+      </div>
+
       <div class="progress-card" id="progressCard" hidden>
         <div class="total" id="totalBox" hidden>
           <div class="total-row">
@@ -94,6 +103,11 @@
     </header>
 
     <main class="content" id="content">
+      <!-- The planned shopping, front and centre (everyone on the list sees it; the owner taps to change it) -->
+      <button type="button" class="plan-card" id="planLine" hidden>
+        <span class="plan-main" id="planMain"></span>
+        <span class="plan-sub" id="planSub"></span>
+      </button>
       <section class="stores" aria-labelledby="storesTitle">
         <p class="stores-title" id="storesTitle">איפה קונים היום?</p>
         <div class="wheel" id="storeRow" role="slider" tabindex="0" aria-labelledby="storesTitle"

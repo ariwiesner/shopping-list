@@ -1756,21 +1756,42 @@ const fmtWhen = (ms) => {
   const d = new Date(ms), now = new Date();
   const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
   const diff = Math.round((day(d) - day(now)) / 864e5);
-  const dayName = diff === 0 ? "היום" : diff === 1 ? "מחר" : `יום ${d.toLocaleDateString("he-IL", { weekday: "short" }).replace("יום ", "")} ${d.getDate()}.${d.getMonth() + 1}`;
-  return `${dayName}, ${d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}`;
+  const dayName = diff === 0 ? "היום" : diff === 1 ? "מחר" : `ביום ${d.toLocaleDateString("he-IL", { weekday: "short" }).replace("יום ", "")} ${d.getDate()}.${d.getMonth() + 1}`;
+  return `${dayName} ב־${d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}`;
 };
 let planTimer = 0;
-function renderPlanLine(shared, iOwn) {
-  const shop = shopAtMs(), lock = lockAtMs();
-  const parts = [];
-  if (shared && shop) parts.push(`🛒 קניות: ${fmtWhen(shop)}`);
-  if (shared && lock && Date.now() < lock) parts.push(`🔒 ננעלת ${fmtWhen(lock)}`);
-  $("planLine").hidden = !parts.length;
-  $("planLine").textContent = parts.join(" · ");
+// "בעוד 3 שעות", "בעוד 25 דק׳", "בעוד יומיים"
+function fmtIn(ms) {
+  const min = Math.max(1, Math.round((ms - Date.now()) / 6e4));
+  if (min < 60) return `בעוד ${min} דק׳`;
+  const h = Math.round(min / 60);
+  if (h < 24) return h === 1 ? "בעוד שעה" : h === 2 ? "בעוד שעתיים" : `בעוד ${h} שעות`;
+  const d = Math.round(h / 24);
+  return d === 1 ? "בעוד יום" : d === 2 ? "בעוד יומיים" : `בעוד ${d} ימים`;
+}
+function renderPlanLine(cloudList, iOwn) {
+  const now = Date.now(), shop = shopAtMs(), lock = lockAtMs();
+  const shopSoon = cloudList && shop && shop > now - 3 * 36e5; // keep showing it until 3 hours after
+  const lockSet = cloudList && lock;
+  $("planLine").hidden = !shopSoon && !(lockSet && lock > now);
+  if (!$("planLine").hidden) {
+    $("planMain").textContent = shopSoon ? `🛒 הקניות ${fmtWhen(shop)}` : `🔒 הרשימה ננעלת ${fmtWhen(lock)}`;
+    $("planSub").textContent = !lockSet ? (iOwn ? "הקישו כדי לשנות" : "")
+      : lock > now ? `🔒 אפשר להוסיף ולשנות עד ${fmtWhen(lock)}`
+      : "🔒 הרשימה נעולה לקראת הקנייה";
+    $("planSub").hidden = !$("planSub").textContent;
+  }
   $("planLine").disabled = !iOwn;
-  // Re-draw when the planned lock time comes, so the list locks on screen too.
+  $("planLine").classList.toggle("owner", !!iOwn);
+  // Beside the list's name: 🕒 and when the shopping is set for.
+  $("nameWhen").hidden = !shopSoon;
+  $("nameWhen").textContent = shopSoon ? `🕒 ${fmtWhen(shop)}` : "";
+  // Keep the countdown fresh, and lock on screen the moment the lock time comes.
   clearTimeout(planTimer);
-  if (shared && lock && Date.now() < lock) planTimer = setTimeout(() => render(), Math.min(lock - Date.now() + 500, 2 ** 31 - 1));
+  if (!$("planLine").hidden) {
+    const next = lockSet && lock > now ? Math.min(lock - now + 500, 6e4) : 6e4;
+    planTimer = setTimeout(() => render(), next);
+  }
 }
 const planSheet = $("planSheet");
 const toLocalInput = (ms) => { const d = new Date(ms - new Date(ms).getTimezoneOffset() * 6e4); return d.toISOString().slice(0, 16); };
@@ -1808,7 +1829,7 @@ $("planForm").addEventListener("submit", async (e) => {
   try {
     await cloud.setPlan({ shopAt: shop, lockAt: lock });
     buzz(10);
-    showToast(shop ? `נשמר: קניות ${fmtWhen(shop)}${lock ? ` · נעילה ${fmtWhen(lock)}` : ""}` : "נשמר", false);
+    showToast(shop ? `נשמר: הקניות ${fmtWhen(shop)}${lock ? `, נעילה ${fmtWhen(lock)}` : ""}` : "נשמר", false);
   } catch (err) { fail(err); }
 });
 
