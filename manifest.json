@@ -1,0 +1,14 @@
+{
+  "name": "הסל שלי — רשימת קניות",
+  "short_name": "הסל שלי",
+  "lang": "he",
+  "dir": "rtl",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f4ef",
+  "theme_color": "#2f9e6b",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

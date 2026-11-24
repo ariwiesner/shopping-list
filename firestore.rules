@@ -1,0 +1,98 @@
+rules_version = '2';
+
+// Who can do what:
+//  - Everyone must be signed in with Google.
+//  - Only members of a list can read or edit it.
+//  - You become a member by creating the list, or by opening a valid invite link
+//    (the invite code is a long random secret stored as a document id).
+//  - Only the owner can reset the invite link or delete the list; the owner can
+//    remove members, and any member can leave.
+//  - The owner can lock the list: then only the owner, and members the owner lets edit
+//    ("editors"), can add, edit or delete items, rename it or change its store. Everyone
+//    can still tick items in/out of the cart. Only the owner locks, unlocks and picks editors.
+//  - The owner can plan the shopping: when it happens (shopAt) and a time the list locks
+//    by itself (lockAt, checked against the server's clock). Only the owner sets these.
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function listPath(listId) { return /databases/$(db)/documents/lists/$(listId); }
+    function memberPath(listId, uid) { return /databases/$(db)/documents/lists/$(listId)/members/$(uid); }
+
+    function isMember(listId) { return signedIn() && exists(memberPath(listId, request.auth.uid)); }
+    // For writes that may happen in the same batch that creates the membership.
+    function isMemberAfter(listId) { return signedIn() && existsAfter(memberPath(listId, request.auth.uid)); }
+    function isOwner(listId) { return signedIn() && get(listPath(listId)).data.ownerId == request.auth.uid; }
+    function isOwnerAfter(listId) { return signedIn() && getAfter(listPath(listId)).data.ownerId == request.auth.uid; }
+    // Locked now: by hand, or its planned lock time has come.
+    function lockedNow(l) {
+      return l.get('locked', false) || (l.get('lockAt', null) != null && request.time >= l.lockAt);
+    }
+    // Not locked, or I'm the owner or an editor. (getAfter: also works in the batch that creates the list.)
+    function canChange(listId) {
+      let l = getAfter(listPath(listId)).data;
+      return !lockedNow(l) || l.ownerId == request.auth.uid || request.auth.uid in l.get('editors', []);
+    }
+    // An item update that only ticks it into / out of the cart.
+    function onlyTicks() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['done', 'sortKey', 'updatedBy', 'updatedByName', 'updatedAt']);
+    }
+
+    match /users/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /lists/{listId} {
+      allow read: if isMember(listId);
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.name is string && request.resource.data.name.size() <= 80;
+      allow update: if isMember(listId)
+        && request.resource.data.ownerId == resource.data.ownerId
+        && (request.resource.data.inviteCode == resource.data.inviteCode || isOwner(listId))
+        // Locked: only the owner and editors change the list; only the owner locks/unlocks and picks editors.
+        && (!lockedNow(resource.data) || isOwner(listId) || request.auth.uid in resource.data.get('editors', []))
+        && ((request.resource.data.get('locked', false) == resource.data.get('locked', false)
+             && request.resource.data.get('editors', []) == resource.data.get('editors', [])
+             && request.resource.data.get('lockAt', null) == resource.data.get('lockAt', null)
+             && request.resource.data.get('shopAt', null) == resource.data.get('shopAt', null))
+            || isOwner(listId));
+      allow delete: if isOwner(listId);
+
+      match /items/{itemId} {
+        allow read: if isMember(listId);
+        allow delete: if isMemberAfter(listId) && canChange(listId);
+        allow create, update: if isMemberAfter(listId)
+          && (canChange(listId) || (request.method == 'update' && onlyTicks()))
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 60
+          && request.resource.data.qty is int
+          && request.resource.data.qty >= 1 && request.resource.data.qty <= 999
+          && (request.resource.data.get('price', null) == null
+              || (request.resource.data.price is number
+                  && request.resource.data.price > 0 && request.resource.data.price <= 5000))
+          && request.resource.data.updatedBy == request.auth.uid;
+      }
+
+      match /members/{uid} {
+        allow read: if isMember(listId);
+        allow create: if signedIn() && request.auth.uid == uid
+          && request.resource.data.uid == uid
+          && (isOwnerAfter(listId)
+              || (request.resource.data.inviteCode is string
+                  && exists(/databases/$(db)/documents/lists/$(listId)/invites/$(request.resource.data.inviteCode))));
+        allow update: if false;
+        allow delete: if signedIn() && (request.auth.uid == uid || isOwner(listId));
+      }
+
+      match /invites/{code} {
+        // Knowing the code is the invitation, so any signed-in user may fetch it by id,
+        // but nobody can list all codes.
+        allow get: if signedIn();
+        allow list: if false;
+        allow create, delete: if isOwnerAfter(listId);
+      }
+    }
+  }
+}
