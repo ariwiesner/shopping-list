@@ -63,7 +63,10 @@
               <span class="switch sm" aria-hidden="true"></span><span>🔒 נעילת הרשימה</span>
             </button>
             <span class="lock-state" id="lockState" hidden>🔒 נעולה</span>
+            <button type="button" class="plan-btn" id="planBtn" hidden>🗓️ תכנון קנייה</button>
           </div>
+          <!-- The planned shopping (everyone on the list sees it) -->
+          <button type="button" class="plan-line" id="planLine" hidden></button>
         </div>
         <div class="top-actions">
           <button class="share-btn import-btn" id="importBtn" aria-label="ייבוא רשימה מוואטסאפ או מצילום" aria-haspopup="dialog">
@@ -219,6 +222,31 @@
     <h3 id="whoTitle"></h3>
     <div id="whoList" class="who-list"></div>
     <button type="button" class="sheet-item cancel" id="whoCancel">ביטול</button>
+  </div>
+
+  <!-- Plan the shopping (owner) -->
+  <div class="sheet" id="planSheet" role="dialog" aria-modal="true" aria-labelledby="planTitle" hidden>
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <h3 id="planTitle">תכנון הקנייה</h3>
+    <p class="sheet-note">כל מי שברשימה יראה מתי יוצאים לקניות, ועד מתי אפשר להוסיף דברים.</p>
+    <form id="planForm" class="edit-form">
+      <label class="field">
+        <span>מתי יוצאים לקניות?</span>
+        <input id="planShop" type="datetime-local" />
+      </label>
+      <label class="plan-check">
+        <input id="planLockOn" type="checkbox" />
+        <span>לנעול את הרשימה אוטומטית</span>
+      </label>
+      <label class="field" id="planLockField">
+        <span>הרשימה ננעלת ב־</span>
+        <input id="planLock" type="datetime-local" />
+      </label>
+      <div class="edit-actions">
+        <button type="button" class="btn ghost" id="planClear">ניקוי התכנון</button>
+        <button type="submit" class="btn primary">שמירה</button>
+      </div>
+    </form>
   </div>
 
   <!-- Confirm deleting the whole list -->

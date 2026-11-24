@@ -146,6 +146,12 @@ export async function createCloud(config) {
     setEditors(uids) {
       return updateDoc(listRef(), { editors: uids });
     },
+    // Plan the shopping (owner only): when it happens and when the list locks by itself.
+    // Times are epoch milliseconds or null; stored as Firestore timestamps.
+    setPlan({ shopAt, lockAt, locked }) {
+      const ts = (ms) => (ms ? new Date(ms) : null);
+      return updateDoc(listRef(), { shopAt: ts(shopAt), lockAt: ts(lockAt), ...(locked === undefined ? {} : { locked }) });
+    },
     // Lock / unlock the open list (owner only; enforced by the database rules).
     setLocked(locked) {
       return updateDoc(listRef(), { locked: !!locked });
