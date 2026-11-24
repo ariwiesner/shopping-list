@@ -348,7 +348,6 @@ h1 { margin: 2px 0 0; font-size: 18px; font-weight: 800; letter-spacing: 0; }
 }
 .share-btn svg { width: 20px; height: 20px; }
 .share-btn:active { transform: scale(.96); }
-.share-btn.shared .share-label, .share-btn.shared > svg { display: none; }
 .avatars { display: flex; }
 .avatars:empty { display: none; }
 .avatars .avatar + .avatar { margin-inline-start: -6px; }
@@ -790,3 +789,14 @@ body.locked .content { padding-bottom: calc(var(--safe-b) + 24px); }
 .switch.sm::after { top: 2px; inset-inline-start: 2px; width: 16px; height: 16px; }
 .edit-perm.on .switch { background: var(--accent); }
 .edit-perm.on .switch.sm::after { inset-inline-start: 16px; }
+
+/* Participants + lock row under the total (shared lists) */
+.list-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.total:not([hidden]) + .list-bar { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.people-btn { display: inline-flex; align-items: center; gap: 8px; padding: 2px 0; font-size: 13.5px; font-weight: 700; color: var(--muted); }
+.people-btn:active { opacity: .6; }
+.lock-mini { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.lock-mini.on { color: var(--accent); }
+.lock-mini.on .switch { background: var(--accent); }
+.lock-mini.on .switch.sm::after { inset-inline-start: 16px; }
+.lock-state { font-size: 13px; font-weight: 700; color: var(--muted); }

@@ -57,7 +57,6 @@
             <span>ייבוא</span>
           </button>
           <button class="share-btn" id="shareBtn" aria-label="שיתוף הרשימה">
-            <span class="avatars" id="avatars" aria-hidden="true"></span>
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.9-5 5.5-5s4.9 1.8 5.5 5"/><path d="M18 8v6M15 11h6"/></svg>
             <span class="share-label">שיתוף</span>
           </button>
@@ -74,6 +73,16 @@
             <strong id="totalAmount" dir="ltr">₪0</strong>
           </div>
           <p class="total-note" id="totalNote"></p>
+        </div>
+        <div class="list-bar" id="listBar" hidden>
+          <button type="button" class="people-btn" id="peopleBtn" aria-haspopup="dialog">
+            <span class="avatars" id="peopleAvatars" aria-hidden="true"></span>
+            <span id="peopleCount"></span>
+          </button>
+          <button type="button" class="lock-mini" id="lockBtn" role="switch" aria-checked="false" hidden>
+            <span>🔒 נעילה</span><span class="switch sm" aria-hidden="true"></span>
+          </button>
+          <span class="lock-state" id="lockState" hidden>🔒 נעולה</span>
         </div>
       </div>
     </header>
@@ -182,6 +191,12 @@
     <div id="importBody"></div>
     <input type="file" id="importCamera" accept="image/*" capture="environment" hidden />
     <input type="file" id="importGallery" accept="image/*" hidden />
+  </div>
+
+  <!-- Participants of a shared list (content rendered by app.js) -->
+  <div class="sheet" id="peopleSheet" role="dialog" aria-modal="true" aria-labelledby="peopleTitle" hidden>
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <div id="peopleBody"></div>
   </div>
 
   <!-- Confirm deleting the whole list -->
