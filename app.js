@@ -158,15 +158,18 @@ function priceLine(it) {
   return `<div class="item-price none">לא נמצא ב${escapeHtml(ui.cat.name)}</div>`;
 }
 
-// On a list shared by several people, in small text under the item: who added it, and
-// who edited it if that was someone else ("נוסף ע״י ארי · ונערך ע״י מיכל").
-// Ticking it into the cart isn't an edit.
+// On a list shared by several people: who added the item, and who edited it if that was
+// someone else, in tiny words stacked at the card's edge beside the checkbox
+// ("נוסף / ארי / נערך / מיכל"). Ticking it into the cart isn't an edit.
 function byLine(it) {
   if (ui.members.length < 2) return "";
   const parts = [];
-  if (it.createdByName) parts.push(`נוסף ע״י ${it.createdByName}`);
-  if (it.editedByName && it.editedBy !== it.createdBy) parts.push(`${parts.length ? "ונערך" : "נערך"} ע״י ${it.editedByName}`);
-  return parts.length ? `<div class="item-who">${escapeHtml(parts.join(" · "))}</div>` : "";
+  if (it.createdByName) parts.push(["נוסף", it.createdByName]);
+  if (it.editedByName && it.editedBy !== it.createdBy) parts.push(["נערך", it.editedByName]);
+  if (!parts.length) return "";
+  const label = parts.map(([verb, who]) => `${verb} ע״י ${who}`).join(", ");
+  return `<div class="item-who" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">` +
+    parts.map(([verb, who]) => `<span>${verb}</span><b>${escapeHtml(who)}</b>`).join("") + `</div>`;
 }
 
 function itemHtml(it) {
@@ -175,13 +178,13 @@ function itemHtml(it) {
     <li class="item${it.done ? " done" : ""}${ui.flash.has(it.id) ? " flash" : ""}" data-id="${escapeHtml(it.id)}">
       <div class="item-delete-hint" aria-hidden="true">מחיקה</div>
       <div class="item-body">
+        ${byLine(it)}
         <button class="check" data-act="toggle" aria-label="${it.done ? "החזרה לרשימה" : "סימון כנמצא בעגלה"}: ${name}">
           <span class="check-box">${CHECK_SVG}</span>
         </button>
         <button class="item-main" data-act="edit" aria-label="עריכת ${name}">
           <div class="item-name"><span class="item-emoji" aria-hidden="true">${emojiFor(it.name)}</span>${name}</div>
           ${priceLine(it)}
-          ${byLine(it)}
           ${ui.flash.has(it.id) && it.updatedByName ? `<div class="item-by">${escapeHtml(it.updatedByName)} עדכן/ה עכשיו</div>` : ""}
           ${it.importNote && Date.now() - it.importNote.at < 864e5 ? `<div class="item-by import-note">📥 שימו לב: ${it.importNote.added === 1 ? "נוסף 1" : `נוספו ${it.importNote.added}`} מהרשימה המיובאת</div>` : ""}
         </button>
@@ -218,7 +221,7 @@ function render() {
   $("dealsBtn").hidden = !total || !ui.chains.length;
 
   // Header: list name + who's in it
-  $("listTitle").innerHTML = `<span class="title-text">${escapeHtml(listName())}</span><svg class="title-pen" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/></svg>`;
+  $("listTitle").innerHTML = `<span class="title-text">${escapeHtml(listName())}</span>`;
   $("listTitle").setAttribute("aria-label", `${listName()} — שינוי שם הרשימה`);
   const others = ui.members.filter((m) => m.id !== cloud?.user?.uid);
   $("avatars").innerHTML = others.slice(0, 3).map((m) => avatarHtml(m, "avatar sm")).join("");
