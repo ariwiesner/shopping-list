@@ -1783,6 +1783,9 @@ function renderPlanLine(cloudList, iOwn) {
   }
   $("planLine").disabled = !iOwn;
   $("planLine").classList.toggle("owner", !!iOwn);
+  // Beside the list's name: 🕒 and when the shopping is set for.
+  $("nameWhen").hidden = !shopSoon;
+  $("nameWhen").textContent = shopSoon ? `🕒 ${fmtWhen(shop)}` : "";
   // Keep the countdown fresh, and lock on screen the moment the lock time comes.
   clearTimeout(planTimer);
   if (!$("planLine").hidden) {
