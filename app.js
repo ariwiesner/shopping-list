@@ -1701,8 +1701,27 @@ function openPrivacy() {
   $("analyticsToggle").hidden = !analyticsAvailable();
   $("analyticsToggle").setAttribute("aria-checked", String(on));
   $("analyticsToggle").classList.toggle("on", on);
+  $("deleteAccountBtn").hidden = !cloud?.user;
   openSheet(privacySheet);
 }
+
+// Delete the account and everything in it (required by Google Play; also in privacy.html).
+$("deleteAccountBtn").addEventListener("click", () => {
+  askConfirm("למחוק את החשבון?",
+    "הרשימות שיצרת יימחקו לכולם, ותצא/י מרשימות ששותפו איתך. אי אפשר לבטל את זה.",
+    "מחיקת החשבון", async () => {
+      showToast("מוחקים את החשבון…", false);
+      try {
+        await cloud.deleteAccount((k, n) => showToast(`מוחקים רשימות… ${k}/${n}`, false));
+        track("account_delete");
+        showToast("החשבון נמחק", false);
+      } catch (err) {
+        if (["auth/popup-closed-by-user", "auth/cancelled-popup-request", "auth/user-mismatch"].includes(err?.code)) {
+          showToast("המחיקה בוטלה — לא נמחק כלום", false);
+        } else fail(err);
+      }
+    });
+});
 $("analyticsToggle").addEventListener("click", () => {
   const yes = consent() === "no";
   setConsent(yes);
