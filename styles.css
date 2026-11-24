@@ -897,3 +897,12 @@ body.locked .content { padding-bottom: calc(var(--safe-b) + 24px); }
 .title-sub .lock-mini.on .switch.sm::after { inset-inline-start: 13px; }
 .title-sub .lead-lock { font-size: 12px; }
 .list-head-center { margin-top: 18px; }
+/* Plan + lock: both start at the right edge, smaller */
+.title-sub .plan-btn, .title-sub .lock-mini { font-size: 10.5px; gap: 4px; }
+.title-sub .plan-btn .lead { width: auto; }
+.title-sub .plan-btn .lead svg { width: 14px; height: 14px; }
+.title-sub .lock-mini .lead { width: auto; gap: 3px; justify-content: flex-start; }
+.title-sub .switch.sm { width: 22px; height: 13px; }
+.title-sub .switch.sm::after { top: 2px; inset-inline-start: 2px; width: 9px; height: 9px; }
+.title-sub .lock-mini.on .switch.sm::after { inset-inline-start: 11px; }
+.title-sub .lead-lock { font-size: 10.5px; }
