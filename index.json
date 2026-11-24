@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-23T09:16Z",
+ "generated": "2026-11-24T11:03Z",
  "chains": [
   {
    "id": "shufersal",
@@ -13,49 +13,49 @@
    "id": "rami-levy",
    "name": "רמי לוי",
    "color": "#0a5bab",
-   "count": 26216,
+   "count": 26235,
    "branches": 98,
-   "updated": "2026-11-23T09:10Z"
+   "updated": "2026-11-24T10:52Z"
   },
   {
    "id": "carrefour",
    "name": "קרפור",
    "color": "#1d4f9c",
-   "count": 22912,
-   "branches": 147,
-   "updated": "2026-11-23T09:12Z"
+   "count": 22830,
+   "branches": 145,
+   "updated": "2026-11-24T10:57Z"
   },
   {
    "id": "yochananof",
    "name": "יוחננוף",
    "color": "#e4002b",
-   "count": 18198,
+   "count": 18201,
    "branches": 47,
-   "updated": "2026-11-23T09:13Z"
+   "updated": "2026-11-24T10:59Z"
   },
   {
    "id": "osher-ad",
    "name": "אושר עד",
    "color": "#f7a600",
-   "count": 9622,
+   "count": 9608,
    "branches": 24,
-   "updated": "2026-11-23T09:14Z"
+   "updated": "2026-11-24T10:59Z"
   },
   {
    "id": "hazi-hinam",
    "name": "חצי חינם",
    "color": "#f28c00",
-   "count": 21230,
+   "count": 21271,
    "branches": 13,
-   "updated": "2026-11-23T09:14Z"
+   "updated": "2026-11-24T11:00Z"
   },
   {
    "id": "tiv-taam",
    "name": "טיב טעם",
    "color": "#00843d",
-   "count": 32411,
+   "count": 32339,
    "branches": 53,
-   "updated": "2026-11-23T09:16Z"
+   "updated": "2026-11-24T11:03Z"
   }
  ]
 }
