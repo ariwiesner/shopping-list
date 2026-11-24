@@ -38,7 +38,6 @@ const EMOJI = [
   [/sponge|ספוג/i, "🧽"], [/diaper|חיתול/i, "👶"], [/ice cream|גלידה/i, "🍦"], [/pizza|פיצה/i, "🍕"],
 ];
 const emojiFor = (name) => (EMOJI.find(([re]) => re.test(name)) || [, "🛒"])[1];
-const SUGGESTIONS = ["חלב", "ביצים", "לחם", "בננות", "עגבניות", "גבינה", "קפה", "עוף"];
 
 // "2 חלב", "חלב x3", "חלב 3" → { name, qty }
 function parseInput(text) {
@@ -87,7 +86,6 @@ const prefs = store.get(PREFS_KEY, {});
 const ui = {
   items: [],
   doneOpen: prefs.doneOpen ?? store.get(LOCAL_KEY, {})?.doneOpen ?? true,
-  suggestOff: prefs.suggestOff ?? false, // true once the user types an item themselves
   chains: [],        // available stores from the catalog index
   cat: null,         // loaded catalog of the selected store
   catId: null,       // chain id of the catalog in ui.cat (or being loaded)
@@ -104,7 +102,7 @@ const ui = {
 // ---------- DOM ----------
 const todoList = $("todoList"), doneList = $("doneList");
 const doneSection = $("doneSection"), doneToggle = $("doneToggle"), doneCount = $("doneCount");
-const emptyState = $("emptyState"), suggestions = $("suggestions");
+const emptyState = $("emptyState");
 const progressLabel = $("progressLabel"), progressCount = $("progressCount"), progressFill = $("progressFill");
 const composer = $("composer"), input = $("itemInput");
 const backdrop = $("sheetBackdrop"), menuSheet = $("sheet"), editSheet = $("editSheet"), shareSheet = $("shareSheet");
@@ -161,6 +159,16 @@ function priceLine(it) {
   return `<div class="item-price none">לא נמצא ב${escapeHtml(ui.cat.name)}</div>`;
 }
 
+// On a list shared by several people: a tiny profile circle of whoever last added or
+// changed the item. (Someone who has left the list shows as their first initial.)
+function changedBy(it) {
+  if (ui.members.length < 2 || !it.updatedBy) return "";
+  const m = ui.members.find((x) => x.id === it.updatedBy);
+  const who = m?.name || it.updatedByName || "";
+  const label = it.updatedBy === cloud?.user?.uid ? "שונה על ידך" : `שונה על ידי ${who}`;
+  return `<span class="item-who" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${avatarHtml(m || { name: who }, "avatar xs")}</span>`;
+}
+
 function itemHtml(it) {
   const name = escapeHtml(it.name);
   return `
@@ -171,7 +179,7 @@ function itemHtml(it) {
           <span class="check-box">${CHECK_SVG}</span>
         </button>
         <button class="item-main" data-act="edit" aria-label="עריכת ${name}">
-          <div class="item-name"><span class="item-emoji" aria-hidden="true">${emojiFor(it.name)}</span>${name}</div>
+          <div class="item-name"><span class="item-emoji" aria-hidden="true">${emojiFor(it.name)}</span>${name}${changedBy(it)}</div>
           ${priceLine(it)}
           ${ui.flash.has(it.id) && it.updatedByName ? `<div class="item-by">${escapeHtml(it.updatedByName)} עדכן/ה עכשיו</div>` : ""}
           ${it.importNote && Date.now() - it.importNote.at < 864e5 ? `<div class="item-by import-note">📥 שימו לב: ${it.importNote.added === 1 ? "נוסף 1" : `נוספו ${it.importNote.added}`} מהרשימה המיובאת</div>` : ""}
@@ -214,16 +222,6 @@ function render() {
   renderTotal(items);
   renderStores();
   $("dealsBtn").hidden = !total || !ui.chains.length;
-
-  // Suggestions: tapping one adds it and removes just that chip (it's now on the list).
-  // They stay until the user types an item manually; an empty list brings them back.
-  if (!total && ui.suggestOff) setSuggestOff(false);
-  const onList = new Set(items.map((i) => i.name));
-  const sugg = ui.suggestOff ? [] : SUGGESTIONS.filter((s) => !onList.has(s));
-  $("suggestBlock").hidden = !sugg.length;
-  $("suggestBlock").classList.toggle("compact", total > 0);
-  $("suggestHead").hidden = !total;
-  suggestions.innerHTML = sugg.map((s) => `<button class="chip" data-name="${s}">${emojiFor(s)} ${s}</button>`).join("");
 
   // Header: list name + who's in it
   $("listTitle").textContent = ui.list?.name || "הסל שלי";
@@ -1472,17 +1470,6 @@ doneToggle.addEventListener("click", () => {
   render();
 });
 
-function setSuggestOff(off) {
-  ui.suggestOff = off;
-  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), doneOpen: ui.doneOpen, suggestOff: off });
-}
-
-suggestions.addEventListener("click", (e) => {
-  const chip = e.target.closest(".chip");
-  if (chip) addItem(chip.dataset.name);
-});
-$("suggestClose").addEventListener("click", () => { setSuggestOff(true); render(); });
-
 // Swipe toward the end side to delete: right in RTL (Hebrew), left in LTR.
 const SWIPE_DIR = document.documentElement.dir === "rtl" ? 1 : -1;
 function enableSwipe(list) {
@@ -1540,7 +1527,6 @@ composer.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = input.value.trim();
   if (!text) { input.focus(); return; }
-  setSuggestOff(true); // typing your own item hides the suggestions
   addItem(text);
   input.value = "";
   input.focus(); // keep keyboard open for quick multi-add
