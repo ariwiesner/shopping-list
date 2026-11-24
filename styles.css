@@ -880,3 +880,6 @@ body.locked .content { padding-bottom: calc(var(--safe-b) + 24px); }
 .list-head-center h1 { margin: 0; }
 .list-head-center .title-sub { margin-top: 4px; }
 .top-row { align-items: center; }
+/* Plan/lock controls stay under the greeting (top right); the name is centred and a bit bigger */
+.title-wrap .title-sub { margin-top: 4px; }
+.list-head-center h1 { font-size: 22px; }
