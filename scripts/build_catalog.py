@@ -588,16 +588,51 @@ def write_json(path, obj):
         json.dump(obj, fh, ensure_ascii=False, separators=(",", ":"))
 
 
+def write_common(out, chain_ids, log):
+    """common.json: products (real barcodes) sold at two chains or more, for choosing a
+    product while typing an item, whichever store is selected (or none). Each row:
+    [barcode, name, chains bitmask (bit k = chains[k]), lowest price].
+    The name is the fullest one any chain uses (chains cut names short)."""
+    seen = {}
+    ids = []
+    for cid in chain_ids:
+        path = os.path.join(out, f"{cid}.json")
+        if not os.path.exists(path):
+            continue
+        k = len(ids)
+        ids.append(cid)
+        with open(path, encoding="utf-8") as fh:
+            items = json.load(fh).get("items", [])
+        for it in items:
+            code, name, price = it[0], it[1], it[2]
+            if not re.fullmatch(r"\d{12,14}", code) or re.match(r"0*2", code):
+                continue  # in-store codes (produce, deli) differ per chain
+            row = seen.setdefault(code, [code, name, 0, price])
+            row[2] |= 1 << k
+            if len(name) > len(row[1]):
+                row[1] = name
+            row[3] = min(row[3], price)
+    rows = [r for r in seen.values() if bin(r[2]).count("1") >= 2]
+    rows.sort(key=lambda r: (-bin(r[2]).count("1"), r[1]))
+    with open(os.path.join(out, "common.json"), "w", encoding="utf-8") as fh:
+        json.dump({"chains": ids, "items": rows}, fh, ensure_ascii=False, separators=(",", ":"))
+    log(f"✓ common products: {len(rows)} sold at 2+ chains")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="catalog")
     ap.add_argument("--only", nargs="*", help="chain ids to build (default: all)")
     ap.add_argument("--geocode-only", action="store_true", help="only add branch locations to existing files")
+    ap.add_argument("--common-only", action="store_true", help="only rebuild common.json from existing files")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
     log = lambda s: print(s, flush=True)
     if args.geocode_only:
         geocode_stores(args.out, log, budget=10**6)
+        return
+    if args.common_only:
+        write_common(args.out, [c["id"] for c in CHAINS], log)
         return
 
     # Keep previous entries for chains that fail today, so one broken site doesn't empty the app.
@@ -623,6 +658,11 @@ def main():
             log(f"✗ {chain['id']}: {e}")
             if chain["id"] in previous:
                 results.append(previous[chain["id"]])
+
+    try:
+        write_common(args.out, [c["id"] for c in CHAINS], log)
+    except Exception as e:  # noqa: BLE001 - the product list is a bonus; never fail the price build
+        log(f"✗ common products: {e}")
 
     try:
         geocode_stores(args.out, log)
