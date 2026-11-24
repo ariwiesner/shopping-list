@@ -1134,11 +1134,30 @@ window.addEventListener("popstate", () => {
 backdrop.addEventListener("click", () => closeSheets());
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheets(); });
 
-// Swipe a sheet down by its top (the handle and title) to close it.
+// Pull a sheet down anywhere on it to close it.
+// The top (handle and title) drags right away. Elsewhere the first movement decides:
+// a downward pull drags the sheet, unless it starts inside a list that is scrolled down
+// (then the list scrolls back up first, as on any phone); anything else scrolls/taps as usual.
 // Dragging up only gives a little stretch, since sheets already show everything.
-const GRAB_ZONE = 64; // px from the top of the sheet that starts a drag
+const GRAB_ZONE = 64; // px from the top of the sheet that always drags
+const SLOP = 8;       // px of movement before deciding what a touch is
 document.querySelectorAll(".sheet").forEach((sheet) => {
-  let startY = 0, lastY = 0, lastT = 0, velocity = 0, dragging = false;
+  let startX = 0, startY = 0, lastY = 0, lastT = 0, velocity = 0, dragging = false, deciding = false, scroller = null;
+
+  // The scrollable element the touch started in (or the sheet itself on short screens).
+  const scrollerOf = (el) => {
+    for (let n = el; n && n !== sheet.parentNode; n = n.parentElement) {
+      const oy = getComputedStyle(n).overflowY;
+      if ((oy === "auto" || oy === "scroll") && n.scrollHeight > n.clientHeight + 1) return n;
+      if (n === sheet) break;
+    }
+    return null;
+  };
+  const startDrag = (y, t) => {
+    dragging = true; deciding = false;
+    startY = lastY = y; lastT = t; velocity = 0;
+    sheet.style.transition = backdrop.style.transition = "none";
+  };
 
   const setOffset = (dy) => {
     const y = dy > 0 ? dy : -Math.sqrt(-dy) * 3; // resistance when pulling up
@@ -1150,16 +1169,29 @@ document.querySelectorAll(".sheet").forEach((sheet) => {
   };
 
   sheet.addEventListener("touchstart", (e) => {
-    if (e.touches.length !== 1) return;
+    dragging = deciding = false;
+    if (e.touches.length !== 1 || e.target.closest("textarea, select")) return;
     const t = e.touches[0];
-    const inZone = t.clientY - sheet.getBoundingClientRect().top < GRAB_ZONE;
-    if (!inZone || e.target.closest("input, textarea, select")) return;
-    dragging = true;
-    startY = lastY = t.clientY; lastT = e.timeStamp; velocity = 0;
-    sheet.style.transition = backdrop.style.transition = "none";
+    if (t.clientY - sheet.getBoundingClientRect().top < GRAB_ZONE && !e.target.closest("input")) {
+      startDrag(t.clientY, e.timeStamp);
+      return;
+    }
+    deciding = true;
+    startX = t.clientX; startY = t.clientY;
+    scroller = scrollerOf(e.target);
   }, { passive: true });
 
   sheet.addEventListener("touchmove", (e) => {
+    if (deciding) {
+      const t = e.touches[0], dx = t.clientX - startX, dy = t.clientY - startY;
+      if (Math.abs(dx) < SLOP && Math.abs(dy) < SLOP) return;
+      deciding = false;
+      // A downward pull, not sideways, and not while a list can still scroll up.
+      if (dy > 0 && Math.abs(dy) > Math.abs(dx) && !(scroller && scroller.scrollTop > 0)) {
+        startDrag(t.clientY, e.timeStamp);
+        document.activeElement?.blur?.(); // a field being dragged shouldn't keep the keyboard up
+      } else return;
+    }
     if (!dragging) return;
     e.preventDefault(); // keep the page behind from scrolling
     const y = e.touches[0].clientY, dt = e.timeStamp - lastT;
