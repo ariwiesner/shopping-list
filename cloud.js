@@ -24,7 +24,7 @@ export async function createCloud(config) {
   } = A;
   const {
     initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-    doc, collection, getDoc, setDoc, updateDoc, deleteDoc, writeBatch,
+    doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch,
     onSnapshot, serverTimestamp, deleteField,
   } = F;
 
@@ -269,6 +269,41 @@ export async function createCloud(config) {
     },
     removeMember(uid) {
       return deleteDoc(doc(db, "lists", listId, "members", uid));
+    },
+    // Delete one of my lists for everyone (owner). Order matters for the database rules:
+    // items first (while I'm still a member), then invites and other members, then the
+    // list and my own membership; finally it leaves my list index.
+    async deleteList(id) {
+      if (id === listId) closeList();
+      const ref = doc(db, "lists", id);
+      const snap = await getDoc(ref);
+      const items = await getDocs(collection(db, "lists", id, "items"));
+      for (let k = 0; k < items.docs.length; k += 400) {
+        const b = writeBatch(db);
+        items.docs.slice(k, k + 400).forEach((d) => b.delete(d.ref));
+        await b.commit();
+      }
+      const members = await getDocs(collection(db, "lists", id, "members"));
+      const b = writeBatch(db);
+      if (snap.exists() && snap.data().inviteCode) b.delete(doc(db, "lists", id, "invites", snap.data().inviteCode));
+      members.docs.filter((d) => d.id !== me().uid).forEach((d) => b.delete(d.ref));
+      await b.commit();
+      const last = writeBatch(db);
+      last.delete(ref);
+      last.delete(doc(db, "lists", id, "members", me().uid));
+      await last.commit();
+      await this.unindexList(id);
+    },
+    // Is this list mine? (Only members can read it; a list I can't read isn't mine.)
+    async isOwnerOf(id) {
+      try { const s = await getDoc(doc(db, "lists", id)); return s.exists() && s.data().ownerId === me().uid; }
+      catch (_) { return false; }
+    },
+    // Leave a list someone else owns (it disappears from my lists).
+    async leaveList(id) {
+      if (id === listId) closeList();
+      await deleteDoc(doc(db, "lists", id, "members", me().uid));
+      await this.unindexList(id);
     },
     async leave() {
       const id = listId;
