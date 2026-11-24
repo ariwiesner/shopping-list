@@ -1100,17 +1100,38 @@ toastUndo.addEventListener("click", undo);
 
 // ---------- Sheets ----------
 let editingId = null, editQty = 1;
+// The phone's back gesture/button closes an open sheet instead of leaving the app:
+// opening a sheet adds a history entry, and "back" (popstate) closes it. Closing a
+// sheet any other way removes that entry again. Switching straight from one sheet to
+// another (menu -> share) reuses the entry, so back still takes one step.
+let sheetEntry = false;   // our history entry is on top
+let pendingBack = 0;      // a scheduled history.back() for a sheet that was just closed
 function openSheet(el) {
-  closeSheets();
+  hideSheets();
   backdrop.hidden = false;
   el.hidden = false;
+  if (pendingBack) { clearTimeout(pendingBack); pendingBack = 0; sheetEntry = true; } // reuse the entry
+  else if (!sheetEntry) { history.pushState({ sheet: true }, ""); sheetEntry = true; }
 }
-function closeSheets() {
+function hideSheets() {
   backdrop.hidden = true;
   document.querySelectorAll(".sheet").forEach((s) => (s.hidden = true));
   editingId = null;
 }
-backdrop.addEventListener("click", closeSheets);
+function closeSheets() {
+  hideSheets();
+  // Drop our history entry, unless another sheet opens right away (it then reuses it).
+  if (sheetEntry && !pendingBack) {
+    sheetEntry = false;
+    pendingBack = setTimeout(() => { pendingBack = 0; history.back(); }, 0);
+  }
+}
+window.addEventListener("popstate", () => {
+  if (!sheetEntry) return; // our own history.back() after closing a sheet
+  sheetEntry = false;
+  hideSheets();
+});
+backdrop.addEventListener("click", () => closeSheets());
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheets(); });
 
 // Swipe a sheet down by its top (the handle and title) to close it.
