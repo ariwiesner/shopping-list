@@ -243,11 +243,12 @@ function render() {
   $("shareBtn").setAttribute("aria-label", "שיתוף הרשימה");
 
   // Shared list: participants and (for the owner) the lock, under the total.
-  const shared = backend === cloud && !!ui.list && ui.members.length > 1;
-  const iOwn = shared && ui.list.ownerId === cloud?.user?.uid;
+  const cloudList = backend === cloud && !!ui.list && !!cloud?.user;
+  const shared = cloudList && ui.members.length > 1;
+  const iOwn = cloudList && ui.list.ownerId === cloud.user.uid;
   $("peopleBtn").hidden = !shared;
-  $("titleSub").hidden = !shared || (!iOwn && !isLockedNow());
-  if (shared) {
+  $("titleSub").hidden = !cloudList || (!iOwn && !isLockedNow());
+  if (cloudList) {
     $("peopleAvatars").innerHTML = ui.members.slice(0, 3).map((m) => avatarHtml(m, "avatar xs")).join("");
     $("peopleCount").textContent = ui.members.length;
     $("peopleBtn").setAttribute("aria-label", `${ui.members.length} משתתפים ברשימה`);
@@ -258,7 +259,7 @@ function render() {
     $("planBtn").hidden = !iOwn;
   }
   $("progressCard").hidden = $("totalBox").hidden;
-  renderPlanLine(shared, iOwn);
+  renderPlanLine(cloudList, iOwn);
 }
 
 function renderTotal(items) {
@@ -1381,10 +1382,16 @@ $("menuBtn").addEventListener("click", () => { renderMenu(); openSheet(menuSheet
 
 function renderMenu() {
   const lists = Object.entries(ui.userLists);
-  $("listSwitcher").innerHTML = cloud?.user && lists.length > 1
-    ? `<p class="sheet-label">הרשימות שלי</p>` + lists.map(([id, name]) =>
-        `<button class="sheet-item${id === cloud.listId ? " current" : ""}" data-action="switch" data-list="${escapeHtml(id)}">
-          ${id === cloud.listId ? "✅" : "📝"} <span>${escapeHtml(name)}</span></button>`).join("") + `<hr class="sheet-sep" />`
+  $("listSwitcher").innerHTML = cloud?.user
+    ? `<p class="sheet-label">הרשימות שלי</p>` + lists.map(([id, name]) => `
+        <div class="list-row">
+          <button class="sheet-item${id === cloud.listId ? " current" : ""}" data-action="switch" data-list="${escapeHtml(id)}">
+            ${id === cloud.listId ? "✅" : "📝"} <span>${escapeHtml(name)}</span></button>
+          <button type="button" class="list-del" data-action="delete-list" data-list="${escapeHtml(id)}" aria-label="מחיקת ${escapeHtml(name)}">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          </button>
+        </div>`).join("") +
+      `<button class="sheet-item" data-action="new-list">➕ <span>רשימה חדשה</span></button>`
     : "";
   const u = cloud?.user;
   $("accountRow").innerHTML = u
@@ -1400,20 +1407,68 @@ function renderMenu() {
       : "";
 }
 
-// Delete the whole list (to buy + cart), after asking. Undo is still offered in the toast.
+// "Are you sure?" for destructive actions.
 const confirmSheet = $("confirmSheet");
+let onConfirm = null;
+function askConfirm(title, text, yes, action) {
+  $("confirmTitle").textContent = title;
+  $("confirmText").textContent = text;
+  $("confirmYes").textContent = yes;
+  onConfirm = action;
+  openSheet(confirmSheet);
+}
+$("confirmNo").addEventListener("click", () => { onConfirm = null; closeSheets(); });
+$("confirmYes").addEventListener("click", () => {
+  const action = onConfirm;
+  onConfirm = null;
+  closeSheets();
+  action?.();
+});
+
+// Empty the list (to buy + cart), after asking. Undo is still offered in the toast.
 $("clearAll").addEventListener("click", () => {
   if (lockedForMe()) return lockedNotice();
   const n = ui.items.length;
-  $("confirmText").textContent = `${n === 1 ? "הפריט היחיד ברשימה יימחק" : `כל ${n} הפריטים ברשימה יימחקו`}, כולל מה שבעגלה.` +
-    (ui.members.length > 1 ? " הרשימה תתרוקן לכל מי שמשותף בה." : "");
-  openSheet(confirmSheet);
+  askConfirm("למחוק את כל הרשימה?",
+    `${n === 1 ? "הפריט היחיד ברשימה יימחק" : `כל ${n} הפריטים ברשימה יימחקו`}, כולל מה שבעגלה.` +
+      (ui.members.length > 1 ? " הרשימה תתרוקן לכל מי שמשותף בה." : ""),
+    "מחק רשימה", () => removeItems(ui.items.map((i) => i.id), "הרשימה נמחקה"));
 });
-$("confirmNo").addEventListener("click", () => closeSheets());
-$("confirmYes").addEventListener("click", () => {
-  closeSheets();
-  removeItems(ui.items.map((i) => i.id), "הרשימה נמחקה");
-});
+
+// New list: create it, open it, and ask for its name.
+async function newList() {
+  if (!cloud?.user) return;
+  try {
+    const id = await cloud.createList([], "רשימה חדשה");
+    openCloudList(id);
+    showToast("נוצרה רשימה חדשה", false);
+    // Once it has loaded, offer to name it.
+    for (let k = 0; k < 30 && ui.list?.id !== id; k++) await new Promise((r) => setTimeout(r, 100));
+    if (ui.list?.id === id) $("listTitle").click();
+  } catch (err) { fail(err); }
+}
+
+// Delete a whole list (mine: for everyone; someone else's: I leave it).
+function askDeleteList(id) {
+  const name = ui.userLists[id] || "הרשימה";
+  const current = id === cloud.listId;
+  const owner = current ? ui.list?.ownerId === cloud.user.uid : null;
+  const run = async (mine) => {
+    try {
+      if (mine) await cloud.deleteList(id); else await cloud.leaveList(id);
+      delete ui.userLists[id];
+      if (current) await openFallbackList(id);
+      showToast(mine ? `הרשימה "${name}" נמחקה` : `יצאת מהרשימה "${name}"`, false);
+    } catch (err) { fail(err); }
+  };
+  // Whether it's mine is known for the open list; for others, find out first.
+  (owner !== null ? Promise.resolve(owner) : cloud.isOwnerOf(id)).then((mine) => {
+    askConfirm(mine ? `למחוק את "${name}"?` : `לצאת מ"${name}"?`,
+      mine ? "הרשימה וכל הפריטים בה יימחקו לגמרי, גם אצל כל מי שמשותף בה. אי אפשר לבטל את זה."
+        : "הרשימה שייכת למישהו אחר, אז היא לא תימחק: רק תצא/י ממנה והיא תיעלם מהרשימות שלך.",
+      mine ? "מחיקה" : "יציאה מהרשימה", () => run(mine));
+  }).catch(fail);
+}
 
 $("cartActions").addEventListener("click", (e) => {
   const action = e.target.closest("[data-action]")?.dataset.action;
@@ -1439,6 +1494,10 @@ menuSheet.addEventListener("click", (e) => {
     removeItems(ui.items.map((i) => i.id), "הרשימה רוקנה");
   } else if (action === "switch") {
     openCloudList(el.dataset.list);
+  } else if (action === "new-list") {
+    newList();
+  } else if (action === "delete-list") {
+    askDeleteList(el.dataset.list);
   } else if (action === "import") {
     openImport();
   } else if (action === "sign-out") {

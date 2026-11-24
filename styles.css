@@ -832,3 +832,10 @@ body.locked .content { padding-bottom: calc(var(--safe-b) + 24px); }
 .plan-check { display: flex; align-items: center; gap: 10px; margin: 2px 4px; font-weight: 700; font-size: 15px; }
 .plan-check input { width: 20px; height: 20px; accent-color: var(--accent); }
 #planSheet input[type="datetime-local"] { font-size: 16px; }
+
+/* My lists in the menu, with a trash icon each */
+.list-row { display: flex; align-items: center; gap: 4px; }
+.list-row .sheet-item { flex: 1; min-width: 0; }
+.list-del { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px; color: var(--muted); }
+.list-del svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.list-del:active { background: var(--surface-2); color: var(--danger); }
