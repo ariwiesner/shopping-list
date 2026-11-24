@@ -344,6 +344,9 @@ export function priceItem(cat, item, choice, opts = {}) {
   // Not linked to a product here (or the chosen product isn't sold in this store):
   // first by the chosen product's name, then by the item's own, plainer name, since
   // chains word product names differently ("ביצים L 12 רגיל" may not exist, "ביצים" will).
+  // When a specific product was chosen and this store doesn't sell it, only a product
+  // with every detail of the name stands in for it: "חלב עמיד 3%" (long-life) isn't sold
+  // at every chain, and fresh milk is not the same thing. Otherwise it's "not sold here".
   const missingProduct = !!code;
   for (const n of [...new Set([item.productName, item.name].filter(Boolean))]) {
     const auto = resolve(cat, n);
@@ -353,7 +356,9 @@ export function priceItem(cat, item, choice, opts = {}) {
         deal, product: auto, weighted: auto.weighted, auto: true, missingProduct, matchedBy: n };
     }
     const est = estimate(cat, n);
-    if (est) return { kind: "estimate", unit: est.price, total: round(est.price * qty), ...est, missingProduct };
+    if (est && (!missingProduct || est.fit === "all")) {
+      return { kind: "estimate", unit: est.price, total: round(est.price * qty), ...est, missingProduct };
+    }
   }
   return { kind: "none", total: 0, missingProduct };
 }
