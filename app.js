@@ -103,7 +103,6 @@ const ui = {
 const todoList = $("todoList"), doneList = $("doneList");
 const doneSection = $("doneSection"), doneToggle = $("doneToggle"), doneCount = $("doneCount");
 const emptyState = $("emptyState");
-const progressFill = $("progressFill");
 const composer = $("composer"), input = $("itemInput");
 const backdrop = $("sheetBackdrop"), menuSheet = $("sheet"), editSheet = $("editSheet"), shareSheet = $("shareSheet");
 const toast = $("toast"), toastText = $("toastText"), toastUndo = $("toastUndo");
@@ -214,9 +213,6 @@ function render() {
   doneToggle.setAttribute("aria-expanded", String(ui.doneOpen));
   doneList.hidden = !ui.doneOpen;
 
-  const pct = total ? Math.round((done.length / total) * 100) : 0;
-  progressFill.style.width = pct + "%";
-
   renderTotal(items);
   renderStores();
   $("dealsBtn").hidden = !total || !ui.chains.length;
@@ -233,6 +229,7 @@ function renderTotal(items) {
   const box = $("totalBox");
   const anyManual = items.some((i) => i._price.kind === "manual");
   box.hidden = !items.length || (!ui.cat && !anyManual);
+  $("progressCard").hidden = box.hidden; // the card holds only the total now
   if (box.hidden) return;
   let sum = 0, inCart = 0, estCount = 0, noneCount = 0;
   for (const it of items) {

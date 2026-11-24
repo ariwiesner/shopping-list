@@ -87,8 +87,7 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
   padding: 14px 16px;
   box-shadow: var(--shadow);
 }
-.progress-track { margin-top: 0; height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
-.progress-fill { height: 100%; width: 0; background: var(--accent); border-radius: inherit; transition: width .35s cubic-bezier(.2, .8, .2, 1); }
+.progress-card[hidden] { display: none; }
 
 /* ---------- Content ---------- */
 .content {
@@ -438,7 +437,7 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
 /* =====================================================================
    Stores, prices & totals
    ===================================================================== */
-.total { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.total { margin: 0; }
 .total-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-weight: 700; font-size: 15px; }
 .total-row strong { font-size: 20px; font-weight: 800; letter-spacing: -.5px; color: var(--accent); font-variant-numeric: tabular-nums; }
 .total-note { margin: 2px 0 0; font-size: 13px; color: var(--muted); font-weight: 600; }
