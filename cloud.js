@@ -74,12 +74,17 @@ export async function createCloud(config) {
     name: it.name, qty: it.qty, done: !!it.done, price: it.price ?? null,
     barcode: it.barcode ?? null, productName: it.productName ?? null,
     createdAt: it.createdAt || Date.now(), sortKey: it.sortKey || Date.now(), ...stamp(),
+    // Who added the item (kept when it's restored by undo) and who last edited it.
+    createdBy: it.createdBy || me().uid, createdByName: it.createdByName || firstName(),
+    editedBy: it.editedBy ?? null, editedByName: it.editedByName ?? null,
   });
   const fromDoc = (d) => {
     const x = d.data();
     return { id: d.id, name: x.name, qty: x.qty, done: x.done, price: x.price ?? null,
       barcode: x.barcode ?? null, productName: x.productName ?? null,
-      createdAt: x.createdAt, sortKey: x.sortKey, updatedBy: x.updatedBy, updatedByName: x.updatedByName };
+      createdAt: x.createdAt, sortKey: x.sortKey, updatedBy: x.updatedBy, updatedByName: x.updatedByName,
+      createdBy: x.createdBy ?? null, createdByName: x.createdByName ?? null,
+      editedBy: x.editedBy ?? null, editedByName: x.editedByName ?? null };
   };
 
   function closeList() {
@@ -207,7 +212,11 @@ export async function createCloud(config) {
     },
     patch(ids, fields) {
       const b = writeBatch(db);
-      ids.forEach((id) => b.update(itemRef(id), { ...fields, ...stamp() }));
+      // Changing what the item is (name, amount, price, product) counts as an edit;
+      // ticking it into the cart doesn't.
+      const edited = ["name", "qty", "price", "barcode", "productName"].some((k) => k in fields);
+      const by = edited ? { editedBy: me().uid, editedByName: firstName() } : {};
+      ids.forEach((id) => b.update(itemRef(id), { ...fields, ...by, ...stamp() }));
       return b.commit();
     },
     del(ids) {
