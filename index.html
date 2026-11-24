@@ -202,6 +202,25 @@
     <div id="peopleBody"></div>
   </div>
 
+  <!-- Someone else already added this item (shared lists) -->
+  <div class="sheet" id="dupSheet" role="alertdialog" aria-modal="true" aria-labelledby="dupTitle" hidden>
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <h3 id="dupTitle"></h3>
+    <p class="sheet-note" id="dupText"></p>
+    <div class="edit-actions">
+      <button type="button" class="btn ghost" id="dupNo">לא צריך</button>
+      <button type="button" class="btn primary" id="dupYes"></button>
+    </div>
+  </div>
+
+  <!-- +/- on an item others asked for: for whom? (shared lists) -->
+  <div class="sheet" id="whoSheet" role="dialog" aria-modal="true" aria-labelledby="whoTitle" hidden>
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <h3 id="whoTitle"></h3>
+    <div id="whoList" class="who-list"></div>
+    <button type="button" class="sheet-item cancel" id="whoCancel">ביטול</button>
+  </div>
+
   <!-- Confirm deleting the whole list -->
   <div class="sheet" id="confirmSheet" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmText" hidden>
     <div class="sheet-handle" aria-hidden="true"></div>
