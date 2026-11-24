@@ -851,3 +851,12 @@ body.locked .content { padding-bottom: calc(var(--safe-b) + 24px); }
 .plan-card.owner:active { transform: scale(.98); }
 .plan-main { font-size: 17px; font-weight: 800; line-height: 1.3; }
 .plan-sub { font-size: 13px; font-weight: 600; color: var(--text); opacity: .75; line-height: 1.35; }
+
+/* Owner's controls under the list name: plan above lock, labels lined up.
+   The calendar takes the same width as the toggle + lock together. */
+.title-sub { flex-direction: column; align-items: flex-start; gap: 4px; flex-wrap: nowrap; }
+.title-sub .plan-btn, .title-sub .lock-mini { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: var(--muted); padding: 1px 0; }
+.title-sub .lock-mini.on { color: var(--accent); }
+.title-sub .lead { flex: none; width: 46px; height: 18px; display: inline-flex; align-items: center; justify-content: space-between; }
+.title-sub .plan-btn .lead svg { width: 46px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.title-sub .lead-lock { font-size: 13px; line-height: 1; }

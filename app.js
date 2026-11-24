@@ -1756,8 +1756,8 @@ const fmtWhen = (ms) => {
   const d = new Date(ms), now = new Date();
   const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
   const diff = Math.round((day(d) - day(now)) / 864e5);
-  const dayName = diff === 0 ? "היום" : diff === 1 ? "מחר" : `יום ${d.toLocaleDateString("he-IL", { weekday: "short" }).replace("יום ", "")} ${d.getDate()}.${d.getMonth() + 1}`;
-  return `${dayName}, ${d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}`;
+  const dayName = diff === 0 ? "היום" : diff === 1 ? "מחר" : `ביום ${d.toLocaleDateString("he-IL", { weekday: "short" }).replace("יום ", "")} ${d.getDate()}.${d.getMonth() + 1}`;
+  return `${dayName} ב־${d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}`;
 };
 let planTimer = 0;
 // "בעוד 3 שעות", "בעוד 25 דק׳", "בעוד יומיים"
@@ -1775,11 +1775,9 @@ function renderPlanLine(cloudList, iOwn) {
   const lockSet = cloudList && lock;
   $("planLine").hidden = !shopSoon && !(lockSet && lock > now);
   if (!$("planLine").hidden) {
-    $("planMain").textContent = shopSoon
-      ? `🛒 הקניות: ${fmtWhen(shop)}${shop > now ? ` · ${fmtIn(shop)}` : ""}`
-      : `🔒 הרשימה ננעלת ${fmtWhen(lock)}`;
+    $("planMain").textContent = shopSoon ? `🛒 הקניות ${fmtWhen(shop)}` : `🔒 הרשימה ננעלת ${fmtWhen(lock)}`;
     $("planSub").textContent = !lockSet ? (iOwn ? "הקישו כדי לשנות" : "")
-      : lock > now ? `🔒 אפשר להוסיף ולשנות עד ${fmtWhen(lock)} · ${fmtIn(lock)}`
+      : lock > now ? `🔒 אפשר להוסיף ולשנות עד ${fmtWhen(lock)}`
       : "🔒 הרשימה נעולה לקראת הקנייה";
     $("planSub").hidden = !$("planSub").textContent;
   }
@@ -1828,7 +1826,7 @@ $("planForm").addEventListener("submit", async (e) => {
   try {
     await cloud.setPlan({ shopAt: shop, lockAt: lock });
     buzz(10);
-    showToast(shop ? `נשמר: קניות ${fmtWhen(shop)}${lock ? ` · נעילה ${fmtWhen(lock)}` : ""}` : "נשמר", false);
+    showToast(shop ? `נשמר: הקניות ${fmtWhen(shop)}${lock ? `, נעילה ${fmtWhen(lock)}` : ""}` : "נשמר", false);
   } catch (err) { fail(err); }
 });
 

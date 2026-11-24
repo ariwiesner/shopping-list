@@ -59,11 +59,16 @@
           </div>
           <!-- Shared list: the owner's lock switch, or "locked" for everyone else -->
           <div class="title-sub" id="titleSub" hidden>
+            <!-- Owner's controls, one above the other, their labels lined up -->
+            <button type="button" class="plan-btn" id="planBtn" hidden>
+              <span class="lead" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg></span>
+              <span>תכנון זמן הקנייה</span>
+            </button>
             <button type="button" class="lock-mini" id="lockBtn" role="switch" aria-checked="false" hidden>
-              <span class="switch sm" aria-hidden="true"></span><span>🔒 נעילת הרשימה</span>
+              <span class="lead" aria-hidden="true"><span class="switch sm"></span><span class="lead-lock">🔒</span></span>
+              <span>נעילת הרשימה</span>
             </button>
             <span class="lock-state" id="lockState" hidden>🔒 נעולה</span>
-            <button type="button" class="plan-btn" id="planBtn" hidden>🗓️ תכנון קנייה</button>
           </div>
         </div>
         <div class="top-actions">
