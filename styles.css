@@ -927,3 +927,24 @@ s.was { color: var(--muted); font-weight: 600; text-decoration-thickness: 1.5px;
 /* "Where is it cheapest?": a little smaller, with space above it */
 .deals-btn { margin-top: 22px; padding: 8px 15px; font-size: 14px; gap: 6px; }
 .deals-btn svg { width: 16px; height: 16px; }
+
+/* Privacy page and the one-time usage-statistics notice */
+.privacy-body { padding: 0 4px; font-size: 14px; line-height: 1.55; color: var(--text); }
+.privacy-body p { margin: 0 0 10px; }
+.privacy-body strong { font-weight: 800; }
+#privacySheet .lock-toggle.on .switch { background: var(--accent); }
+#privacySheet .lock-toggle.on .switch::after { inset-inline-start: 21px; }
+.consent-bar {
+  position: fixed; left: 12px; right: 12px; z-index: 15;
+  bottom: calc(var(--safe-b) + 74px);
+  max-width: 536px; margin: 0 auto; padding: 12px 14px;
+  border-radius: 16px; background: var(--surface); box-shadow: 0 6px 24px rgba(0, 0, 0, .16); border: 1.5px solid var(--line);
+}
+.consent-bar p { margin: 0 0 10px; font-size: 13.5px; line-height: 1.45; font-weight: 600; }
+.consent-bar .link-btn { display: inline; padding: 0; font-size: 13.5px; }
+.consent-actions { display: flex; gap: 8px; }
+.consent-actions .btn { height: 40px; font-size: 14px; }
+body.asking-consent .content { padding-bottom: 180px; }
+.consent-actions { align-items: center; justify-content: space-between; }
+.consent-actions .btn.primary { flex: 0 0 auto; padding: 0 22px; }
+.consent-off { color: var(--muted); font-size: 13.5px; padding: 8px 4px; }
