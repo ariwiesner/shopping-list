@@ -6,10 +6,15 @@ and their branch list ("Stores"). For each chain we download ALL branches and wr
 
     <out>/index.json                     chains: id, name, color, count, branches, updated
     <out>/<chain>.json                   every product sold in the chain, at its *common* price
-                                         (the price most branches charge):
-                                         { items: [[code, name, price, brand, weighted], ...] }
+                                         (the price most branches charge), and the deals most
+                                         branches run:
+                                         { items: [[code, name, price, brand, weighted], ...],
+                                           promos: [description, ...],
+                                           deals: {code: [minQty, total, promoIdx, basketMin?]},
+                                           club:  {code: [...]}  (club/credit-card members only) }
     <out>/<chain>/stores.json            branches: [[storeId, name, city, itemCount, address], ...]
-    <out>/<chain>/<storeId>.json         only the prices that differ in this branch: { p: {code: price} }
+    <out>/<chain>/<storeId>.json         only what differs in this branch: { p: {code: price},
+                                         d: {code: deal | 0}, c: {code: club deal | 0} }
 
 The app downloads one chain file plus the one small branch file the user picked.
 Standard library only:   python scripts/build_catalog.py --out catalog [--only shufersal]
@@ -89,10 +94,10 @@ def stamp_of(filename):
 #   price_files: list of dicts {store, url, name?}
 # ---------------------------------------------------------------------------
 
-def src_shufersal():
+def _shufersal_files(cat):
     files = []
     for page in range(1, 80):
-        t = text(f"https://prices.shufersal.co.il/FileObject/UpdateCategory?catID=2&storeId=0&page={page}")
+        t = text(f"https://prices.shufersal.co.il/FileObject/UpdateCategory?catID={cat}&storeId=0&page={page}")
         rows = re.findall(r'<tr class="webgrid-(?:row-style|alternating-row)">(.*?)</tr>', t, re.S)
         if not rows:
             break
@@ -106,9 +111,15 @@ def src_shufersal():
                 files.append({"store": store_id_of(cells[6]), "url": url, "file": cells[6], "name": name})
         if f"page={page + 1}" not in t:
             break
+    return files
+
+
+def src_shufersal():
+    files = _shufersal_files(2)    # PriceFull
+    promos = _shufersal_files(4)   # PromoFull
     t = text("https://prices.shufersal.co.il/FileObject/UpdateCategory?catID=5&storeId=0")
     m = re.search(r'href="(https://pricesprodpublic[^"]+)"', t)
-    return files, (html.unescape(m.group(1)) if m else None), fetch
+    return files, (html.unescape(m.group(1)) if m else None), fetch, promos
 
 
 def src_carrefour():
@@ -117,8 +128,10 @@ def src_carrefour():
     base = f"https://prices.carrefour.co.il/{path}/"
     files = [{"store": store_id_of(n), "url": base + n, "file": n}
              for n in re.findall(r'"name":"(PriceFull[^"]+\.gz)"', t)]
+    promos = [{"store": store_id_of(n), "url": base + n, "file": n}
+              for n in re.findall(r'"name":"(PromoFull[^"]+\.gz)"', t)]
     stores = re.findall(r'"name":"(Stores[^"]+)"', t)
-    return files, (base + sorted(stores)[-1] if stores else None), fetch
+    return files, (base + sorted(stores)[-1] if stores else None), fetch, promos
 
 
 def src_hazi_hinam():
@@ -129,9 +142,16 @@ def src_hazi_hinam():
             break
         urls.update(re.findall(r'https://[^"\'\s]+/PriceFull[^"\'\s]+\.gz', t))
     files = [{"store": store_id_of(u), "url": u, "file": u} for u in sorted(urls)]
+    purls = set()
+    for page in range(1, 40):  # t=2 = promotion files
+        t = text(f"https://shop.hazi-hinam.co.il/Prices?p={page}&s=&f=&t=2&d=")
+        if ".gz" not in t:
+            break
+        purls.update(re.findall(r'https://[^"\'\s]+/PromoFull[^"\'\s]+\.gz', t))
+    promos = [{"store": store_id_of(u), "url": u, "file": u} for u in sorted(purls)]
     s = text("https://shop.hazi-hinam.co.il/Prices?t=3")
     st = sorted(set(re.findall(r'https://[^"\'\s]+/Stores[^"\'\s]+', s)))
-    return files, (st[-1] if st else None), fetch
+    return files, (st[-1] if st else None), fetch, promos
 
 
 def src_cerberus(user):
@@ -151,8 +171,10 @@ def src_cerberus(user):
 
         files = [{"store": store_id_of(n), "url": base + "/file/d/" + n, "file": n}
                  for n in listing("PriceFull") if n.startswith("PriceFull")]
+        promos = [{"store": store_id_of(n), "url": base + "/file/d/" + n, "file": n}
+                  for n in listing("PromoFull") if n.startswith("PromoFull")]
         stores = sorted((n for n in listing("Stores") if n.startswith("Stores")), key=stamp_of)
-        return files, (base + "/file/d/" + stores[-1] if stores else None), lambda url, **kw: fetch(url, opener=op, **kw)
+        return files, (base + "/file/d/" + stores[-1] if stores else None), lambda url, **kw: fetch(url, opener=op, **kw), promos
     return source
 
 
@@ -217,6 +239,76 @@ def parse_prices(data):
     return items
 
 
+def _when(v):
+    """'2026-11-08T00:00:00.000' / '2026-11-08 00:00' -> datetime, or None."""
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?", v or "")
+    if not m:
+        return None
+    y, mo, d, h, mi = (int(x) if x else 0 for x in m.groups())
+    try:
+        return dt.datetime(y, mo, d, h, mi)
+    except ValueError:
+        return None
+
+
+def parse_promos(data, now):
+    """Active promotions of one branch -> {"all": {code: deal}, "club": {code: deal}}
+    deal = (minQty, total | None, rate, description, basketMin): the best deal per product
+    (lowest price per item). total is the price for minQty items ("2 ב־38" -> 2, 38.0);
+    when only a percentage is given, total is None and rate holds it. Coupons, gifts and
+    deals that need a minimum basket are kept apart (basketMin) or left out."""
+    out = {"all": {}, "club": {}}
+    for p in xml_root(data).iter():
+        if p.tag.lower() != "promotion":
+            continue
+        f = fields(p)
+        desc = clean(f.get("promotiondescription", ""))[:80]
+        if f.get("additionaliscoupon") == "1" or "קופון" in desc or "מתנה" in desc:
+            continue  # needs a coupon, or a free gift: not a price
+        start, end = _when(f.get("promotionstartdatetime")), _when(f.get("promotionenddatetime"))
+        if (start and start > now) or (end and end < now):
+            continue
+        club_m = re.search(r"\d+", f.get("clubid", "0"))
+        club = bool(club_m and int(club_m.group()) != 0)
+        basket = 0
+        m = re.search(r"מעל\s*(\d+)", desc)
+        if m:
+            basket = int(m.group(1))
+        for g in p.iter():
+            if g.tag.lower() == "group":
+                try:
+                    basket = max(basket, int(float(fields(g).get("minpurchaseamount") or 0)))
+                except ValueError:
+                    pass
+        for it in p.iter():
+            if it.tag.lower() != "promotionitem":
+                continue
+            fi = fields(it)
+            code = fi.get("itemcode", "").lstrip("0") or fi.get("itemcode", "")
+            try:
+                mq = float(fi.get("minqty") or 1)
+                price = float(fi.get("discountedprice") or 0)
+                rate = float(fi.get("discountrate") or 0)
+            except ValueError:
+                continue
+            if not code or fi.get("rewardtype", "") in ("", "0"):
+                continue
+            mq = max(1, round(mq)) if mq >= 1 else 1   # weighted items: per kg
+            if price > 0:
+                deal = (mq, round(price, 2), 0.0, desc, basket)
+            elif rate > 0 and rate < 100:
+                deal = (mq, None, rate, desc, basket)
+            else:
+                continue
+            bucket = out["club" if club else "all"]
+            unit = (deal[1] / mq) if deal[1] else None
+            old = bucket.get(code)
+            old_unit = (old[1] / old[0]) if old and old[1] else None
+            if old is None or (unit is not None and (old_unit is None or unit < old_unit)):
+                bucket[code] = deal
+    return out
+
+
 # Israeli locality codes (CBS "סמל ישוב") -> names, from data.gov.il. Chains publish
 # the code in <City>; a few leave it 0, so we then look for a city name in the text.
 with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "cities.json"), encoding="utf-8") as _fh:
@@ -279,7 +371,12 @@ def parse_stores(data):
 # ---------------------------------------------------------------------------
 
 def build_chain(chain, out_dir, log):
-    files, stores_url, get = chain["source"]()
+    files, stores_url, get, promo_files = chain["source"]()
+    latest_promo = {}
+    for f in promo_files:
+        if f["store"] and (f["store"] not in latest_promo or stamp_of(f["file"]) > stamp_of(latest_promo[f["store"]]["file"])):
+            latest_promo[f["store"]] = f
+    now = dt.datetime.now()
     # Latest file per branch.
     latest = {}
     for f in files:
@@ -298,7 +395,15 @@ def build_chain(chain, out_dir, log):
     branches = {}
 
     def work(f):
-        return f, parse_prices(get(f["url"], timeout=180))
+        items = parse_prices(get(f["url"], timeout=180))
+        promos = {"all": {}, "club": {}}
+        pf = latest_promo.get(f["store"])
+        if pf and len(items) >= MIN_ITEMS:
+            try:
+                promos = parse_promos(get(pf["url"], timeout=180), now)
+            except Exception as e:  # noqa: BLE001 - prices still count without deals
+                log(f"  ! promotions failed for branch {f['store']}: {e}")
+        return f, (items, promos)
 
     with cf.ThreadPoolExecutor(WORKERS) as ex:
         for fut in cf.as_completed([ex.submit(work, f) for f in latest.values()]):
@@ -307,33 +412,86 @@ def build_chain(chain, out_dir, log):
             except Exception as e:  # noqa: BLE001 - skip a broken branch file
                 log(f"  ! branch file failed: {e}")
                 continue
+            items, promos = items
             if len(items) >= MIN_ITEMS:
-                branches[f["store"]] = (f, items)
+                branches[f["store"]] = (f, items, promos)
     if not branches:
         raise RuntimeError("no branch file with enough items")
 
     # Common (most frequent) price and a representative name per product.
     prices, names = collections.defaultdict(collections.Counter), {}
-    for _, items in branches.values():
+    for _, items, _ in branches.values():
         for code, (name, price, brand, weighted) in items.items():
             prices[code][price] += 1
             if code not in names or len(name) > len(names[code][0]):
                 names[code] = (name, brand, weighted)
     common = {code: c.most_common(1)[0][0] for code, c in prices.items()}
 
+    # Deals per branch, final: a percentage becomes a price (from that branch's regular
+    # price), and anything that isn't actually cheaper is dropped.
+    def finalize(its, promos):
+        out = {}
+        for kind in ("all", "club"):
+            out[kind] = {}
+            for code, (mq, total, rate, desc, basket) in promos.get(kind, {}).items():
+                if code not in its:
+                    continue
+                regular = its[code][1]
+                if total is None:
+                    total = round(regular * mq * (1 - rate / 100), 2)
+                if total <= 0 or total / mq >= regular - 0.005:
+                    continue
+                out[kind][code] = (mq, total, desc, basket)
+        return out
+    branch_deals = {sid: finalize(its, promos) for sid, (_, its, promos) in branches.items()}
+
+    # The deal most branches run (if more than half do) belongs to the chain; branches
+    # store only how they differ.
+    def common_deals(kind):
+        counts = collections.defaultdict(collections.Counter)
+        for d in branch_deals.values():
+            for code, deal in d[kind].items():
+                counts[code][deal] += 1
+        half = len(branch_deals) / 2
+        return {code: c.most_common(1)[0][0] for code, c in counts.items() if c.most_common(1)[0][1] > half}
+    common_all, common_club = common_deals("all"), common_deals("club")
+    promo_ids = {}
+    def enc(deal):
+        mq, total, desc, basket = deal
+        di = promo_ids.setdefault(desc, len(promo_ids))
+        return [mq, total, di] + ([basket] if basket else [])
+    deals_json = {code: enc(d) for code, d in sorted(common_all.items())}
+    club_json = {code: enc(d) for code, d in sorted(common_club.items())}
+
+    def deal_diff(mine, chain_wide):
+        out = {}
+        for code in set(mine) | set(chain_wide):
+            b, c = mine.get(code), chain_wide.get(code)
+            if b != c:
+                out[code] = enc(b) if b else 0
+        return out
+    branch_diffs = {sid: (deal_diff(d["all"], common_all), deal_diff(d["club"], common_club)) for sid, d in branch_deals.items()}
+
     updated = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
     items = sorted(([code, n, common[code], b, w] for code, (n, b, w) in names.items()), key=lambda it: it[1])
+    promos_json = [None] * len(promo_ids)
+    for desc, i in promo_ids.items():
+        promos_json[i] = desc
     write_json(os.path.join(out_dir, f"{chain['id']}.json"),
-               {"id": chain["id"], "name": chain["name"], "updated": updated, "items": items})
+               {"id": chain["id"], "name": chain["name"], "updated": updated, "items": items,
+                "promos": promos_json, "deals": deals_json, "club": club_json})
+    log(f"  deals: {len(deals_json)} for everyone, {len(club_json)} club (chain-wide), {len(promos_json)} promotions")
 
     bdir = os.path.join(out_dir, chain["id"])
     if os.path.isdir(bdir):
         shutil.rmtree(bdir)
     os.makedirs(bdir)
     stores = []
-    for sid, (f, its) in branches.items():
+    for sid, (f, its, _) in branches.items():
         diff = {code: p for code, (_, p, _, _) in its.items() if p != common[code]}
-        write_json(os.path.join(bdir, f"{sid}.json"), {"p": diff})
+        d_all, d_club = branch_diffs[sid]
+        write_json(os.path.join(bdir, f"{sid}.json"),
+                   {"p": diff, **({"d": d_all} if d_all else {}), **({"c": d_club} if d_club else {})})
         name, city, address = store_info.get(sid, (f.get("name") or f"סניף {sid}", "", ""))
         stores.append([sid, name, city, len(its), address])
     stores.sort(key=lambda s: (s[2] or "תתת", s[1]))

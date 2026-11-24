@@ -105,7 +105,10 @@ export function parseChain(doc) {
     const { core, filler } = coreOf(name);
     return { it, stems: words(name).map(stem), coreKey: core.join(" "), filler };
   });
-  return { ...doc, byCode, entries, estimates: new Map(), resolved: new Map() };
+  // Deals: { code: [minQty, total, promoIdx, basketMin?] } for everyone, and club-only.
+  const deals = new Map(Object.entries(doc.deals || {}));
+  const club = new Map(Object.entries(doc.club || {}));
+  return { ...doc, byCode, entries, deals, club, promos: doc.promos || [], estimates: new Map(), resolved: new Map() };
 }
 
 export function loadChain(id) {
@@ -139,7 +142,17 @@ export function loadStores(chainId) {
 }
 
 // The chain catalog with one branch's differing prices applied.
-export function applyBranch(cat, storeId, diff) {
+// The chain catalog with one branch's differing prices (and deals) applied.
+// dealDiff / clubDiff: { code: deal | 0 } (0 = this branch doesn't run the chain's deal).
+export function applyBranch(cat, storeId, diff, dealDiff = {}, clubDiff = {}) {
+  const withDiff = (base, d) => {
+    if (!d || !Object.keys(d).length) return base;
+    const m = new Map(base);
+    for (const [code, v] of Object.entries(d)) if (v) m.set(code, v); else m.delete(code);
+    return m;
+  };
+  const deals = withDiff(cat.deals || new Map(), dealDiff);
+  const club = withDiff(cat.club || new Map(), clubDiff);
   const byCode = new Map();
   const entries = cat.entries.map((e) => {
     const price = diff[e.it.code];
@@ -147,7 +160,7 @@ export function applyBranch(cat, storeId, diff) {
     byCode.set(it.code, it);
     return it === e.it ? e : { ...e, it };
   });
-  return { ...cat, branch: storeId, byCode, entries, estimates: new Map(), resolved: new Map() };
+  return { ...cat, branch: storeId, byCode, entries, deals, club, estimates: new Map(), resolved: new Map() };
 }
 
 const branchCats = new Map(); // `${chain}/${store}` -> Promise<catalog>
@@ -155,7 +168,7 @@ export function loadBranch(cat, storeId) {
   const key = `${cat.id}/${storeId}`;
   if (!branchCats.has(key)) {
     const p = fetchJson(`${encodeURIComponent(cat.id)}/${encodeURIComponent(storeId)}.json`)
-      .then(({ p: diff }) => applyBranch(cat, storeId, diff));
+      .then(({ p: diff, d, c }) => applyBranch(cat, storeId, diff, d, c));
     p.catch(() => branchCats.delete(key));
     branchCats.set(key, p);
   }
@@ -291,7 +304,31 @@ export function estimate(cat, name) {
 
 // Price info for one list item in a loaded catalog (cat may be null).
 // choice: a remembered product for this item name ({ code, name }) or null.
-export function priceItem(cat, item, choice) {
+// The deal for a product, worked out for the amount on the list.
+// opts.club: the shopper is a club member here; opts.basket: the list's total, for deals
+// that need a minimum basket ("מעל ₪75"). Returns null when there's no deal, else
+// { m, t, desc, club, basket, applied, total, saving, clubHint } where total is the price
+// for qty with the deal (or without it when it doesn't apply), and clubHint is a better
+// club-only deal the shopper could get by being a member.
+export function dealFor(cat, product, qty, opts = {}) {
+  if (!cat || !product) return null;
+  const pick = (e, isClub) => e && { m: e[0], t: e[1], desc: cat.promos?.[e[2]] || "", basket: e[3] || 0, club: isClub };
+  const all = pick(cat.deals?.get(product.code), false);
+  const club = pick(cat.club?.get(product.code), true);
+  const per = (d) => d.t / d.m;
+  let best = all;
+  if (club && opts.club && (!best || per(club) < per(best))) best = club;
+  const clubHint = club && !opts.club && (!all || per(club) < per(all)) ? club : null;
+  const unit = product.price;
+  if (!best) return clubHint ? { ...clubHint, applied: false, total: round(unit * qty), saving: 0, clubHint } : null;
+  const basketOk = !best.basket || (opts.basket ?? Infinity) >= best.basket;
+  const bundles = Math.floor(qty / best.m + 1e-9);
+  const applied = basketOk && bundles > 0;
+  const total = applied ? round(bundles * best.t + (qty - bundles * best.m) * unit) : round(unit * qty);
+  return { ...best, applied, total, saving: round(unit * qty - total), clubHint };
+}
+
+export function priceItem(cat, item, choice, opts = {}) {
   const qty = item.qty || 1;
   if (typeof item.price === "number" && item.price > 0) {
     return { kind: "manual", unit: item.price, total: round(item.price * qty) };
@@ -299,14 +336,22 @@ export function priceItem(cat, item, choice) {
   if (!cat) return { kind: "none", total: 0 };
   const code = item.barcode || choice?.code;
   const p = code && cat.byCode.get(code);
-  if (p) return { kind: "exact", unit: p.price, total: round(p.price * qty), product: p, weighted: p.weighted, learned: !item.barcode };
+  if (p) {
+    const deal = dealFor(cat, p, qty, opts);
+    return { kind: "exact", unit: p.price, total: deal?.applied ? deal.total : round(p.price * qty), regular: round(p.price * qty),
+      deal, product: p, weighted: p.weighted, learned: !item.barcode };
+  }
   // Not linked to a product here (or the chosen product isn't sold in this store):
   // first by the chosen product's name, then by the item's own, plainer name, since
   // chains word product names differently ("ביצים L 12 רגיל" may not exist, "ביצים" will).
   const missingProduct = !!code;
   for (const n of [...new Set([item.productName, item.name].filter(Boolean))]) {
     const auto = resolve(cat, n);
-    if (auto) return { kind: "exact", unit: auto.price, total: round(auto.price * qty), product: auto, weighted: auto.weighted, auto: true, missingProduct, matchedBy: n };
+    if (auto) {
+      const deal = dealFor(cat, auto, qty, opts);
+      return { kind: "exact", unit: auto.price, total: deal?.applied ? deal.total : round(auto.price * qty), regular: round(auto.price * qty),
+        deal, product: auto, weighted: auto.weighted, auto: true, missingProduct, matchedBy: n };
+    }
     const est = estimate(cat, n);
     if (est) return { kind: "estimate", unit: est.price, total: round(est.price * qty), ...est, missingProduct };
   }
