@@ -10,14 +10,32 @@
       "worker/**",
       ".git",
       ".git/**",
-      "**/.*",
-      "**/.*/**",
-      "**/node_modules/**"
+      "**/node_modules/**",
+      ".firebase/**",
+      ".firebaserc",
+      ".github/**",
+      ".gitignore",
+      "**/__pycache__/**",
+      "*.log"
     ],
     "headers": [
       {
         "source": "**/*.@(html|js|css|json)",
-        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
+      {
+        "source": "/.well-known/assetlinks.json",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ]
       }
     ]
   },

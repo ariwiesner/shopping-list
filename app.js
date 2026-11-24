@@ -2260,3 +2260,9 @@ async function createCloudSafe() {
 }
 
 boot();
+
+// Installable app + opens without a connection (see sw.js). Not on localhost, so
+// development always gets fresh files.
+if ("serviceWorker" in navigator && location.hostname !== "localhost") {
+  addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch((e) => console.warn("Service worker failed", e)));
+}
