@@ -204,6 +204,8 @@ function render() {
   const total = items.length;
 
   todoList.innerHTML = todo.map(itemHtml).join("");
+  $("todoHead").hidden = !total;
+  $("todoCount").textContent = todo.length;
   doneList.innerHTML = done.map(itemHtml).join("");
 
   emptyState.hidden = total > 0;
@@ -1246,6 +1248,9 @@ function renderMenu() {
          <button class="sheet-item" data-action="sign-in">👤 <span>התחברות עם Google — לשיתוף ולגיבוי הרשימה</span></button>`
       : "";
 }
+
+// Empty the whole list (to buy + cart). Undo is offered in the toast.
+$("clearAll").addEventListener("click", () => removeItems(ui.items.map((i) => i.id), "הרשימה רוקנה"));
 
 $("cartActions").addEventListener("click", (e) => {
   const action = e.target.closest("[data-action]")?.dataset.action;

@@ -695,12 +695,20 @@ details.deal-warn.in-row { margin: 0 12px 10px; }
 
 /* Item editor: amount beside the name; the name also searches products */
 .field > label { font-size: 14px; font-weight: 700; color: var(--muted); }
-.name-row { display: flex; align-items: center; gap: 8px; }
-.name-row input { flex: 1; min-width: 0; }
-.stepper.inline { height: 46px; }
-.stepper.inline button { width: 38px; height: 46px; font-size: 22px; }
-.stepper.inline output { min-width: 26px; font-size: 17px; }
-#editSheet .name-row input { height: 46px; }
+.name-row { display: flex; align-items: flex-end; gap: 8px; }
+.name-col { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+.name-col.qty-col { flex: none; }
+.col-label { font-size: 14px; font-weight: 700; color: var(--muted); }
+.name-col input { width: 100%; }
+.stepper.inline { height: 44px; }
+.stepper.inline button { width: 32px; height: 44px; font-size: 19px; }
+.stepper.inline output { min-width: 20px; font-size: 16px; }
+#editSheet .name-col input { height: 44px; }
+
+/* "לקנות" heading over the list, with "empty the list" */
+.list-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 10px; font-weight: 800; color: var(--muted); font-size: 15px; }
+.list-clear { padding: 6px 2px; font-size: 14px; font-weight: 700; color: var(--muted); }
+.list-clear:active { opacity: .6; }
 
 /* Cart actions, under the "בעגלה" header */
 .cart-actions { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: -2px 4px 10px; }
