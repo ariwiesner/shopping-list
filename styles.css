@@ -442,7 +442,7 @@ h1 { margin: 2px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -.5px; 
    ===================================================================== */
 .total { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .total-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-weight: 700; font-size: 15px; }
-.total-row strong { font-size: 26px; font-weight: 800; letter-spacing: -.5px; color: var(--accent); font-variant-numeric: tabular-nums; }
+.total-row strong { font-size: 20px; font-weight: 800; letter-spacing: -.5px; color: var(--accent); font-variant-numeric: tabular-nums; }
 .total-note { margin: 2px 0 0; font-size: 13px; color: var(--muted); font-weight: 600; }
 .total-note:empty { display: none; }
 
@@ -692,3 +692,18 @@ details.deal-warn.in-row { margin: 0 12px 10px; }
 
 /* Who added / edited an item, on lists shared by several people */
 .item-who { margin-top: 2px; font-size: 11.5px; font-weight: 500; color: var(--muted); }
+
+/* Item editor: amount beside the name; the name also searches products */
+.field > label { font-size: 14px; font-weight: 700; color: var(--muted); }
+.name-row { display: flex; align-items: center; gap: 8px; }
+.name-row input { flex: 1; min-width: 0; }
+.stepper.inline { height: 46px; }
+.stepper.inline button { width: 38px; height: 46px; font-size: 22px; }
+.stepper.inline output { min-width: 26px; font-size: 17px; }
+#editSheet .name-row input { height: 46px; }
+
+/* Cart actions, under the "בעגלה" header */
+.cart-actions { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: -2px 4px 10px; }
+.cart-actions button { padding: 6px 2px; font-size: 14px; font-weight: 700; color: var(--accent); }
+.cart-actions button + button { color: var(--muted); }
+.cart-actions button:active { opacity: .6; }

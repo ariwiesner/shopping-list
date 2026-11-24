@@ -1247,6 +1247,16 @@ function renderMenu() {
       : "";
 }
 
+$("cartActions").addEventListener("click", (e) => {
+  const action = e.target.closest("[data-action]")?.dataset.action;
+  if (action === "uncheck-all") {
+    const ids = ui.items.filter((i) => i.done).map((i) => i.id);
+    if (ids.length) { buzz(8); backend.patch(ids, { done: false }).catch(fail); }
+  } else if (action === "clear-done") {
+    removeItems(ui.items.filter((i) => i.done).map((i) => i.id), "העגלה נוקתה");
+  }
+});
+
 menuSheet.addEventListener("click", (e) => {
   const el = e.target.closest("[data-action]");
   if (!el) return;
@@ -1284,16 +1294,14 @@ function openEdit(id) {
   $("editPrice").value = typeof it.price === "number" && it.price > 0 ? it.price : "";
   const remembered = ui.choices[norm(it.name)];
   editProduct = it.barcode ? { code: it.barcode, name: it.productName } : remembered || null;
-  $("productField").hidden = !ui.cat;
-  if (ui.cat) {
-    $("productStore").textContent = `(${ui.cat.name})`;
-    $("productSearch").value = it.name;
-    renderProducts();
-  }
+  // The name field also searches the store's products (when a store is chosen).
+  $("productStore").textContent = ui.cat ? `(${ui.cat.name})` : "";
+  $("productList").hidden = !ui.cat;
+  if (ui.cat) renderProducts();
 }
 
 function renderProducts() {
-  const q = $("productSearch").value.trim();
+  const q = $("editName").value.trim();
   const results = ui.cat && q ? search(ui.cat, q, 40) : [];
   const sel = editProduct?.code;
   const selected = sel && ui.cat.byCode.get(sel);
@@ -1314,11 +1322,11 @@ function renderProducts() {
 }
 
 let productSearchTimer;
-$("productSearch").addEventListener("input", () => {
+$("editName").addEventListener("input", () => {
+  if (!ui.cat) return;
   clearTimeout(productSearchTimer);
   productSearchTimer = setTimeout(renderProducts, 120);
 });
-$("productSearch").addEventListener("keydown", (e) => { if (e.key === "Enter") e.preventDefault(); });
 $("productList").addEventListener("click", (e) => {
   const b = e.target.closest("[data-code]");
   if (!b) return;
