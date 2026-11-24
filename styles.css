@@ -924,3 +924,6 @@ s.was { color: var(--muted); font-weight: 600; text-decoration-thickness: 1.5px;
 .club-btn.on { color: #7c3aed; }
 .club-btn.on .switch { background: #7c3aed; }
 .club-btn.on .switch.sm::after { inset-inline-start: 16px; }
+/* "Where is it cheapest?": a little smaller, with space above it */
+.deals-btn { margin-top: 22px; padding: 8px 15px; font-size: 14px; gap: 6px; }
+.deals-btn svg { width: 16px; height: 16px; }
