@@ -122,6 +122,23 @@ export function loadChain(id) {
   return chains.get(id);
 }
 
+// Products sold at two chains or more (common.json, built daily), for choosing a product
+// while typing an item, whichever store is selected. A searchable catalog whose products
+// also carry chains (the chain ids that sell it) and price (the lowest price anywhere).
+let commonPromise = null;
+export function loadCommon() {
+  if (!commonPromise) {
+    commonPromise = fetchJson("common.json").then((doc) => {
+      const cat = parseChain({ items: doc.items.map(([code, name, , price]) => [code, name, price, "", 0]) });
+      doc.items.forEach(([code, , mask]) => {
+        cat.byCode.get(code).chains = doc.chains.filter((_, k) => mask & (1 << k));
+      });
+      return cat;
+    }).catch((e) => { commonPromise = null; throw e; });
+  }
+  return commonPromise;
+}
+
 // ---------- Branches ----------
 // Chain files carry each product's *common* price; a branch file lists only the
 // prices that differ in that branch. withBranch() returns a catalog with those applied.

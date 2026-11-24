@@ -154,6 +154,8 @@
     </main>
 
     <form class="composer" id="composer" autocomplete="off">
+      <!-- Products matching what's being typed: tap one to add exactly that product -->
+      <div class="suggest" id="suggest" role="listbox" aria-label="מוצרים מתאימים" hidden></div>
       <div class="composer-inner">
         <input id="itemInput" type="text" inputmode="text" enterkeyhint="done"
                placeholder="הוסיפו פריט… למשל: 2 חלב" aria-label="שם הפריט" maxlength="60" />

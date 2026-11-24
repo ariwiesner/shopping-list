@@ -1,5 +1,5 @@
 import { firebaseConfig } from "./firebase-config.js";
-import { loadIndex, loadChain, loadStores, loadBranch, search, resolve, estimate, priceItem, dealFor, norm, money } from "./catalog.js";
+import { loadIndex, loadChain, loadStores, loadBranch, loadCommon, search, resolve, estimate, priceItem, dealFor, norm, money } from "./catalog.js";
 import { parseList, cleanItems, looksLikeMessage } from "./import-parse.js";
 import { PHOTO_URL } from "./photo-config.js";
 
@@ -1130,20 +1130,27 @@ async function commitImport() {
 const find = (id) => ui.items.find((i) => i.id === id);
 const fail = (e) => { console.error(e); showToast("משהו השתבש — נסו שוב", false); };
 
-function addItem(text) {
+function addItem(text, product = null) {
   const { name, qty } = parseInput(text);
   if (!name) return;
+  if (product) {
+    // Chosen while typing: this exact product (its barcode is the same at every chain),
+    // and "חלב" means it next time too, as when choosing it in the item's sheet.
+    ui.choices[norm(name)] = { code: product.code, name: product.name };
+    store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), choices: ui.choices });
+  }
   track("add_item", { shared: ui.members.length > 1 ? 1 : 0 });
   const existing = ui.items.find((i) => !i.done && i.name.toLowerCase() === name.toLowerCase());
   // Shared list, and someone else asked for it: ask whether to add for me too.
   if (existing && askedByOthers(existing)) return askDuplicate(existing, qty);
   if (existing) {
     const next = Math.min(existing.qty + qty, 999);
-    backend.patch([existing.id], { qty: next }).catch(fail);
+    backend.patch([existing.id], { qty: next, ...(product ? { barcode: product.code, productName: product.name } : {}) }).catch(fail);
     showToast(`${existing.name} כבר ברשימה — עכשיו ×${next}`, false);
   } else {
     const now = Date.now();
-    backend.put([{ id: uid(), name, qty, done: false, price: null, createdAt: now, sortKey: now }]).catch(fail);
+    backend.put([{ id: uid(), name, qty, done: false, price: null, createdAt: now, sortKey: now,
+      ...(product ? { barcode: product.code, productName: product.name } : {}) }]).catch(fail);
   }
   buzz();
 }
@@ -2068,8 +2075,84 @@ composer.addEventListener("submit", (e) => {
   if (!text) { input.focus(); return; }
   addItem(text);
   input.value = "";
+  hideSuggest();
   input.focus(); // keep keyboard open for quick multi-add
 });
+
+// ---------- Choosing a product while typing ----------
+// Typing "חלב" lists matching products; tapping one adds exactly that product (by barcode,
+// which is the same at every chain, so switching stores and comparing prices use the very
+// same product). ➕ / Enter still adds a general "חלב", matched automatically.
+// With a store selected: its products and prices, each marked with how many chains sell it
+// ("רק ברמי לוי" for its own products). With no store: products sold at 2+ chains.
+const suggestEl = $("suggest");
+let suggestRun = 0, suggestTimer = 0, suggestRows = [], suggestFor = "", commonCat = null;
+const chainName = (id) => ui.chains.find((c) => c.id === id)?.name || id;
+function hideSuggest() {
+  clearTimeout(suggestTimer); suggestRun++;
+  suggestEl.hidden = true; suggestEl.innerHTML = ""; suggestRows = []; suggestFor = "";
+}
+async function updateSuggest() {
+  const run = ++suggestRun;
+  const { name } = parseInput(input.value);
+  if (norm(name).length < 2) { hideSuggest(); return; }
+  let common = commonCat;
+  if (!common) {
+    try { common = commonCat = await loadCommon(); } catch (_) {}
+    if (run !== suggestRun) return;
+  }
+  const storeCat = ui.cat, storeId = ui.catId;
+  const found = storeCat ? search(storeCat, name, 40) : common ? search(common, name, 40) : [];
+  // The typed words as whole words ("חלב" is milk, "חלבה" is halva), the last one as a prefix
+  // while it's still being typed.
+  const typed = norm(name).split(" ").filter(Boolean);
+  const whole = (p) => {
+    const ws = norm(p.name).split(" ");
+    return typed.filter((t, i) => ws.includes(t) || (i === typed.length - 1 && ws[0] === t)).length;
+  };
+  const rows = found.map((p, k) => {
+    const c = common?.byCode.get(p.code);
+    const chains = c?.chains || (storeId ? [storeId] : []);
+    // Chains cut names short ("חלב תנובה 1% 1 לי"): show the fullest name any chain uses.
+    // Only when it's this very name, uncut (its first words are the same).
+    const head = norm(p.name).split(" ").slice(0, -1).join(" ");
+    const full = c && c.name.length > p.name.length && head && norm(c.name).startsWith(head) ? c.name : p.name;
+    return { p: { ...p, name: full }, k, n: chains.length, w: whole(p), price: p.price, from: !storeCat };
+  });
+  // Whole-word matches first, then products sold at more chains (they compare well), then
+  // in search order.
+  rows.sort((a, b) => b.w - a.w || Math.min(b.n, 7) - Math.min(a.n, 7) || a.k - b.k);
+  suggestRows = rows.slice(0, 6);
+  suggestFor = input.value;
+  if (!suggestRows.length) { hideSuggest(); return; }
+  const total = ui.chains.length || 7;
+  const tag = (r) => r.n >= total ? "בכל הרשתות" : r.n >= 2 ? `ב־${r.n} רשתות` : storeId ? `רק ב${chainName(storeId)}` : "";
+  suggestEl.innerHTML = `<p class="suggest-hint">בחרו מוצר מדויק, או ➕ כדי להוסיף "${escapeHtml(name)}" כללי</p>` +
+    suggestRows.map((r, i) => `<button type="button" class="suggest-row${r.n < 2 ? " only" : ""}" role="option" data-i="${i}">
+      <span class="suggest-name">${escapeHtml(r.p.name)}<small>${escapeHtml(tag(r))}</small></span>
+      <span class="suggest-price">${r.from ? "<small>מ־</small>" : ""}${amt(money(r.price))}${r.p.weighted ? "<small>/ק״ג</small>" : ""}</span>
+    </button>`).join("");
+  suggestEl.hidden = false;
+}
+input.addEventListener("input", () => {
+  clearTimeout(suggestTimer);
+  if (commonCat || ui.cat) updateSuggest(); // instant once loaded, so the list always matches
+  else suggestTimer = setTimeout(updateSuggest, 120);
+});
+// Keep the keyboard open: choosing a row mustn't take the focus from the input.
+suggestEl.addEventListener("pointerdown", (e) => e.preventDefault());
+suggestEl.addEventListener("click", (e) => {
+  const row = e.target.closest("[data-i]");
+  const r = row && suggestRows[Number(row.dataset.i)];
+  if (!r || suggestFor !== input.value) return; // a list for older text: ignore the tap
+  addItem(input.value, r.p);
+  track("add_item_product", { chains: r.n });
+  input.value = "";
+  hideSuggest();
+  input.focus();
+});
+input.addEventListener("blur", () => setTimeout(() => { if (document.activeElement !== input) hideSuggest(); }, 150));
+input.addEventListener("keydown", (e) => { if (e.key === "Escape") hideSuggest(); });
 
 // ---------- Screens ----------
 function showScreen(name) {
