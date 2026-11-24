@@ -141,6 +141,15 @@ export async function createCloud(config) {
     indexList(id, name) {
       return setDoc(userRef(), { activeListId: id, lists: { [id]: name || "רשימה" } }, { merge: true });
     },
+    // Rename the open list (for everyone on it) and update my own list index.
+    async renameList(name) {
+      await updateDoc(listRef(), { name });
+      await this.setIndexName(listId, name);
+    },
+    // Keep my list index (the names in the list switcher) in step with a list's name.
+    setIndexName(id, name) {
+      return updateDoc(userRef(), { [`lists.${id}`]: name }).catch(() => {});
+    },
     unindexList(id) {
       return updateDoc(userRef(), { [`lists.${id}`]: deleteField() }).catch(() => {});
     },

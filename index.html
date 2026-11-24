@@ -49,7 +49,7 @@
       <div class="top-row">
         <div class="title-wrap">
           <p class="greeting" id="greeting">שלום!</p>
-          <h1 id="listTitle">הסל שלי</h1>
+          <h1><button type="button" class="title-btn" id="listTitle" aria-haspopup="dialog">הסל שלי</button></h1>
         </div>
         <div class="top-actions">
           <button class="share-btn import-btn" id="importBtn" aria-label="ייבוא רשימה מוואטסאפ או מצילום" aria-haspopup="dialog">
@@ -181,6 +181,22 @@
     <div id="importBody"></div>
     <input type="file" id="importCamera" accept="image/*" capture="environment" hidden />
     <input type="file" id="importGallery" accept="image/*" hidden />
+  </div>
+
+  <!-- Rename the list -->
+  <div class="sheet" id="renameSheet" role="dialog" aria-modal="true" aria-labelledby="renameTitle" hidden>
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <h3 id="renameTitle">שם הרשימה</h3>
+    <form id="renameForm" class="edit-form">
+      <label class="field">
+        <span id="renameNote"></span>
+        <input id="renameInput" type="text" maxlength="40" required autocomplete="off" enterkeyhint="done" />
+      </label>
+      <div class="edit-actions">
+        <button type="button" class="btn ghost" id="renameCancel">ביטול</button>
+        <button type="submit" class="btn primary">שמירה</button>
+      </div>
+    </form>
   </div>
 
   <!-- Edit sheet -->

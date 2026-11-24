@@ -218,7 +218,8 @@ function render() {
   $("dealsBtn").hidden = !total || !ui.chains.length;
 
   // Header: list name + who's in it
-  $("listTitle").textContent = ui.list?.name || "הסל שלי";
+  $("listTitle").innerHTML = `<span class="title-text">${escapeHtml(listName())}</span><svg class="title-pen" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/></svg>`;
+  $("listTitle").setAttribute("aria-label", `${listName()} — שינוי שם הרשימה`);
   const others = ui.members.filter((m) => m.id !== cloud?.user?.uid);
   $("avatars").innerHTML = others.slice(0, 3).map((m) => avatarHtml(m, "avatar sm")).join("");
   $("shareBtn").classList.toggle("shared", others.length > 0);
@@ -1369,6 +1370,37 @@ $("editDelete").addEventListener("click", () => {
   removeItems([id]);
 });
 
+// ---------- Rename the list ----------
+// Tap the list's name. A shared list is renamed for everyone on it; a list kept only
+// on this phone keeps its name here.
+const listName = () => (backend === cloud && ui.list ? ui.list.name : prefs.listName) || "הסל שלי";
+const renameSheet = $("renameSheet");
+$("listTitle").addEventListener("click", () => {
+  $("renameInput").value = listName();
+  $("renameNote").textContent = backend === cloud && ui.members.length > 1 ? "השם משתנה לכל מי שברשימה" : "";
+  openSheet(renameSheet);
+  setTimeout(() => { $("renameInput").focus(); $("renameInput").select(); }, 250);
+});
+$("renameCancel").addEventListener("click", () => closeSheets());
+$("renameForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = $("renameInput").value.replace(/\s+/g, " ").trim().slice(0, 40);
+  closeSheets();
+  if (!name || name === listName()) return;
+  if (backend === cloud && ui.list) {
+    ui.list = { ...ui.list, name };
+    if (ui.userLists[cloud.listId] !== undefined) ui.userLists[cloud.listId] = name;
+    render();
+    try { await cloud.renameList(name); } catch (err) { fail(err); }
+  } else {
+    prefs.listName = name;
+    store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), listName: name });
+    render();
+  }
+  buzz(8);
+  showToast(`שם הרשימה: ${name}`, false);
+});
+
 // ---------- Sharing ----------
 $("shareBtn").addEventListener("click", () => {
   renderShare();
@@ -1607,6 +1639,10 @@ function openCloudList(id) {
     onItems(items) { ui.items = items; render(); },
     onList(list) {
       ui.list = list;
+      if (list?.name && ui.userLists[list.id] !== undefined && ui.userLists[list.id] !== list.name) {
+        ui.userLists[list.id] = list.name;
+        cloud.setIndexName(list.id, list.name);
+      }
       render();
       if (!shareSheet.hidden) renderShare();
       if (list.store) loadStore(currentStoreId()); // someone on the list picked a store, a branch or "no store" (no-op if unchanged)

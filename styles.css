@@ -712,3 +712,9 @@ details.deal-warn.in-row { margin: 0 12px 10px; }
 .cart-actions button { padding: 6px 2px; font-size: 14px; font-weight: 700; color: var(--accent); }
 .cart-actions button + button { color: var(--muted); }
 .cart-actions button:active { opacity: .6; }
+
+/* The list's name: tap to rename */
+.title-btn { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; font: inherit; color: inherit; text-align: start; padding: 0; }
+.title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.title-pen { flex: none; width: 18px; height: 18px; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; opacity: .7; }
+.title-btn:active { opacity: .6; }
