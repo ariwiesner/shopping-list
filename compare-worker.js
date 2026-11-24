@@ -8,7 +8,7 @@
 // Out: { type: "progress", id, done, total, name }
 //      { type: "result", id, result } | { type: "error", id, message }
 
-import { fetchJson, parseChain, parseStores, applyBranch, priceItem, norm, round } from "./catalog.js";
+import { fetchJson, parseChain, parseStores, applyBranch, priceItem, priceByReference, chainOffer, referencesFrom, norm, round } from "./catalog.js";
 
 const PER_CHAIN = 4; // nearest branches checked per chain
 
@@ -24,18 +24,27 @@ function km(a, b) {
 // comparison promises is what the list shows after switching): { total, est, sub } or null.
 //   est: a general item ("גבינה"), priced at a typical product of that kind
 //   sub: the product the user chose isn't sold here; a similar one is priced instead
-function pricesIn(cat, items, choices, club = false) {
+//   ref: a general item priced on the same product as at the other chains (refs[i])
+function pricesIn(cat, items, choices, club = false, refs = []) {
+  const price = (it, i, opts) => {
+    const choice = choices[norm(it.name)] || null;
+    return refs[i]?.length && !choice ? priceByReference(cat, it, refs[i], opts) : priceItem(cat, it, choice, opts);
+  };
   // Deals as on the list: first without basket-minimum deals to get the total, then with them.
-  const basket = items.reduce((a, it) => a + priceItem(cat, it, choices[norm(it.name)] || null, { club, basket: 0 }).total, 0);
-  return items.map((it) => {
-    const p = priceItem(cat, it, choices[norm(it.name)] || null, { club, basket });
+  const basket = items.reduce((a, it, i) => a + price(it, i, { club, basket: 0 }).total, 0);
+  return items.map((it, i) => {
+    const p = price(it, i, { club, basket });
     if (p.kind === "none") return null;
     return {
-      total: p.total, est: p.kind === "estimate", sub: !!p.missingProduct,
+      total: p.total, est: p.kind === "estimate", sub: !!p.missingProduct, ref: !!p.reference && !p.similar,
       name: p.product?.name || null, kinds: p.kind === "estimate" ? p.count : null, // what was priced
     };
   });
 }
+
+// General items ("חלב", "שמן"): which product to compare them on, the same at every chain.
+// Gathered chain by chain (only a small summary of each is kept).
+const isGeneral = (it, choices) => !it.barcode && !(typeof it.price === "number" && it.price > 0) && !choices[norm(it.name)];
 
 self.onmessage = async ({ data }) => {
   const { id, items, choices, here, maxKm, current, clubs = false } = data;
@@ -43,9 +52,24 @@ self.onmessage = async ({ data }) => {
   try {
     const index = await fetchJson("index.json");
     const chains = [], branches = [];
+    const steps = index.chains.length;
+    const general = items.map((it) => isGeneral(it, choices));
+    const offers = items.map(() => []);
     let n = 0;
+    if (general.some(Boolean)) {
+      // First pass: which product to compare each general item on.
+      for (const c of index.chains) {
+        self.postMessage({ type: "progress", id, phase: "match", done: n++, total: steps, name: c.name });
+        try {
+          const cat = parseChain(await fetchJson(`${encodeURIComponent(c.id)}.json`));
+          items.forEach((it, i) => { if (general[i]) offers[i].push(chainOffer(cat, it.name)); });
+        } catch (_) {}
+      }
+    }
+    n = 0;
+    const refs = items.map((it, i) => (general[i] ? referencesFrom(offers[i], it.name) : []));
     for (const c of index.chains) {
-      self.postMessage({ type: "progress", id, done: n, total: index.chains.length, name: c.name });
+      self.postMessage({ type: "progress", id, phase: "price", done: n, total: steps, name: c.name });
       let cat;
       try { cat = parseChain(await fetchJson(`${encodeURIComponent(c.id)}.json`)); }
       catch (e) { console.warn("Skipping chain", c.id, e); n++; continue; }
@@ -57,7 +81,7 @@ self.onmessage = async ({ data }) => {
 
       chains.push({
         id: c.id, name: c.name, color: c.color,
-        prices: pricesIn(cat, items, choices, club(c.id)),
+        prices: pricesIn(cat, items, choices, club(c.id), refs),
         nearest: located[0] ? strip(located[0]) : null,
       });
 
@@ -70,13 +94,16 @@ self.onmessage = async ({ data }) => {
       for (const s of pick) {
         try {
           const { p: diff, d, c: cd } = await fetchJson(`${encodeURIComponent(c.id)}/${encodeURIComponent(s.id)}.json`);
-          branches.push({ chain: c.id, chainName: c.name, ...strip(s), prices: pricesIn(applyBranch(cat, s.id, diff, d, cd), items, choices, club(c.id)) });
+          branches.push({ chain: c.id, chainName: c.name, ...strip(s), prices: pricesIn(applyBranch(cat, s.id, diff, d, cd), items, choices, club(c.id), refs) });
         } catch (e) { console.warn("Skipping branch", c.id, s.id, e); }
       }
       cat = null; // let this chain's catalog go before loading the next
       n++;
     }
-    self.postMessage({ type: "result", id, result: summarize(items, chains, branches, current) });
+    const result = summarize(items, chains, branches, current);
+    // Say what general items were compared on.
+    result.refs = items.map((it, i) => (refs[i]?.length ? { item: it.name, product: refs[i][0].name } : null)).filter(Boolean);
+    self.postMessage({ type: "result", id, result });
   } catch (e) {
     self.postMessage({ type: "error", id, message: String(e?.message || e) });
   }

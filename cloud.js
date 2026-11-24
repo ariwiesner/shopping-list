@@ -20,7 +20,7 @@ export async function createCloud(config) {
   ]);
   const {
     getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup,
-    signInWithRedirect, getRedirectResult, signOut,
+    signInWithRedirect, getRedirectResult, signOut, reauthenticateWithPopup, deleteUser,
   } = A;
   const {
     initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
@@ -333,6 +333,29 @@ export async function createCloud(config) {
       if (id === listId) closeList();
       await deleteDoc(doc(db, "lists", id, "members", me().uid));
       await this.unindexList(id);
+    },
+    // Delete my account: lists I own are deleted for everyone, I leave the others, my
+    // list index goes, and finally the sign-in account itself. Google asks me to confirm
+    // who I am first when the last sign-in wasn't recent (it's done before anything is
+    // deleted, so a cancelled confirmation leaves everything as it was).
+    async deleteAccount(onProgress = () => {}) {
+      const u = auth.currentUser;
+      if (!u) throw new Error("not signed in");
+      const recent = Date.now() - Date.parse(u.metadata.lastSignInTime || 0) < 4 * 60 * 1000;
+      if (!recent) await reauthenticateWithPopup(u, new GoogleAuthProvider());
+      closeList();
+      if (userSub) { userSub(); userSub = null; }
+      const ids = Object.keys((await this.getUserData()).lists || {});
+      let k = 0;
+      for (const id of ids) {
+        onProgress(++k, ids.length);
+        try {
+          if (await this.isOwnerOf(id)) await this.deleteList(id);
+          else await deleteDoc(doc(db, "lists", id, "members", u.uid));
+        } catch (e) { console.warn("Couldn't remove list", id, e); } // a list already gone, say
+      }
+      await deleteDoc(userRef());
+      await deleteUser(u);
     },
     async leave() {
       const id = listId;

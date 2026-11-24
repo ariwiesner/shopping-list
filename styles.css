@@ -944,4 +944,35 @@ body.asking-consent .content { padding-bottom: 180px; }
 .consent-actions { align-items: center; justify-content: space-between; }
 .consent-actions .btn.primary { flex: 0 0 auto; padding: 0 22px; }
 .consent-off { color: var(--muted); font-size: 13.5px; padding: 8px 4px; }
+.privacy-body a { color: var(--accent); font-weight: 700; }
 .deals-note { font-size: 13.5px; margin: -6px 4px 12px; }
+
+/* Comparison: the cheapest nearby */
+#dealsRadius button { font-size: 13px; padding: 0 2px; }
+.deal.main { margin-bottom: 12px; border-color: var(--accent); }
+
+
+
+
+.deal-same { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: auto 0; text-align: center; font-weight: 700; font-size: 13px; color: var(--accent); }
+.deal-refs { margin: 0 0 12px; padding: 10px 12px; border-radius: 14px; background: var(--chip, rgba(0,0,0,.04)); font-size: 13px; }
+.deal-refs summary { cursor: pointer; font-weight: 700; }
+.deal-refs .more { color: var(--accent); font-weight: 700; }
+.deal-refs ul { margin: 8px 0 4px; padding-inline-start: 18px; }
+.deal-refs li { margin: 3px 0; }
+.deal-refs p { margin: 4px 0 0; color: var(--muted); }
+
+/* Products matching what's being typed, above the input */
+.suggest {
+  max-width: 528px; margin: 0 auto 8px; max-height: min(46vh, 360px); overflow-y: auto;
+  background: var(--surface); border: 1.5px solid var(--line); border-radius: 18px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .16); padding: 6px;
+}
+.suggest-hint { margin: 4px 8px 6px; font-size: 12.5px; color: var(--muted); }
+.suggest-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border-radius: 12px; text-align: start; }
+.suggest-row:active, .suggest-row:hover { background: var(--bg); }
+.suggest-name { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 15px; font-weight: 600; }
+.suggest-name small { font-size: 12px; font-weight: 600; color: var(--accent); }
+.suggest-row.only .suggest-name small { color: var(--muted); }
+.suggest-price { flex: none; font-weight: 800; font-variant-numeric: tabular-nums; font-size: 15px; }
+.suggest-price small { font-size: 11px; font-weight: 600; color: var(--muted); margin: 0 1px; }

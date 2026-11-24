@@ -15,7 +15,7 @@
   <title>הסל שלי</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
-  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -154,6 +154,8 @@
     </main>
 
     <form class="composer" id="composer" autocomplete="off">
+      <!-- Products matching what's being typed: tap one to add exactly that product -->
+      <div class="suggest" id="suggest" role="listbox" aria-label="מוצרים מתאימים" hidden></div>
       <div class="composer-inner">
         <input id="itemInput" type="text" inputmode="text" enterkeyhint="done"
                placeholder="הוסיפו פריט… למשל: 2 חלב" aria-label="שם הפריט" maxlength="60" />
@@ -198,10 +200,11 @@
     <div class="sheet-handle" aria-hidden="true"></div>
     <h3 id="dealsTitle">איפה הכי זול?</h3>
     <p class="sheet-note deals-note">ההשוואה לפי מחיר רגיל ומבצעים לכולם, בלי מחירי מועדון.</p>
-    <div class="seg" id="dealsRadius" role="radiogroup" aria-label="עד כמה זמן נסיעה">
-      <button type="button" role="radio" data-min="10">עד 10 דק׳</button>
-      <button type="button" role="radio" data-min="25">עד 25 דק׳</button>
-      <button type="button" role="radio" data-min="40">עד 40 דק׳</button>
+    <div class="seg" id="dealsRadius" role="radiogroup" aria-label="עד איזה מרחק">
+      <button type="button" role="radio" data-km="10">עד 10 ק״מ</button>
+      <button type="button" role="radio" data-km="20">עד 20 ק״מ</button>
+      <button type="button" role="radio" data-km="35">עד 35 ק״מ</button>
+      <button type="button" role="radio" data-km="0">35+ ק״מ</button>
     </div>
     <div id="dealsBody" aria-live="polite"></div>
   </div>
@@ -274,11 +277,13 @@
       <p><strong>נתוני שימוש.</strong> כל עוד לא כיבית את זה כאן למטה, האפליקציה שולחת ל־Google Analytics נתונים על השימוש בה (למשל: נוסף פריט, נפתחה השוואת מחירים), יחד עם מידע טכני כמו סוג המכשיר ואזור משוער. לא נשלחים שמות, אימיילים, שמות פריטים או תוכן הרשימות.</p>
       <p><strong>ייבוא מתמונה או מהודעה.</strong> התמונה או הטקסט נשלחים לשירות Gemini של Google כדי לקרוא את הרשימה, ולא נשמרים אצלנו. בשימוש החינמי Google עשויה להשתמש בהם לשיפור השירותים שלה.</p>
       <p><strong>מיקום.</strong> רק כשמחפשים סניפים קרובים, נשאר בטלפון ולא נשמר.</p>
+      <p><a href="privacy.html" target="_blank" rel="noopener">מדיניות הפרטיות המלאה</a></p>
     </div>
     <button type="button" class="lock-toggle" id="analyticsToggle" role="switch" aria-checked="false">
       <span class="lock-text"><strong>📊 שליחת נתוני שימוש</strong><small>עוזר לנו להבין מה שימושי ולשפר את האפליקציה</small></span>
       <span class="switch" aria-hidden="true"></span>
     </button>
+    <button type="button" class="sheet-item danger" id="deleteAccountBtn" hidden>🗑️ <span>מחיקת החשבון</span></button>
     <button class="sheet-item cancel" id="privacyClose">סגירה</button>
   </div>
 
