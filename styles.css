@@ -514,7 +514,7 @@ h1 { margin: 2px 0 0; font-size: 18px; font-weight: 800; letter-spacing: 0; }
 /* Store wheel (overrides the earlier row layout) */
 .wheel {
   position: relative;
-  height: 158px;
+  height: 110px;
   margin: 0 16px;
   overflow: hidden;
   touch-action: pan-y;          /* vertical scroll still works; horizontal drags spin the wheel */
@@ -906,3 +906,24 @@ body.locked .content { padding-bottom: calc(var(--safe-b) + 24px); }
 .title-sub .switch.sm::after { top: 2px; inset-inline-start: 2px; width: 9px; height: 9px; }
 .title-sub .lock-mini.on .switch.sm::after { inset-inline-start: 11px; }
 .title-sub .lead-lock { font-size: 10.5px; }
+
+/* Deals */
+s.was { color: var(--muted); font-weight: 600; text-decoration-thickness: 1.5px; margin-inline-end: 2px; }
+.deal-tag { margin-top: 2px; font-size: 12px; font-weight: 700; color: #c2410c; line-height: 1.35; }
+.deal-tag.club { color: #7c3aed; }
+.deal-tag.hint { font-weight: 600; opacity: .9; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .deal-tag { color: #fdba74; }
+  :root:not([data-theme="light"]) .deal-tag.club { color: #c4b5fd; }
+}
+:root[data-theme="dark"] .deal-tag { color: #fdba74; }
+:root[data-theme="dark"] .deal-tag.club { color: #c4b5fd; }
+.done .deal-tag { color: var(--muted); }
+.product-price small { display: block; }
+.club-btn { display: flex; align-items: center; gap: 6px; margin: 8px auto 0; font-size: 13px; font-weight: 700; color: var(--muted); }
+.club-btn.on { color: #7c3aed; }
+.club-btn.on .switch { background: #7c3aed; }
+.club-btn.on .switch.sm::after { inset-inline-start: 16px; }
+/* "Where is it cheapest?": a little smaller, with space above it */
+.deals-btn { margin-top: 22px; padding: 8px 15px; font-size: 14px; gap: 6px; }
+.deals-btn svg { width: 16px; height: 16px; }

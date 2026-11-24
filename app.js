@@ -1,5 +1,5 @@
 import { firebaseConfig } from "./firebase-config.js";
-import { loadIndex, loadChain, loadStores, loadBranch, search, resolve, estimate, priceItem, norm, money } from "./catalog.js";
+import { loadIndex, loadChain, loadStores, loadBranch, search, resolve, estimate, priceItem, dealFor, norm, money } from "./catalog.js";
 import { parseList, cleanItems, looksLikeMessage } from "./import-parse.js";
 import { PHOTO_URL } from "./photo-config.js";
 
@@ -128,6 +128,31 @@ const CHECK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l
 // Money inside Hebrew text: keep ~₪12.90 in left-to-right order.
 const amt = (s) => `<bdi dir="ltr">${s}</bdi>`;
 
+// ---------- Deals on the card ----------
+// Applied: "<s>₪29.80</s> ₪24 · 🏷️ 2 ב־₪24". Not (yet) applied: a short hint under the price.
+const dealText = (d) => (d.m > 1 ? `${d.m} ב־${money(d.t)}` : `${money(d.t)}`);
+function dealPrice(p, perKg = "") {
+  const d = p.deal;
+  if (d?.applied && d.saving > 0) return `<s class="was">${amt(money(p.regular))}</s> ${amt(money(p.total))}${perKg}`;
+  return `${amt(money(p.total))}${perKg}`;
+}
+function dealLine(p) {
+  const d = p.deal;
+  if (!d) return "";
+  const title = d.desc ? ` title="${escapeHtml(d.desc)}"` : "";
+  if (d.applied && d.saving > 0) {
+    return `<div class="deal-tag${d.club ? " club" : ""}"${title}>${d.club ? "💳 מועדון" : "🏷️ מבצע"}: ${escapeHtml(dealText(d))} · חוסכים ${amt(money(d.saving))}</div>`;
+  }
+  if (d.clubHint && !d.applied) {
+    return `<div class="deal-tag hint club"${title}>💳 ${escapeHtml(dealText(d.clubHint))} לחברי מועדון</div>`;
+  }
+  if (d.basket && (ui.lastBasket || 0) < d.basket) {
+    return `<div class="deal-tag hint"${title}>🏷️ ${escapeHtml(dealText(d))} בקנייה מעל ${money(d.basket)}</div>`;
+  }
+  if (d.m > 1) return `<div class="deal-tag hint"${title}>🏷️ מבצע: ${escapeHtml(dealText(d))}</div>`;
+  return "";
+}
+
 function priceLine(it) {
   const p = it._price;
   if (!p || (!ui.cat && p.kind !== "manual")) return "";
@@ -143,7 +168,7 @@ function priceLine(it) {
         `<div class="item-note">המוצר שבחרתם לא נמכר כאן. במקומו: ${escapeHtml(p.product.name)}</div>`;
     }
     const label = it.productName || ui.choices[norm(it.name)]?.name || p.product.name;
-    return `<div class="item-price">${amt(money(p.total))}${perKg}${qtyNote} <span class="muted">· ${escapeHtml(label)}</span></div>`;
+    return `<div class="item-price">${dealPrice(p, perKg)}${qtyNote} <span class="muted">· ${escapeHtml(label)}</span></div>${dealLine(p)}`;
   }
   if (p.kind === "estimate") {
     // One short, quiet line: the typical price, then how close the match is ("בלי: פרווה",
@@ -207,8 +232,11 @@ function itemHtml(it) {
 }
 
 function render() {
-  const items = ui.items.slice().sort((a, b) => (b.sortKey || 0) - (a.sortKey || 0))
-    .map((it) => ({ ...it, _price: priceItem(ui.cat, it, ui.choices[norm(it.name)]) }));
+  const items0 = ui.items.slice().sort((a, b) => (b.sortKey || 0) - (a.sortKey || 0));
+  const dealOpts = { club: isClubMember(ui.cat?.id) };
+  const basket = items0.reduce((a, it) => a + priceItem(ui.cat, it, ui.choices[norm(it.name)], { ...dealOpts, basket: 0 }).total, 0);
+  ui.lastBasket = basket;
+  const items = items0.map((it) => ({ ...it, _price: priceItem(ui.cat, it, ui.choices[norm(it.name)], { ...dealOpts, basket }) }));
   const todo = items.filter((i) => !i.done);
   const done = items.filter((i) => i.done);
   const total = items.length;
@@ -267,9 +295,10 @@ function renderTotal(items) {
   const anyManual = items.some((i) => i._price.kind === "manual");
   box.hidden = !items.length || (!ui.cat && !anyManual);
   if (box.hidden) return;
-  let sum = 0, inCart = 0, estCount = 0, noneCount = 0;
+  let sum = 0, inCart = 0, estCount = 0, noneCount = 0, saved = 0;
   for (const it of items) {
     sum += it._price.total;
+    if (it._price.deal?.applied) saved += it._price.deal.saving;
     if (it.done) inCart += it._price.total;
     if (it._price.kind === "estimate") estCount++;
     if (it._price.kind === "none") noneCount++;
@@ -277,6 +306,7 @@ function renderTotal(items) {
   $("totalStore").textContent = ui.cat ? ui.cat.name : "רשימה";
   $("totalAmount").textContent = (estCount ? "~" : "") + money(sum);
   const notes = [];
+  if (saved >= 0.5) notes.push(`🏷️ כולל מבצעים: חוסכים ${money(saved)}`);
   if (inCart) notes.push(`בעגלה: ${money(inCart)}`);
   if (estCount) notes.push(`${estCount === 1 ? "פריט אחד כללי" : `${estCount} פריטים כלליים`} — מחיר משוער`);
   if (noneCount) notes.push(`${noneCount === 1 ? "פריט אחד" : `${noneCount} פריטים`} בלי מחיר`);
@@ -317,6 +347,12 @@ function renderStores() {
   const b = currentBranchId(sel);
   const branch = b && ui.storeLists[sel]?.find((s) => s.id === b);
   $("branchBtn").hidden = !sel || !c?.branches;
+  $("clubBtn").hidden = !sel;
+  if (sel) {
+    $("clubLabel").textContent = `💳 חבר/ה במועדון ${c?.name || ""}`;
+    $("clubBtn").setAttribute("aria-checked", String(isClubMember(sel)));
+    $("clubBtn").classList.toggle("on", isClubMember(sel));
+  }
   $("branchName").textContent = !b ? "כל הסניפים — מחיר נפוץ ברשת"
     : (branch ? `סניף ${branch.name}${branch.city && !branch.name.includes(branch.city) ? `, ${branch.city}` : ""}` : `סניף ${b}`)
       + (isAutoBranch(sel) && !userPickedBranch(sel) ? " · הקרוב אליך" : "");
@@ -365,6 +401,18 @@ function selectStore(id) {
   loadStore(id || null);
   if (id) nearestBranch(id, true);
 }
+
+// ---------- Club membership (per chain, this device) ----------
+const isClubMember = (chain) => !!(chain && prefs.clubs?.[chain]);
+$("clubBtn").addEventListener("click", () => {
+  const chain = currentStoreId();
+  if (!chain) return;
+  prefs.clubs = { ...(prefs.clubs || {}), [chain]: !isClubMember(chain) };
+  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), clubs: prefs.clubs });
+  buzz(8);
+  render();
+  showToast(isClubMember(chain) ? "💳 מחירי מועדון נכללים בחישוב" : "מחירי מועדון לא נכללים", false);
+});
 
 function selectBranch(branchId) {
   const chain = currentStoreId();
@@ -544,7 +592,7 @@ async function runDeals(force = false) {
     else { console.error(data.message); finish(null); }
   };
   w.onerror = (e) => { console.error(e); finish(null); };
-  w.postMessage({ id, items, choices: ui.choices, here, maxKm: Math.max(...RADII) / MIN_PER_KM, current });
+  w.postMessage({ id, items, choices: ui.choices, clubs: prefs.clubs || {}, here, maxKm: Math.max(...RADII) / MIN_PER_KM, current });
 }
 
 function renderDeals() {
@@ -1527,6 +1575,15 @@ function openEdit(id) {
   if (ui.cat) renderProducts();
 }
 
+// In the product picker: the price, and the deal if there is one.
+function pickerPrice(p) {
+  const d = dealFor(ui.cat, p, 1, { club: isClubMember(ui.cat?.id), basket: Infinity });
+  if (!d) return amt(money(p.price));
+  if (d.applied && d.saving > 0) return `<s class="was">${amt(money(p.price))}</s> ${amt(money(d.total))}<small>${d.club ? "💳 מועדון" : "🏷️ מבצע"}</small>`;
+  const use = d.clubHint && !d.applied ? d.clubHint : d;
+  return `${amt(money(p.price))}<small>${use.club ? "💳" : "🏷️"} ${escapeHtml(dealText(use))}${use.club && !isClubMember(ui.cat?.id) ? " למועדון" : ""}</small>`;
+}
+
 function renderProducts() {
   const q = $("editName").value.trim();
   const results = ui.cat && q ? search(ui.cat, q, 40) : [];
@@ -1546,7 +1603,7 @@ function renderProducts() {
     list.map((p) => `
     <li><button type="button" class="product${p.code === sel ? " selected" : ""}" data-code="${escapeHtml(p.code)}" role="option" aria-selected="${p.code === sel}">
       <span class="product-name">${escapeHtml(p.name)}${p.brand ? `<small>${escapeHtml(p.brand)}</small>` : ""}</span>
-      <span class="product-price">${amt(money(p.price))}${p.weighted ? "<small>לק״ג</small>" : ""}</span>
+      <span class="product-price">${pickerPrice(p)}${p.weighted ? "<small>לק״ג</small>" : ""}</span>
     </button></li>`).join("") +
     (q && !results.length ? `<li class="products-empty">לא מצאנו מוצרים בשם הזה</li>` : "");
 }

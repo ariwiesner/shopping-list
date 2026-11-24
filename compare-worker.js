@@ -24,9 +24,11 @@ function km(a, b) {
 // comparison promises is what the list shows after switching): { total, est, sub } or null.
 //   est: a general item ("גבינה"), priced at a typical product of that kind
 //   sub: the product the user chose isn't sold here; a similar one is priced instead
-function pricesIn(cat, items, choices) {
+function pricesIn(cat, items, choices, club = false) {
+  // Deals as on the list: first without basket-minimum deals to get the total, then with them.
+  const basket = items.reduce((a, it) => a + priceItem(cat, it, choices[norm(it.name)] || null, { club, basket: 0 }).total, 0);
   return items.map((it) => {
-    const p = priceItem(cat, it, choices[norm(it.name)] || null);
+    const p = priceItem(cat, it, choices[norm(it.name)] || null, { club, basket });
     if (p.kind === "none") return null;
     return {
       total: p.total, est: p.kind === "estimate", sub: !!p.missingProduct,
@@ -36,7 +38,7 @@ function pricesIn(cat, items, choices) {
 }
 
 self.onmessage = async ({ data }) => {
-  const { id, items, choices, here, maxKm, current } = data;
+  const { id, items, choices, here, maxKm, current, clubs = {} } = data;
   try {
     const index = await fetchJson("index.json");
     const chains = [], branches = [];
@@ -54,7 +56,7 @@ self.onmessage = async ({ data }) => {
 
       chains.push({
         id: c.id, name: c.name, color: c.color,
-        prices: pricesIn(cat, items, choices),
+        prices: pricesIn(cat, items, choices, !!clubs[c.id]),
         nearest: located[0] ? strip(located[0]) : null,
       });
 
@@ -66,8 +68,8 @@ self.onmessage = async ({ data }) => {
       }
       for (const s of pick) {
         try {
-          const { p: diff } = await fetchJson(`${encodeURIComponent(c.id)}/${encodeURIComponent(s.id)}.json`);
-          branches.push({ chain: c.id, chainName: c.name, ...strip(s), prices: pricesIn(applyBranch(cat, s.id, diff), items, choices) });
+          const { p: diff, d, c: cd } = await fetchJson(`${encodeURIComponent(c.id)}/${encodeURIComponent(s.id)}.json`);
+          branches.push({ chain: c.id, chainName: c.name, ...strip(s), prices: pricesIn(applyBranch(cat, s.id, diff, d, cd), items, choices, !!clubs[c.id]) });
         } catch (e) { console.warn("Skipping branch", c.id, s.id, e); }
       }
       cat = null; // let this chain's catalog go before loading the next
