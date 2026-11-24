@@ -56,7 +56,7 @@ const words = (s) => norm(s).split(" ").filter(Boolean);
 // "בצל יבש" is a regular onion, "גזר בתפזורת" is loose carrots.
 const FILLER = new Set([
   "מובחר", "מובחרת", "מובחרים", "טרי", "טריה", "טריים", "טריות", "בתפזורת", "תפזורת",
-  "רגיל", "רגילה", "רגילים", "יבש", "יבשה", "במשקל", "משקל", "לקג", "קג", "ק.ג", "ק", "יח", "יח.", "יחידה", "יחידות",
+  "רגיל", "רגילה", "רגילים", "רגילות", "יבש", "יבשה", "במשקל", "משקל", "לקג", "קג", "ק.ג", "ק", "יח", "יח.", "יחידה", "יחידות",
   "ארוז", "ארוזה", "ארוזים", "ארוזות", "גרם", "גר", "ג", "ליטר", "ל", "מל",
 ]);
 // Packaging: "קופסאת גלידה" is ice cream, "תבנית ביצים" is eggs.
@@ -74,6 +74,8 @@ const SYNONYMS = {
   "פרווה": ["פרווה", "פרוה"], "פרוה": ["פרווה", "פרוה"],
   "מספר": ["מספר", "מס", "no"], "מס": ["מספר", "מס", "no"],
 };
+// Both ways: "בינוני" finds "M" as "M" finds "בינוני".
+for (const list of Object.values({ ...SYNONYMS })) for (const w of list) if (!SYNONYMS[w]) SYNONYMS[w] = list;
 // Query words the stemmer left alone ("חלב") must appear as-is in a product name:
 // otherwise "חלב" would match "חלבה" (halva), whose stem is also "חלב".
 const unstemmed = (s) => words(s).filter((w) => !FILLER.has(w) && stem(w) === w);
@@ -286,6 +288,135 @@ export function estimatePool(cat, name) {
     || Object.assign(prefer(search(cat, all.join(" "), 15)), { fit: "all", missing: [] });
 }
 
+// The same product at every chain, for a general item ("קוקה קולה", "שמן").
+// Each chain sells a different mix of products, so the typical price of "whatever
+// matches" isn't comparable between chains (one has more premium oils, another prices a
+// six-pack). Instead: the products (real barcodes) that match the item at most chains;
+// the most widely sold, and among those a typical one, comes first. Each chain is then
+// priced on the first of them it has, so stores are compared on the very same product.
+// Returns [] when no product is sold at enough chains (fresh produce, deli: in-store codes).
+const realBarcode = (code) => /^\d{12,14}$/.test(code) && !/^0*2/.test(code); // 2…: in-store codes
+// How far a product is from the plain thing: its words beyond the item's own, the brand,
+// sizes and packaging. "במבה אסם 80 גרם" → 0, "במבה במילוי נוגט" → 2.
+// Brand words come from every chain's brand field (some chains leave it empty).
+// Words that just say "the regular kind" don't count either.
+const PLAIN = new Set(["קלאסי", "קלאסית", "קלאסיק", "מקורי", "מקורית", "בודד", "בודדת"]);
+function extraStems(name, query, brands) {
+  const q = words(query).map(stem);
+  return words(name).filter((w) => !FILLER.has(w) && !PLAIN.has(w) && !/\d/.test(w) && w.length > 1)
+    .map(stem).filter((s) => !brands.has(s) && !q.some((t) => s.startsWith(t)));
+}
+const extraWords = (name, query, brands) => extraStems(name, query, brands).length;
+function likeName(names, brands) {
+  const counts = new Map();
+  for (const n of names) new Set(words(n).map(stem)).forEach((t) => counts.set(t, (counts.get(t) || 0) + 1));
+  const fullest = names.reduce((a, b) => (b.length > a.length ? b : a));
+  return words(fullest).filter((w) => !brands.has(stem(w)) && counts.get(stem(w)) >= Math.max(2, names.length / 2)).join(" ");
+}
+// What one chain offers for a general item, kept small so the comparison can gather it
+// chain by chain without holding every catalog in memory at once.
+export function chainOffer(cat, name) {
+  const plain = resolve(cat, name);
+  const pool = estimatePool(cat, name);
+  return {
+    plain: plain ? { loose: plain.weighted || !realBarcode(plain.code) } : null,
+    products: !pool.length || pool.fit === "general" ? [] // only the product word matched
+      : pool.filter((p) => !p.weighted && realBarcode(p.code)).map((p) => [p.code, p.name, p.price, p.brand || ""]),
+  };
+}
+export const referenceProducts = (cats, name) => referencesFrom(cats.map((cat) => chainOffer(cat, name)), name);
+
+export function referencesFrom(offers, name) {
+  if (offers.length < 2) return [];
+  // Fresh produce and the like: the plain product is sold loose, by weight, under
+  // in-store codes. There, each chain's own plain product is the right comparison.
+  const plain = offers.map((o) => o.plain).filter(Boolean);
+  if (plain.length && plain.filter((p) => p.loose).length >= plain.length / 2) return [];
+  const byCode = new Map(); // code -> { code, name, n, prices, names }
+  const brands = new Set();
+  for (const o of offers) {
+    for (const [code, pname, price, brand] of o.products) {
+      const r = byCode.get(code) || { code, name: pname, n: 0, prices: [], names: [] };
+      r.n++; r.prices.push(price); r.names.push(pname);
+      words(brand).forEach((w) => brands.add(stem(w)));
+      byCode.set(code, r);
+    }
+  }
+  const need = Math.max(2, Math.ceil(offers.length / 2));
+  const wide = [...byCode.values()].filter((r) => r.n >= need);
+  if (!wide.length) return [];
+  // How common each describing word is among everything matching the item: many brands
+  // sell "סוכר לבן", few sell "סוכר דמררה", so white sugar is the usual kind.
+  const freq = new Map();
+  for (const r of byCode.values()) new Set(r.names.flatMap((n) => extraStems(n, name, brands))).forEach((t) => freq.set(t, (freq.get(t) || 0) + 1));
+  for (const r of wide) {
+    r.typical = r.prices.sort((a, b) => a - b)[r.prices.length >> 1];
+    // Chains shorten names differently ("קפה נמס עלית טעם וני"): the plainest wording counts.
+    r.extra = Math.min(...r.names.map((n) => extraWords(n, name, brands)));
+    const st = extraStems(r.names.reduce((a, b) => (b.length > a.length ? b : a)), name, brands);
+    r.usual = st.length ? Math.min(...st.map((t) => freq.get(t) || 0)) : Infinity;
+  }
+  // The most widely sold products (allowing one chain less, so there's a choice), so
+  // nearly every store is priced on the very same product; among them the plain ones
+  // (one describing word more than the plainest is fine: "קמח לבן מנופה" is plain flour,
+  // "קמח שקדים" is not, yet each has a word or two) and of those the cheapest: someone
+  // who writes "שמן" or "קמח" means the everyday one.
+  const maxN = Math.max(...wide.map((r) => r.n));
+  const widest = wide.filter((r) => r.n >= maxN - 1);
+  const minExtra = Math.min(...widest.map((r) => r.extra));
+  const score = (r) => (r.n >= maxN - 1 ? (r.extra <= minExtra + 1 ? 0 : 1) : 2);
+  // Not the very cheapest (that's the smallest pack: 100 g cottage cheese), a typical one
+  // from the low end.
+  const top = wide.filter((r) => score(r) === 0).sort((a, b) => a.typical - b.typical);
+  const target = top[Math.floor((top.length - 1) / 3)].typical;
+  // Among the plain ones, the usual kind first (its rarest describing word is the most common).
+  const usualTop = Math.max(...top.map((r) => r.usual));
+  const kind = (r) => (score(r) === 0 && r.usual >= usualTop / 2 ? 0 : 1);
+  return wide.sort((a, b) => score(a) - score(b) || kind(a) - kind(b)
+    || Math.abs(a.typical - target) - Math.abs(b.typical - target) || b.n - a.n)
+    .map((r) => ({ code: r.code, name: r.name, n: r.n, top: score(r) === 0, price: r.typical,
+      // What it is, for finding the closest stand-in: words without brand and packaging.
+      desc: [...new Set(r.names.flatMap((n) => words(n)).filter((w) => !FILLER.has(w) && !PLAIN.has(w) && !brands.has(stem(w)) && w.length > 1).map(stem))],
+      // What it is without the brand ("סוכר לבן 1 קג"), to find the same thing under
+      // another brand where this one isn't sold: the words most chains' names share
+      // (chains cut names short, "ביצים M רגילות 12 י"), in the fullest name's order.
+      like: likeName(r.names, brands) }));
+}
+
+// A general item priced at one store against the reference product: that very product
+// when the store sells it; else this store's product matching every detail of it (its own
+// brand of the same thing); else the usual estimate.
+export function priceByReference(cat, item, refs, opts = {}) {
+  if (!refs.length) return priceItem(cat, item, null, opts);
+  const main = refs[0];
+  if (cat.byCode.has(main.code)) {
+    return { ...priceItem(cat, { ...item, barcode: main.code }, null, opts), reference: true };
+  }
+  // The closest widely sold product this store has: same description and size, at least
+  // mostly ("ביצים M 12 רגילות" for "ביצים M רגילות 12 יח"), and not a far price.
+  const sim = (r) => {
+    const a = new Set(main.desc), b = new Set(r.desc);
+    const both = [...a].filter((x) => b.has(x)).length;
+    return both / (a.size + b.size - both || 1);
+  };
+  const near = refs.slice(1).filter((r) => cat.byCode.has(r.code) && r.price <= main.price * 1.6 && r.price >= main.price / 1.6)
+    .map((r) => ({ r, s: sim(r) })).filter((x) => x.s >= 0.5)
+    .sort((a, b) => b.s - a.s || Math.abs(a.r.price - main.price) - Math.abs(b.r.price - main.price))[0];
+  if (near) return { ...priceItem(cat, { ...item, barcode: near.r.code }, null, opts), reference: true, similar: true };
+  if (main.like) {
+    const qty = item.qty || 1, like = main.like;
+    const auto = resolve(cat, like);
+    if (auto) {
+      const deal = dealFor(cat, auto, qty, opts);
+      return { kind: "exact", unit: auto.price, total: deal?.applied ? deal.total : round(auto.price * qty), regular: round(auto.price * qty),
+        deal, product: auto, weighted: auto.weighted, auto: true, similar: true };
+    }
+    const est = estimate(cat, like);
+    if (est && est.fit === "all") return { kind: "estimate", unit: est.price, total: round(est.price * qty), ...est, similar: true };
+  }
+  return priceItem(cat, item, null, opts);
+}
+
 // Typical price for a vague item name like "גבינה".
 export function estimate(cat, name) {
   const key = norm(name);
@@ -344,6 +475,9 @@ export function priceItem(cat, item, choice, opts = {}) {
   // Not linked to a product here (or the chosen product isn't sold in this store):
   // first by the chosen product's name, then by the item's own, plainer name, since
   // chains word product names differently ("ביצים L 12 רגיל" may not exist, "ביצים" will).
+  // When a specific product was chosen and this store doesn't sell it, only a product
+  // with every detail of the name stands in for it: "חלב עמיד 3%" (long-life) isn't sold
+  // at every chain, and fresh milk is not the same thing. Otherwise it's "not sold here".
   const missingProduct = !!code;
   for (const n of [...new Set([item.productName, item.name].filter(Boolean))]) {
     const auto = resolve(cat, n);
@@ -353,7 +487,9 @@ export function priceItem(cat, item, choice, opts = {}) {
         deal, product: auto, weighted: auto.weighted, auto: true, missingProduct, matchedBy: n };
     }
     const est = estimate(cat, n);
-    if (est) return { kind: "estimate", unit: est.price, total: round(est.price * qty), ...est, missingProduct };
+    if (est && (!missingProduct || est.fit === "all")) {
+      return { kind: "estimate", unit: est.price, total: round(est.price * qty), ...est, missingProduct };
+    }
   }
   return { kind: "none", total: 0, missingProduct };
 }
