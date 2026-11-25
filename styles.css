@@ -1068,3 +1068,4 @@ body.asking-consent .content { padding-bottom: 130px; }
 .chain-empty { margin: 8px 4px; color: var(--muted); font-size: 14px; }
 #chainSheet { min-height: 75vh; }
 .stores-head { margin-bottom: 14px; }
+.deal-tip { margin: 6px 0 0; font-size: 13.5px; line-height: 1.45; color: var(--text); }

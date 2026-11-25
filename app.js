@@ -752,7 +752,9 @@ function renderDeals() {
   if (deals.error || !res) { body.innerHTML = msg("לא הצלחנו להשוות מחירים. בדקו את החיבור לאינטרנט.", "לנסות שוב"); return; }
   if (!res.counted) { body.innerHTML = msg("לא מצאנו מחירים לפריטים ברשימה באף רשת."); return; }
 
-  const ok = (x) => !x.missing && x.total > 0;
+  // A store is shown if it sells any of the list (what it lacks is listed under "פרטים");
+  // only a store covering 85% of the list can be called the cheapest.
+  const ok = (x) => x.total > 0 && x.same > 0;
   const cur = res.current;
   // A chain's logo, or its initials when there's no logo file for it.
   const logo = (id) => STORE_LOGOS.has(id) ? `<img class="deal-logo" src="stores/${escapeHtml(id)}.png" alt="" />`
@@ -814,6 +816,15 @@ function renderDeals() {
     }
   }
 
+  // The user's own branch came first. If that's only because it has everything on the list
+  // while another store is cheaper on the products both sell, say both.
+  const curBestNote = () => {
+    const cheaper = nearby.filter((b) => !isCur(b) && b.sameSave >= 1).sort((a, b) => b.sameSave - a.sameSave)[0];
+    if (!cheaper) return `<p class="deal-save">🎉 הסניף שלך הוא הכי זול באזור</p>`;
+    return `<p class="deal-save flat">🧺 הסניף שלך הוא היחיד באזור שיש בו את כל המוצרים ברשימה.</p>` +
+      `<p class="deal-tip">על ${cheaper.same} המוצרים שיש גם ב${escapeHtml(cheaper.chainName)}, שם זול יותר ב־${amt(money(cheaper.sameSave))}. ` +
+      `אפשר לקנות שם את רובם, ואת השאר כאן.</p>`;
+  };
   // The best branch within the chosen distance: most saved on identical products.
   const nearby = res.branches.filter((b) => b.km != null && b.km <= maxKm && ok(b)).sort(rank);
   const best = nearby[0];
@@ -825,7 +836,7 @@ function renderDeals() {
   if (best) {
     nearHtml = head(best.chain, best.chainName, where(best), est(best) + money(best.total)) +
       `<p class="deal-meta">${trip(best)} · ${matchLine(best)}</p>` +
-      (isCur(best) ? `<p class="deal-save">🎉 הסניף שלך הוא הכי זול באזור</p>` : saveLine(best) + diffNote(best) + actions(best.chain, best));
+      (isCur(best) ? curBestNote() : saveLine(best) + diffNote(best) + actions(best.chain, best));
   } else if (!deals.where) {
     // No location: pick a city instead (or allow location), and meanwhile the chains are
     // ranked by their common prices below.
@@ -843,18 +854,21 @@ function renderDeals() {
   }
   // Nothing nearby is cheaper on the same products than the user's own store: say so, and
   // show the next best option instead of calling it "the cheapest".
-  const mineWins = cur && ok(cur) && best && !isCur(best) && best.sameSave < 1;
+  const mineWins = cur && cur.total > 0 && best && enough(best) && !isCur(best) && best.sameSave < 1;
   if (mineWins) html += `<p class="deal-win">🎉 ${escapeHtml(cur.chainName)} זולה יותר מכל הסניפים ${deals.where?.city ? `ב${escapeHtml(deals.where.city)} והסביבה` : "לידך"} על אותם מוצרים</p>`;
   const area = deals.where?.city ? `ב${escapeHtml(deals.where.city)} והסביבה` : "לידך";
-  html += box(`📍 ${mineWins ? `האפשרות הבאה ${area}` : `הכי זול ${area}`} · ${within}`, nearHtml, mineWins ? "" : " main");
+  // No store nearby covers most of the list: don't call any of them the cheapest.
+  if (best && !enough(best)) html += `<p class="deal-warn deals-excluded">אף סניף ${area} לא מוכר את רוב המוצרים שברשימה, אז ההשוואה חלקית. הסניפים מסודרים לפי כמה מהמוצרים יש בהם.</p>`;
+  const curOnlyByCoverage = best && isCur(best) && nearby.some((b) => !isCur(b) && b.sameSave >= 1);
+  html += box(`📍 ${!best || !enough(best) ? `הכי קרוב לרשימה ${area}` : curOnlyByCoverage ? "הסניף שלך" : mineWins ? `האפשרות הבאה ${area}` : `הכי זול ${area}`} · ${within}`, nearHtml, mineWins || (best && !enough(best)) ? "" : " main");
   // No location at all: the chains by their common prices (no branches needed).
   if (!deals.where) {
-    const ranked = res.chains.filter(ok).sort((a, b) => a.total - b.total).slice(0, 7);
+    const ranked = res.chains.filter(ok).sort(rank).slice(0, 10);
     if (ranked.length) {
       html += `<p class="sheet-label">הרשתות לפי מחיר נפוץ ברשת</p><ul class="deal-list">` + ranked.map((c, k) => `
         <li><button type="button" class="deal-row" data-pick='${escapeHtml(JSON.stringify([c.id, null]))}'>
           ${logo(c.id)}
-          <span class="deal-name"><strong>${k === 0 ? "🏆 " : ""}${escapeHtml(c.name)}</strong><small>מחיר נפוץ בסניפי הרשת</small></span>
+          <span class="deal-name"><strong>${k === 0 && enough(c) ? "🏆 " : ""}${escapeHtml(c.name)}</strong><small>מחיר נפוץ ברשת · ${c.same}/${listN} מוצרים${enough(c) ? "" : " · לא מכסה את הסל"}</small></span>
           <strong class="deal-total">${amt(est(c) + money(c.total))}</strong>
         </button></li>`).join("") + `</ul>`;
     }
@@ -883,9 +897,7 @@ function renderDeals() {
   const general = Math.max(cur?.est || 0, best?.est || 0);
   if (general) notes.push(`${general === 1 ? "פריט אחד כללי" : `${general} פריטים כלליים`} (כמו "גבינה") מתומחרים לפי מחיר טיפוסי, אז ההשוואה משוערת. להשוואה מדויקת, הקישו על פריט ברשימה ובחרו מוצר`);
   // Chains left out because they lack something on the list.
-  const lacking = res.chains.filter((c) => c.missing && c.id !== cur?.chain)
-    .map((c) => `${escapeHtml(c.name)} (${c.missing === 1 ? "חסר פריט אחד" : `חסרים ${c.missing} פריטים`})`);
-  if (lacking.length) notes.push(`לא הוצגו: ${lacking.join(", ")}`);
+  // (Stores lacking products are shown, with what they lack under "פרטים".)
   notes.push("המרחק בקו אווירי", "נבדקו 4 הסניפים הקרובים מכל רשת");
   html += `<p class="deals-foot">${notes.join(" · ")}</p>`;
   body.innerHTML = html;
