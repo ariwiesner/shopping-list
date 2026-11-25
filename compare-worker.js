@@ -102,7 +102,7 @@ self.onmessage = async ({ data }) => {
     }
     const result = summarize(items, chains, branches, current);
     // Say what general items were compared on.
-    result.refs = items.map((it, i) => (refs[i]?.length ? { item: it.name, product: refs[i][0].name } : null)).filter(Boolean);
+    result.refs = items.map((it, i) => (refs[i]?.length ? { item: it.name, product: refs[i][0].name, refs: refs[i].slice(0, 8) } : null)).filter(Boolean);
     self.postMessage({ type: "result", id, result });
   } catch (e) {
     self.postMessage({ type: "error", id, message: String(e?.message || e) });

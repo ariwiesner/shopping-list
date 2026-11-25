@@ -109,7 +109,10 @@
         <span class="plan-sub" id="planSub"></span>
       </button>
       <section class="stores" aria-labelledby="storesTitle">
-        <p class="stores-title" id="storesTitle">איפה קונים היום?</p>
+        <div class="stores-head">
+          <p class="stores-title" id="storesTitle">איפה קונים היום?</p>
+          <button type="button" class="chains-btn" id="chainsBtn" aria-haspopup="dialog" hidden>☰ כל הרשתות</button>
+        </div>
         <div class="wheel" id="storeRow" role="slider" tabindex="0" aria-labelledby="storesTitle"
              aria-description="גררו או השתמשו בחצים כדי לסובב את הגלגל"></div>
         <button class="branch-btn" id="branchBtn" hidden aria-haspopup="dialog">
@@ -204,7 +207,7 @@
       <button type="button" role="radio" data-km="10">עד 10 ק״מ</button>
       <button type="button" role="radio" data-km="20">עד 20 ק״מ</button>
       <button type="button" role="radio" data-km="35">עד 35 ק״מ</button>
-      <button type="button" role="radio" data-km="0">35+ ק״מ</button>
+      <button type="button" role="radio" data-km="0">ללא הגבלה</button>
     </div>
     <div id="dealsBody" aria-live="polite"></div>
   </div>
@@ -287,6 +290,13 @@
     <button class="sheet-item cancel" id="privacyClose">סגירה</button>
   </div>
 
+  <!-- All chains as a plain list (besides the wheel) -->
+  <div class="sheet" id="chainSheet" role="dialog" aria-modal="true" aria-labelledby="chainTitle" hidden>
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <h3 id="chainTitle">איפה קונים היום?</h3>
+    <div class="chain-list" id="chainList"></div>
+  </div>
+
   <!-- Confirm deleting the whole list -->
   <div class="sheet" id="confirmSheet" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmText" hidden>
     <div class="sheet-handle" aria-hidden="true"></div>
@@ -334,6 +344,10 @@
             <input id="editName" type="text" maxlength="60" required autocomplete="off" />
           </div>
         </div>
+        <div class="seg unit-seg" id="editUnit" role="radiogroup" aria-label="יחידות או קילו" hidden>
+          <button type="button" role="radio" data-unit="">לפי יחידות</button>
+          <button type="button" role="radio" data-unit="kg">לפי ק״ג</button>
+        </div>
         <ul class="products" id="productList" role="listbox" aria-label="מוצרים" hidden></ul>
       </div>
       <label class="field">
@@ -349,11 +363,9 @@
 
   <!-- One-time notice about usage statistics (until the user chooses) -->
   <div class="consent-bar" id="consentBar" role="region" aria-label="נתוני שימוש" hidden>
-    <p>📊 האפליקציה אוספת נתוני שימוש אנונימיים כדי להשתפר. לא נשלחים שמות, אימיילים או תוכן הרשימות. <button type="button" class="link-btn" id="consentMore">פרטים</button></p>
-    <div class="consent-actions">
-      <button type="button" class="link-btn consent-off" id="consentNo">לכבות</button>
-      <button type="button" class="btn primary" id="consentYes">הבנתי</button>
-    </div>
+    <p>📊 נאספים נתוני שימוש אנונימיים. <button type="button" class="link-btn" id="consentMore">פרטים</button></p>
+    <button type="button" class="link-btn consent-off" id="consentNo">לכבות</button>
+    <button type="button" class="btn primary" id="consentYes">הבנתי</button>
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden>

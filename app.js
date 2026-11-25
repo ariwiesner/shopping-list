@@ -1,5 +1,5 @@
 import { firebaseConfig } from "./firebase-config.js";
-import { loadIndex, loadChain, loadStores, loadBranch, loadCommon, search, resolve, estimate, priceItem, dealFor, norm, money } from "./catalog.js";
+import { loadIndex, loadChain, loadStores, loadBranch, loadCommon, fetchJson, search, resolve, estimate, priceItem, priceByReference, unitKg, dealFor, norm, money } from "./catalog.js";
 import { parseList, cleanItems, looksLikeMessage } from "./import-parse.js";
 import { PHOTO_URL } from "./photo-config.js";
 
@@ -42,8 +42,20 @@ const EMOJI = [
 const emojiFor = (name) => (EMOJI.find(([re]) => re.test(name)) || [, "🛒"])[1];
 
 // "2 חלב", "חלב x3", "חלב 3" → { name, qty }
+// "1.5 ק״ג עגבניות", "עגבניות 2 קילו", "קילו בננות": an amount in kg.
+const KG = String.raw`(?:ק"ג|ק״ג|קג|קילו|ק\.ג|kg)`;
+const KG_FIRST = new RegExp(String.raw`^(\d+(?:[.,]\d+)?)\s*${KG}\s+(.+)$`, "i");
+const KG_LAST = new RegExp(String.raw`^(.+?)\s+(\d+(?:[.,]\d+)?)\s*${KG}$`, "i");
+const KG_ONLY = new RegExp(String.raw`^${KG}\s+(.+)$`, "i");
 function parseInput(text) {
   let s = text.trim().replace(/\s+/g, " ");
+  let km = s.match(KG_FIRST);
+  if (km || (km = s.match(KG_LAST))) {
+    const [num, rest] = s.match(KG_FIRST) ? [km[1], km[2]] : [km[2], km[1]];
+    const qty = Math.min(Math.max(Math.round(parseFloat(num.replace(",", ".")) * 2) / 2, 0.5), 999);
+    return { name: capitalize(rest), qty, unit: "kg" };
+  }
+  if ((km = s.match(KG_ONLY))) return { name: capitalize(km[1]), qty: 1, unit: "kg" };
   let qty = 1;
   let m = s.match(/^(\d{1,3})\s*[x×]?\s+(.+)$/i);
   if (m) { qty = +m[1]; s = m[2]; }
@@ -89,6 +101,7 @@ const ui = {
   items: [],
   doneOpen: prefs.doneOpen ?? store.get(LOCAL_KEY, {})?.doneOpen ?? true,
   chains: [],        // available stores from the catalog index
+  refs: prefs.refs || {}, // general item name → the products the price comparison matched it to
   cat: null,         // loaded catalog of the selected store
   catId: null,       // chain id of the catalog in ui.cat (or being loaded)
   catKey: null,      // "chain|branch" being shown
@@ -155,13 +168,22 @@ function dealLine(p) {
   return "";
 }
 
+const fmtKg = (kg) => (Math.round(kg * 100) / 100).toLocaleString("he-IL", { maximumFractionDigits: 2 });
+
+const pricesLoading = () => !!ui.catId && !ui.cat && !ui.catError;
+
 function priceLine(it) {
   const p = it._price;
+  // Switching chain: a placeholder where the price will be, until its prices arrive.
+  if (pricesLoading() && p?.kind !== "manual") return `<div class="item-price skel" aria-label="טוען מחיר"></div>`;
   if (!p || (!ui.cat && p.kind !== "manual")) return "";
-  const qtyNote = it.qty > 1 ? ` <span class="muted">(${amt(money(p.unit))} ליח׳)</span>` : "";
+  // Weighed produce: counted in units (≈ kg by a typical weight) or in kg.
+  const qtyNote = p.unitKg ? ` <span class="muted">(≈${fmtKg(p.kg)} ק״ג · ${amt(money(p.unit))} לק״ג)</span>`
+    : p.byKg && (it.qty !== 1 || it.unit === "kg") ? ` <span class="muted">(${fmtKg(p.kg)} ק״ג · ${amt(money(p.unit))} לק״ג)</span>`
+    : it.qty > 1 ? ` <span class="muted">(${amt(money(p.unit))} ליח׳)</span>` : "";
   if (p.kind === "manual") return `<div class="item-price">${amt(money(p.total))}${qtyNote} <span class="tag">ידני</span></div>`;
   if (p.kind === "exact") {
-    const perKg = p.weighted ? " לק״ג" : "";
+    const perKg = p.weighted && p.byKg && it.qty === 1 && it.unit !== "kg" ? " לק״ג" : "";
     // Same barcode = same product in every chain, but chains word names differently;
     // show the name the user picked so it doesn't look like a different product.
     // The chosen product isn't sold here: say so, and name the product priced instead.
@@ -176,13 +198,13 @@ function priceLine(it) {
     // One short, quiet line: the typical price, then how close the match is ("בלי: פרווה",
     // "מחיר כללי") or how many kinds there are. Tapping the item opens the product choice.
     if (p.missingProduct) {
-      return `<div class="item-price est">${amt("~" + money(p.total))}${p.weighted ? " לק״ג" : ""}${qtyNote}</div>` +
+      return `<div class="item-price est">${amt("~" + money(p.total))}${p.weighted && p.byKg && it.qty === 1 && it.unit !== "kg" ? " לק״ג" : ""}${qtyNote}</div>` +
         `<div class="item-note">המוצר שבחרתם לא נמכר כאן. המחיר משוער, לפי מוצרים דומים</div>`;
     }
     const note = p.fit === "partial" ? `<span class="warn">· בלי: ${escapeHtml(p.missing.join(" "))}</span>`
       : p.fit === "general" ? `<span class="warn">· מחיר כללי</span>`
       : p.count > 1 ? `<span class="muted">·&nbsp;${p.count}&nbsp;סוגים</span>` : "";
-    return `<div class="item-price est">${amt("~" + money(p.total))}${p.weighted ? " לק״ג" : ""}${qtyNote} ${note}</div>`;
+    return `<div class="item-price est">${amt("~" + money(p.total))}${p.weighted && p.byKg && it.qty === 1 && it.unit !== "kg" ? " לק״ג" : ""}${qtyNote} ${note}</div>`;
   }
   return `<div class="item-price none">לא נמצא ב${escapeHtml(ui.cat.name)}</div>`;
 }
@@ -225,20 +247,29 @@ function itemHtml(it) {
         </button>
         <div class="stepper" role="group" aria-label="כמות">
           <button data-act="inc" aria-label="הגדלת כמות">+</button>
-          <output aria-live="polite">${it.qty}</output>
+          <output aria-live="polite">${it.qty}${it.unit === "kg" ? "<small>ק״ג</small>" : ""}</output>
           <button data-act="dec" aria-label="הקטנת כמות">−</button>
         </div>
-        ${it.qty > 1 ? `<span class="qty-badge">×${it.qty}</span>` : ""}
+        ${it.unit === "kg" ? `<span class="qty-badge">${it.qty} ק״ג</span>` : it.qty > 1 ? `<span class="qty-badge">×${it.qty}</span>` : ""}
       </div>
     </li>`;
+}
+
+// An item's price in the selected store. A general item ("לחם") that the price comparison
+// matched to a product is priced on that same product, so the list and the comparison
+// show the same amount.
+function listPrice(it, opts) {
+  const choice = ui.choices[norm(it.name)];
+  const refs = !it.barcode && !choice && !(it.price > 0) && ui.cat ? ui.refs[norm(it.name)] : null;
+  return refs ? priceByReference(ui.cat, it, refs, opts) : priceItem(ui.cat, it, choice, opts);
 }
 
 function render() {
   const items0 = ui.items.slice().sort((a, b) => (b.sortKey || 0) - (a.sortKey || 0));
   const dealOpts = { club: isClubMember(ui.cat?.id) };
-  const basket = items0.reduce((a, it) => a + priceItem(ui.cat, it, ui.choices[norm(it.name)], { ...dealOpts, basket: 0 }).total, 0);
+  const basket = items0.reduce((a, it) => a + listPrice(it, { ...dealOpts, basket: 0 }).total, 0);
   ui.lastBasket = basket;
-  const items = items0.map((it) => ({ ...it, _price: priceItem(ui.cat, it, ui.choices[norm(it.name)], { ...dealOpts, basket }) }));
+  const items = items0.map((it) => ({ ...it, _price: listPrice(it, { ...dealOpts, basket }) }));
   const todo = items.filter((i) => !i.done);
   const done = items.filter((i) => i.done);
   const total = items.length;
@@ -295,8 +326,15 @@ function render() {
 function renderTotal(items) {
   const box = $("totalBox");
   const anyManual = items.some((i) => i._price.kind === "manual");
-  box.hidden = !items.length || (!ui.cat && !anyManual);
+  box.hidden = !items.length || (!ui.cat && !anyManual && !pricesLoading());
   if (box.hidden) return;
+  box.classList.toggle("loading", pricesLoading());
+  if (pricesLoading()) {
+    $("totalStore").textContent = ui.chains.find((c) => c.id === ui.catId)?.name || "החנות";
+    $("totalAmount").innerHTML = `<span class="skel skel-total"></span>`;
+    $("totalNote").textContent = "טוענים מחירים…";
+    return;
+  }
   let sum = 0, inCart = 0, estCount = 0, noneCount = 0, saved = 0;
   for (const it of items) {
     sum += it._price.total;
@@ -305,6 +343,7 @@ function renderTotal(items) {
     if (it._price.kind === "estimate") estCount++;
     if (it._price.kind === "none") noneCount++;
   }
+  ui.listSum = { total: sum, est: estCount, club: items.some((i) => i._price.deal?.applied && i._price.deal.club) };
   $("totalStore").textContent = ui.cat ? ui.cat.name : "רשימה";
   $("totalAmount").textContent = (estCount ? "~" : "") + money(sum);
   const notes = [];
@@ -342,6 +381,7 @@ function renderStores() {
     return;
   }
   buildWheel();
+  $("chainsBtn").hidden = false;
   // Someone else on a shared list picked a store: turn the wheel to it.
   const k = wheelItems().findIndex((x) => x.id === (sel || ""));
   if (k >= 0 && !wheel.dragging && !wheel.anim && wheelIndex() !== k) spinToChain(k, false);
@@ -389,6 +429,7 @@ async function loadStore(id) {
 // id: a chain id, or null for a plain list with no store (no prices).
 function selectStore(id) {
   if (id) track("select_store", { store: id });
+  requestAnimationFrame(layoutWheel);
   const choice = id || NO_STORE;
   if (choice === storeChoice()) return loadStore(id || null);
   prefs.store = choice;
@@ -457,6 +498,24 @@ async function nearestBranch(chain, mayAsk) {
 
 // ---------- Branch picker ----------
 const branchSheet = $("branchSheet");
+// All chains as a plain list, for whoever prefers it to spinning the wheel.
+$("chainsBtn").addEventListener("click", () => {
+  const sel = currentStoreId() || "";
+  $("chainList").innerHTML = wheelItems().map((c, k) => `
+    <button type="button" class="sheet-item chain-item${c.id === sel ? " current" : ""}" data-k="${k}">
+      <span class="chain-logo">${c === NO_STORE_SLOT ? NO_STORE_ICON : STORE_LOGOS.has(c.id) ? `<img src="stores/${c.id}.png" alt="" />` : escapeHtml(c.name.slice(0, 2))}</span>
+      <span>${escapeHtml(c.name)}${c === NO_STORE_SLOT ? ` <small>רשימה בלי מחירים</small>` : ""}</span>
+      ${c.id === sel ? "<span class=\"chain-check\">✓</span>" : ""}
+    </button>`).join("");
+  openSheet($("chainSheet"));
+});
+$("chainList").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-k]");
+  if (!b) return;
+  closeSheets();
+  spinToChain(Number(b.dataset.k)); // the wheel turns to it and selects it
+});
+
 $("branchBtn").addEventListener("click", async () => {
   const chain = currentStoreId();
   if (!chain) return;
@@ -523,8 +582,33 @@ $("dealsBody").addEventListener("click", (e) => {
     showToast(`עברנו ל${ui.chains.find((c) => c.id === chain)?.name || "חנות"}`);
     return;
   }
-  if (e.target.closest("[data-act='deals-retry']")) runDeals(true);
+  if (e.target.closest("[data-act='deals-retry']")) { deals.hereAt = 0; runDeals(true); }
+  if (e.target.closest("[data-act='city-change']")) { deals.pickingCity = true; renderDeals(); }
+  if (e.target.closest("[data-act='city-clear']")) {
+    prefs.dealCity = null; store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), dealCity: null });
+    deals.where = null; runDeals(true);
+  }
 });
+// Choosing a city (typed with suggestions from the cities that have branches).
+$("dealsBody").addEventListener("change", async (e) => {
+  if (e.target.id !== "dealsCity") return;
+  const name = e.target.value.trim();
+  const city = (await loadCities().catch(() => [])).find((c) => c.name === name);
+  if (!city) { showToast("לא מצאנו את העיר הזו. בחרו מהרשימה.", false); return; }
+  prefs.dealCity = city;
+  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), dealCity: city });
+  deals.pickingCity = false;
+  track("compare_city");
+  runDeals(true);
+});
+function cityPicker() {
+  loadCities().then((list) => {
+    const dl = $("dealsCities");
+    if (dl && !dl.childElementCount) dl.innerHTML = list.map((c) => `<option value="${escapeHtml(c.name)}"></option>`).join("");
+  }).catch(() => {});
+  return `<div class="city-pick"><input id="dealsCity" list="dealsCities" placeholder="למשל: חולון" autocomplete="off" />
+    <datalist id="dealsCities"></datalist></div>`;
+}
 
 function chooseStore(chain, branch) {
   track("compare_pick_store", { store: chain });
@@ -536,8 +620,18 @@ function chooseStore(chain, branch) {
   loadStore(chain);
 }
 
+// Without location (blocked, or no GPS): the user can pick a city instead; its centre
+// stands in for "here". Remembered on this device only.
+const cityHere = () => (prefs.dealCity?.lat != null ? { lat: prefs.dealCity.lat, lon: prefs.dealCity.lon, city: prefs.dealCity.name } : null);
+let citiesPromise = null;
+const loadCities = () => (citiesPromise ||= fetchJson("geo.json").then((g) =>
+  Object.entries(g).filter(([k, v]) => k.startsWith("|") && v).map(([k, v]) => ({ name: k.slice(1), lat: v[0], lon: v[1] }))
+    .sort((a, b) => a.name.localeCompare(b.name, "he"))).catch((e) => { citiesPromise = null; throw e; }));
+
 // One location reading per comparison (reused for 10 minutes); never tracked.
+// A city the user picked wins (they chose it on purpose); else the phone's location.
 function getLocation() {
+  if (cityHere()) return Promise.resolve(cityHere());
   if (deals.here && Date.now() - deals.hereAt < 10 * 60e3) return Promise.resolve(deals.here);
   return new Promise((resolve) => {
     if (!navigator.geolocation) { deals.locError = "unsupported"; resolve(null); return; }
@@ -559,6 +653,7 @@ async function runDeals(force = false) {
   const current = currentStoreId() ? { chain: currentStoreId(), branch: currentBranchId() } : null;
   deals.error = false; deals.stage = "locating"; renderDeals();
   const here = await getLocation();
+  deals.where = here;
   const key = JSON.stringify([items, ui.choices, current, here && [here.lat.toFixed(2), here.lon.toFixed(2)]]);
   if (!force && key === deals.key && deals.result) { deals.stage = null; renderDeals(); return; }
 
@@ -569,7 +664,13 @@ async function runDeals(force = false) {
     w.terminate(); // frees all the catalogs it loaded
     if (deals.runId !== id) return;
     deals.worker = null; deals.stage = null;
-    if (result) { deals.result = result; deals.key = key; } else deals.error = true;
+    if (result) {
+      deals.result = result; deals.key = key;
+      // Remember which product each general item was compared on, for the list too.
+      ui.refs = Object.fromEntries((result.refs || []).map((r) => [norm(r.item), r.refs]));
+      store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), refs: ui.refs });
+      render();
+    } else deals.error = true;
     renderDeals();
   };
   w.onmessage = ({ data }) => {
@@ -610,7 +711,8 @@ function renderDeals() {
   const logo = (id) => `<img class="deal-logo" src="stores/${escapeHtml(id)}.png" alt="" />`;
   const est = (x) => (x.est ? "~" : "");
   const where = (b) => [b.name, b.city && !b.name.includes(b.city) ? b.city : ""].filter(Boolean).join(", ");
-  const trip = (b) => b.km == null ? "" : `${kmText(b.km)} ממך${b.prec === "c" ? " · משוער לפי העיר" : ""}`;
+  const fromWhere = deals.where?.city ? `ממרכז ${deals.where.city}` : "ממך";
+  const trip = (b) => b.km == null ? "" : `${kmText(b.km)} ${fromWhere}${b.prec === "c" ? " · משוער לפי העיר" : ""}`;
   // Chosen products this store doesn't sell, priced by a similar product instead.
   // Tap to see, per product: what was chosen and its price where it's sold, and what was priced here instead.
   const subsNote = (x, short = false) => !x.subs || (cur && x.chain === cur.chain && cur.kind === "branch" && x.id === cur.id) ? "" :
@@ -641,6 +743,12 @@ function renderDeals() {
   if (cur) {
     const label = cur.kind === "branch" ? `${escapeHtml(cur.chainName)}, ${escapeHtml(where(cur))}` : `${escapeHtml(cur.chainName)} (מחיר נפוץ ברשת)`;
     html += `<p class="deals-current">הקנייה שלך ב${label}: <strong>${amt(est(cur) + money(cur.total))}</strong></p>`;
+    // The list can show a different amount: say why, so it's clear which to trust.
+    const ls = ui.listSum;
+    if (ls && ui.catId === cur.chain && Math.abs(ls.total - cur.total) >= 0.5) {
+      const why = [ls.club && "כוללת מחירי מועדון (כאן משווים בלי)", res.excluded.length && "כוללת פריטים שלא נכללו בהשוואה", ls.est && !ls.club && "מתמחרת פריטים כלליים במחיר משוער"].filter(Boolean);
+      html += `<p class="deals-diffnote">ברשימה מוצג ${amt((ls.est ? "~" : "") + money(ls.total))}${why.length ? ` כי היא ${why.join(" ו")}` : ""}.</p>`;
+    }
     // Items the current store lacks are left out for every store, so the totals compare like for like.
     if (res.excluded.length) {
       html += `<p class="deal-warn deals-excluded">אין ב${escapeHtml(cur.chainName)}: ${res.excluded.map(escapeHtml).join(", ")}. ` +
@@ -660,14 +768,34 @@ function renderDeals() {
     nearHtml = head(best.chain, best.chainName, where(best), est(best) + money(best.total)) +
       `<p class="deal-meta">${trip(best)}</p>${subsNote(best, true)}` +
       (isCur(best) ? `<p class="deal-save">🎉 הסניף שלך הוא הכי זול באזור</p>` : save(best) + actions(best.chain, best));
-  } else if (!deals.here) {
-    nearHtml = deals.locError === "denied"
-      ? msg("המיקום חסום. אפשרו גישה למיקום בהגדרות הדפדפן ונסו שוב.", "לנסות שוב")
-      : msg("כדי למצוא את הכי זול לידך צריך את המיקום שלכם.", "לאפשר מיקום");
+  } else if (!deals.where) {
+    // No location: pick a city instead (or allow location), and meanwhile the chains are
+    // ranked by their common prices below.
+    nearHtml = `<p class="deals-msg">${deals.locError === "denied" ? "המיקום חסום, אז אין לנו איך לדעת מה קרוב אליך." : "כדי למצוא סניפים קרובים צריך לדעת איפה אתם."} בחרו עיר:</p>` +
+      cityPicker() +
+      (deals.locError === "denied" ? "" : `<button type="button" class="link-btn deals-loc" data-act="deals-retry">📍 או לאפשר מיקום</button>`);
   } else {
     nearHtml = msg(r ? "לא מצאנו סניף עם כל הפריטים במרחק הזה. נסו מרחק גדול יותר." : "לא מצאנו סניף עם כל הפריטים.");
   }
-  html += box(`📍 הכי זול לידך · ${within}`, nearHtml, " main");
+  // Comparing around a chosen city: say so, with a way to change it.
+  if (deals.pickingCity) {
+    html += `<div class="deals-city"><p>באיזו עיר לחפש?</p>${cityPicker()}</div>`;
+  } else if (deals.where?.city) {
+    html += `<p class="deals-city">📍 לפי העיר <strong>${escapeHtml(deals.where.city)}</strong> · <button type="button" class="link-btn" data-act="city-change">שינוי</button> · <button type="button" class="link-btn" data-act="city-clear">לפי המיקום שלי</button></p>`;
+  }
+  html += box(`📍 ${deals.where?.city ? `הכי זול ב${escapeHtml(deals.where.city)} והסביבה` : "הכי זול לידך"} · ${within}`, nearHtml, " main");
+  // No location at all: the chains by their common prices (no branches needed).
+  if (!deals.where) {
+    const ranked = res.chains.filter(ok).sort((a, b) => a.total - b.total).slice(0, 7);
+    if (ranked.length) {
+      html += `<p class="sheet-label">הרשתות לפי מחיר נפוץ ברשת</p><ul class="deal-list">` + ranked.map((c, k) => `
+        <li><button type="button" class="deal-row" data-pick='${escapeHtml(JSON.stringify([c.id, null]))}'>
+          ${logo(c.id)}
+          <span class="deal-name"><strong>${k === 0 ? "🏆 " : ""}${escapeHtml(c.name)}</strong><small>מחיר נפוץ בסניפי הרשת</small></span>
+          <strong class="deal-total">${amt(est(c) + money(c.total))}</strong>
+        </button></li>`).join("") + `</ul>`;
+    }
+  }
 
   // Other chains nearby: the cheapest branch of each.
   const more = nearby.filter((b, k) => b.chain !== best?.chain && b.chain !== cur?.chain
@@ -745,6 +873,10 @@ function buildWheel() {
 function layoutWheel() {
   // Not on screen yet (e.g. behind the splash): the ResizeObserver lays it out once visible.
   if (!wheel.btns.length || !wheel.el.clientWidth) return;
+  // Self-repair: a lost position (NaN) or circles no longer in the wheel → rebuild.
+  if (!Number.isFinite(wheel.rot) || !wheel.btns[0].isConnected) {
+    wheel.key = ""; buildWheel(); return;
+  }
   const cx = wheel.el.clientWidth / 2;
   const dir = RTL ? -1 : 1; // in Hebrew the next store sits to the left
   const top = wheelIndex();
@@ -762,10 +894,32 @@ function layoutWheel() {
   });
   const c = wheelItems()[top];
   wheel.el.setAttribute("aria-valuetext", c ? c.name : "");
+  checkWheelSoon();
   // A little tick each time a store passes the top.
   const r = Math.round(wheel.rot);
   if (r !== wheel.lastTick) { wheel.lastTick = r; buzz(4); }
 }
+
+// Some phone browsers occasionally stop drawing the store circles (only the dashed arc is
+// left). After each change, check that the store at the top is really drawn where it
+// should be; if not, rebuild the wheel from scratch.
+let wheelCheck = 0;
+function checkWheelSoon() {
+  if (wheelCheck || wheel.dragging || wheel.anim) return;
+  wheelCheck = setTimeout(() => {
+    wheelCheck = 0;
+    if (wheel.dragging || wheel.anim || !wheel.el.clientWidth) return;
+    const box = wheel.el.getBoundingClientRect();
+    const ok = wheel.btns.some((b) => {
+      const r = b.getBoundingClientRect();
+      return b.isConnected && +getComputedStyle(b).opacity > 0.5 && r.width > 0 && r.right > box.left && r.left < box.right;
+    });
+    if (!ok) { console.warn("Store wheel lost its circles: rebuilding"); wheel.key = ""; buildWheel(); }
+  }, 400);
+}
+// Coming back to the app (another app, screen off, back navigation): draw the wheel again.
+document.addEventListener("visibilitychange", () => { if (!document.hidden) requestAnimationFrame(layoutWheel); });
+window.addEventListener("pageshow", () => requestAnimationFrame(layoutWheel));
 
 function spinTo(target, animate = true) {
   cancelAnimationFrame(wheel.anim);
@@ -1131,7 +1285,7 @@ const find = (id) => ui.items.find((i) => i.id === id);
 const fail = (e) => { console.error(e); showToast("משהו השתבש — נסו שוב", false); };
 
 function addItem(text, product = null) {
-  const { name, qty } = parseInput(text);
+  const { name, qty, unit } = parseInput(text);
   if (!name) return;
   if (product) {
     // Chosen while typing: this exact product (its barcode is the same at every chain),
@@ -1149,7 +1303,7 @@ function addItem(text, product = null) {
     showToast(`${existing.name} כבר ברשימה — עכשיו ×${next}`, false);
   } else {
     const now = Date.now();
-    backend.put([{ id: uid(), name, qty, done: false, price: null, createdAt: now, sortKey: now,
+    backend.put([{ id: uid(), name, qty, done: false, price: null, createdAt: now, sortKey: now, unit: unit || null,
       ...(product ? { barcode: product.code, productName: product.name } : {}) }]).catch(fail);
   }
   buzz();
@@ -1257,8 +1411,8 @@ function changeQty(id, delta) {
   if (!it) return;
   // Shared item that others asked for: ask whose amount this changes.
   if (askedByOthers(it)) return askWho(it, delta);
-  const next = it.qty + delta;
-  if (next < 1) return removeItems([id]);
+  const next = it.qty + delta * (it.unit === "kg" ? 0.5 : 1); // kg go in half kilos
+  if (next < (it.unit === "kg" ? 0.5 : 1)) return removeItems([id]);
   buzz(5);
   backend.patch([id], { qty: Math.min(next, 999), ...(it.importNote ? { importNote: null } : {}) }).catch(fail);
 }
@@ -1292,7 +1446,7 @@ function hideToast() { toast.hidden = true; }
 toastUndo.addEventListener("click", undo);
 
 // ---------- Sheets ----------
-let editingId = null, editQty = 1;
+let editingId = null, editQty = 1, editUnit = null;
 // The phone's back gesture/button closes an open sheet instead of leaving the app:
 // opening a sheet adds a history entry, and "back" (popstate) closes it. Closing a
 // sheet any other way removes that entry again. Switching straight from one sheet to
@@ -1559,8 +1713,13 @@ function openEdit(id) {
   openSheet(editSheet);
   editingId = id;
   editQty = it.qty;
+  editUnit = it.unit || null;
   $("editName").value = it.name;
   $("editQty").textContent = editQty;
+  // Units or kg: for produce sold by weight.
+  const weighed = !!find(id) && (unitKg(it.name) || listPrice(it, {}).weighted);
+  $("editUnit").hidden = !weighed;
+  syncEditUnit();
   $("editPrice").value = typeof it.price === "number" && it.price > 0 ? it.price : "";
   const remembered = ui.choices[norm(it.name)];
   editProduct = it.barcode ? { code: it.barcode, name: it.productName } : remembered || null;
@@ -1581,19 +1740,28 @@ function pickerPrice(p) {
 
 function renderProducts() {
   const q = $("editName").value.trim();
-  const results = ui.cat && q ? search(ui.cat, q, 40) : [];
+  // Best matches first (the typed words as whole words: "חלב" is milk, not "חלבה"), and
+  // within them cheapest first; the same name twice (two barcodes) shows once, the cheaper.
+  const typed = norm(q).split(" ").filter(Boolean);
+  const whole = (p) => { const ws = norm(p.name).split(" "); return typed.filter((t) => ws.includes(t)).length; };
+  const seen = new Map();
+  for (const p of (ui.cat && q ? search(ui.cat, q, 60) : [])) {
+    const k = norm(p.name), had = seen.get(k);
+    if (!had || p.price < had.price) seen.set(k, p);
+  }
+  const results = [...seen.values()].sort((a, b) => whole(b) - whole(a) || a.price - b.price).slice(0, 40);
   const sel = editProduct?.code;
   const selected = sel && ui.cat.byCode.get(sel);
   const list = selected && !results.includes(selected) ? [selected, ...results] : results;
   // First option: let the app decide (the clearly-meant product, or a typical price).
   const auto = ui.cat && resolve(ui.cat, $("editName").value.trim());
-  // Otherwise the typical price: the median (middle) price of the matching products.
+  // Otherwise the common price of the matching products (their middle price).
   const typical = !auto && ui.cat && estimate(ui.cat, $("editName").value.trim());
   $("productList").innerHTML = `
     <li><button type="button" class="product${!sel ? " selected" : ""}" data-code="" role="option" aria-selected="${!sel}">
       <span class="product-name">${auto ? `אוטומטי — ${escapeHtml(auto.name)}` : "לא משנה איזה — לפי הערכה"}</span>
       <span class="product-price${auto ? "" : " muted"}">${auto ? amt(money(auto.price)) + (auto.weighted ? "<small>לק״ג</small>" : "")
-        : typical ? amt("~" + money(typical.price)) + "<small>(חציון)</small>" : "מחיר טיפוסי"}</span>
+        : typical ? amt("~" + money(typical.price)) + "<small>מחיר נפוץ</small>" : "מחיר נפוץ"}</span>
     </button></li>` +
     list.map((p) => `
     <li><button type="button" class="product${p.code === sel ? " selected" : ""}" data-code="${escapeHtml(p.code)}" role="option" aria-selected="${p.code === sel}">
@@ -1623,8 +1791,22 @@ $("productList").addEventListener("click", (e) => {
 editSheet.addEventListener("click", (e) => {
   const step = e.target.closest("[data-step]");
   if (!step) return;
-  editQty = Math.min(Math.max(editQty + +step.dataset.step, 1), 999);
+  const kg = editUnit === "kg";
+  editQty = Math.min(Math.max(editQty + +step.dataset.step * (kg ? 0.5 : 1), kg ? 0.5 : 1), 999);
   $("editQty").textContent = editQty;
+  buzz(5);
+});
+function syncEditUnit() {
+  $("editUnit").querySelectorAll("[data-unit]").forEach((b) => b.setAttribute("aria-checked", String((b.dataset.unit || null) === editUnit)));
+  $("qtyLabel").textContent = editUnit === "kg" ? "ק״ג" : "כמות";
+}
+$("editUnit").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-unit]");
+  if (!b) return;
+  editUnit = b.dataset.unit || null;
+  if (editUnit !== "kg") editQty = Math.max(1, Math.round(editQty));
+  $("editQty").textContent = editQty;
+  syncEditUnit();
   buzz(5);
 });
 $("editForm").addEventListener("submit", (e) => {
@@ -1633,7 +1815,7 @@ $("editForm").addEventListener("submit", (e) => {
   const it = find(id);
   const name = $("editName").value.trim();
   if (it && name) {
-    const fields = { name: capitalize(name), qty: editQty };
+    const fields = { name: capitalize(name), qty: editQty, unit: editUnit };
     const price = parseFloat($("editPrice").value);
     fields.price = price > 0 && price <= 5000 ? Math.round(price * 100) / 100 : null;
     if (ui.cat) {

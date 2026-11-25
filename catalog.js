@@ -44,10 +44,14 @@ export const norm = (s) =>
     .trim();
 
 // Rough Hebrew stem so singular/plural match: עגבניות/עגבניה → עגבני, ביצים/ביצה → ביצ
+// Once a suffix is cut, the new last letter takes its final form, as it would in the
+// singular: "מלפפונים" → "מלפפונ" → "מלפפון", the same as "מלפפון" itself.
+const FINAL = { "נ": "ן", "מ": "ם", "צ": "ץ", "פ": "ף", "כ": "ך" };
+const final = (w) => w.slice(0, -1) + (FINAL[w.slice(-1)] || w.slice(-1));
 export function stem(w) {
-  if (w.length >= 4 && /(ים|ות)$/.test(w)) return w.slice(0, -2);
-  if (w.length >= 4 && /ה$/.test(w)) return w.slice(0, -1);
-  if (w.length >= 5 && /ת$/.test(w)) return w.slice(0, -1); // "גלידת" (construct) = "גלידה"
+  if (w.length >= 4 && /(ים|ות)$/.test(w)) return final(w.slice(0, -2));
+  if (w.length >= 4 && /ה$/.test(w)) return final(w.slice(0, -1));
+  if (w.length >= 5 && /ת$/.test(w)) return final(w.slice(0, -1)); // "גלידת" (construct) = "גלידה"
   return w;
 }
 const words = (s) => norm(s).split(" ").filter(Boolean);
@@ -476,7 +480,37 @@ export function dealFor(cat, product, qty, opts = {}) {
   return { ...best, applied, total, saving: round(unit * qty - total), clubHint };
 }
 
+// Produce sold by weight but counted in units on a list ("2 עגבניות" = two tomatoes, not
+// 2 kg): a typical weight per unit, in kg. Names not listed here keep counting in kg.
+const UNIT_KG = [
+  ["תפוחי אדמה", 0.2], ["תפוח אדמה", 0.2], ["תפוחי עץ", 0.18], ["תפוח עץ", 0.18],
+  ["עגבני", 0.15], ["מלפפו", 0.13], ["בצל", 0.18], ["תפוח", 0.18], ["גזר", 0.1], ["פלפל", 0.2],
+  ["חציל", 0.35], ["קישוא", 0.25], ["בטט", 0.3], ["אבוקדו", 0.25], ["לימו", 0.12], ["תפוז", 0.25],
+  ["קלמנטינ", 0.1], ["אשכולי", 0.35], ["בננ", 0.18], ["אגס", 0.2], ["אפרסק", 0.15], ["נקטרינ", 0.15],
+  ["שזיף", 0.07], ["מנגו", 0.35], ["קיווי", 0.08], ["רימו", 0.3], ["כרובי", 1.0], ["כרוב", 1.2],
+  ["ברוקולי", 0.4], ["סלק", 0.2], ["צנו", 0.1], ["קולרבי", 0.3], ["דלעת", 1.5], ["אבטיח", 6],
+  ["מלו", 1.5], ["אננס", 1.2], ["פומל", 1], ["חס", 0.4], ["שום", 0.05], ["אפרסמו", 0.2], ["פפאיה", 0.8],
+];
+export function unitKg(name) {
+  const n = norm(name);
+  for (const [k, kg] of UNIT_KG) {
+    if (k.includes(" ") ? n.includes(k) : words(n).some((w) => w.startsWith(k))) return kg;
+  }
+  return null;
+}
+
+// An item's price, with weighed produce counted in units unless the item says kg.
 export function priceItem(cat, item, choice, opts = {}) {
+  const p = priceItemByKg(cat, item, choice, opts);
+  if (!p.weighted || p.kind === "manual" || p.kind === "none") return p;
+  const per = item.unit === "kg" ? null : unitKg(item.name) || unitKg(p.product?.name || "");
+  if (!per) return { ...p, byKg: true, kg: item.qty || 1 };
+  const k = per, sc = (v) => (typeof v === "number" ? round(v * k) : v);
+  return { ...p, total: sc(p.total), regular: sc(p.regular), unitKg: per, kg: round((item.qty || 1) * per),
+    deal: p.deal ? { ...p.deal, total: sc(p.deal.total), saving: sc(p.deal.saving) } : p.deal };
+}
+
+function priceItemByKg(cat, item, choice, opts = {}) {
   const qty = item.qty || 1;
   if (typeof item.price === "number" && item.price > 0) {
     return { kind: "manual", unit: item.price, total: round(item.price * qty) };
