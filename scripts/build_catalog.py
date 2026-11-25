@@ -211,6 +211,35 @@ def src_bina(prefix):
     return source
 
 
+def src_superpharm():
+    """prices.super-pharm.co.il: a paged table, filtered by file type and day; links go to
+    /Download/<name>?bucketName=…. Today's files, or yesterday's early in the morning."""
+    base = "https://prices.super-pharm.co.il"
+    def listing(kind):
+        for days in (0, 1):
+            day = (dt.datetime.now() - dt.timedelta(days=days)).strftime("%d/%m/%Y")
+            out = []
+            for page in range(1, 60):
+                q = urllib.parse.urlencode({"Category-equals": kind, "Date-equals": day, "page": page})
+                t = text(f"{base}/?{q}")
+                links = re.findall(r'href="(/Download/[^"]+)"', t)
+                if not links:
+                    break
+                out += [html.unescape(l) for l in links]
+                if f'data-page="{page + 1}"' not in t:
+                    break
+            if out:
+                return out
+        return []
+    def source():
+        name = lambda l: l.split("/Download/", 1)[1].split("?", 1)[0]
+        files = [{"store": store_id_of(name(l)), "url": base + l, "file": name(l)} for l in listing("PriceFull")]
+        promos = [{"store": store_id_of(name(l)), "url": base + l, "file": name(l)} for l in listing("PromoFull")]
+        stores = sorted(listing("Stores"), key=lambda l: stamp_of(name(l)))
+        return files, (base + stores[-1] if stores else None), fetch, promos
+    return source
+
+
 CHAINS = [
     {"id": "shufersal", "name": "שופרסל", "color": "#d71f26", "source": src_shufersal},
     {"id": "rami-levy", "name": "רמי לוי", "color": "#0a5bab", "source": src_cerberus("RamiLevi")},
@@ -236,6 +265,8 @@ CHAINS = [
     {"id": "shefa-birkat-hashem", "name": "שפע ברכת השם", "color": "#00a651", "source": src_bina("shefabirkathashem")},
     {"id": "city-market", "name": "סיטי מרקט", "color": "#e31e24", "source": src_bina("citymarketkiryatgat")},
     {"id": "alonit", "name": "אלונית", "color": "#6ab023", "source": src_cerberus("doralon")},
+    {"id": "super-pharm", "name": "סופר-פארם", "color": "#e2001a", "source": src_superpharm()},
+    {"id": "good-pharm", "name": "גוד פארם", "color": "#222222", "source": src_bina("goodpharm")},
 ]
 
 

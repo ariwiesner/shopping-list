@@ -885,7 +885,7 @@ const wheel = { el: $("storeRow"), btns: [], key: "", slots: 0, rot: 0, dragging
 const STORE_LOGOS = new Set(["shufersal", "carrefour", "hazi-hinam", "rami-levy", "yochananof", "osher-ad", "tiv-taam",
   "victory", "mahsanei-hashuk", "freshmarket", "keshet", "stop-market", "salach-dabach",
   "zol-vebegadol", "shuk-hair", "bareket", "king-store", "super-sapir",
-  "politzer", "het-cohen", "maayan-2000", "shefa-birkat-hashem", "city-market", "alonit"]);
+  "politzer", "het-cohen", "maayan-2000", "shefa-birkat-hashem", "city-market", "alonit", "super-pharm", "good-pharm"]);
 
 const NO_STORE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg>';
 const mod = (a, n) => ((a % n) + n) % n;
