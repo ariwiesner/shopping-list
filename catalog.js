@@ -420,12 +420,14 @@ export function priceByReference(cat, item, refs, opts = {}) {
     const both = [...a].filter((x) => b.has(x)).length;
     return both / (a.size + b.size - both || 1);
   };
-  const near = refs.slice(1).filter((r) => cat.byCode.has(r.code) && r.price <= main.price * 1.6 && r.price >= main.price / 1.6)
+  const marks = kashrut(main.name);
+  const keeps = (name) => marks.every((m) => kashrut(name).includes(m));
+  const near = refs.slice(1).filter((r) => cat.byCode.has(r.code) && keeps(r.name) && r.price <= main.price * 1.6 && r.price >= main.price / 1.6)
     .map((r) => ({ r, s: sim(r) })).filter((x) => x.s >= 0.5)
     .sort((a, b) => b.s - a.s || Math.abs(a.r.price - main.price) - Math.abs(b.r.price - main.price))[0];
   if (near) return { ...priceItem(cat, { ...item, barcode: near.r.code }, null, opts), reference: true, similar: true };
   if (main.like) {
-    const qty = item.qty || 1, like = main.like;
+    const qty = item.qty || 1, like = [main.like, ...marks.filter((m) => !kashrut(main.like).includes(m))].join(" ");
     const auto = resolve(cat, like);
     if (auto) {
       const deal = dealFor(cat, auto, qty, opts);
@@ -436,6 +438,13 @@ export function priceByReference(cat, item, refs, opts = {}) {
     if (est && est.fit === "all") return { kind: "estimate", unit: est.price, total: round(est.price * qty), ...est, similar: true };
   }
   return priceItem(cat, item, null, opts);
+}
+
+// Kashrut marks in a product name (normalized): a stand-in must carry the same ones, so a
+// kosher product is never replaced by one that isn't (or by a lower certification).
+const KASHRUT = { "מהדרין": "מהדרין", "בדצ": "בדצ", "בדץ": "בדצ", "גלאט": "גלאט", "עדח": "עדח", "לנדא": "לנדא", "לפסח": "לפסח", "כשלפ": "לפסח", "רובין": "רובין" };
+export function kashrut(name) {
+  return [...new Set(words(name || "").map((w) => KASHRUT[w]).filter(Boolean))];
 }
 
 // Typical price for a vague item name like "גבינה".
@@ -529,8 +538,13 @@ function priceItemByKg(cat, item, choice, opts = {}) {
   // When a specific product was chosen and this store doesn't sell it, only a product
   // with every detail of the name stands in for it: "חלב עמיד 3%" (long-life) isn't sold
   // at every chain, and fresh milk is not the same thing. Otherwise it's "not sold here".
+  // Kashrut is kept: a stand-in for a מהדרין / בד"צ product must say so too.
   const missingProduct = !!code;
-  for (const n of [...new Set([item.productName, item.name].filter(Boolean))]) {
+  const marks = kashrut(item.productName);
+  const withMarks = (n) => (marks.length ? [n, ...marks.filter((m) => !kashrut(n).includes(m))].join(" ") : n);
+  for (const n of [...new Set([item.productName, item.name].filter(Boolean).map(withMarks))]) {
+    // Only kashrut marks and packaging words left ("אריזת בד"צ"): nothing to match by.
+    if (!words(n).some((w) => !FILLER.has(w) && !KASHRUT[w])) continue;
     const auto = resolve(cat, n);
     if (auto) {
       const deal = dealFor(cat, auto, qty, opts);
@@ -538,6 +552,18 @@ function priceItemByKg(cat, item, choice, opts = {}) {
         deal, product: auto, weighted: auto.weighted, auto: true, missingProduct, matchedBy: n };
     }
     const est = estimate(cat, n);
+    if (est && missingProduct && est.fit === "all") {
+      // A chosen product isn't sold here: name one real product instead of an estimate
+      // (the typical one of those matching every detail), so the list can say what it is
+      // and offer to switch to it.
+      const pool = estimatePool(cat, n).filter((p) => !p.weighted === !est.weighted);
+      const near = pool.sort((a, b) => Math.abs(a.price - est.price) - Math.abs(b.price - est.price))[0];
+      if (near) {
+        const deal = dealFor(cat, near, qty, opts);
+        return { kind: "exact", unit: near.price, total: deal?.applied ? deal.total : round(near.price * qty), regular: round(near.price * qty),
+          deal, product: near, weighted: near.weighted, auto: true, missingProduct, matchedBy: n };
+      }
+    }
     if (est && (!missingProduct || est.fit === "all")) {
       return { kind: "estimate", unit: est.price, total: round(est.price * qty), ...est, missingProduct };
     }

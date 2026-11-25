@@ -187,9 +187,10 @@ function priceLine(it) {
     // Same barcode = same product in every chain, but chains word names differently;
     // show the name the user picked so it doesn't look like a different product.
     // The chosen product isn't sold here: say so, and name the product priced instead.
+    // Quietly: a "דומה" tag, the product priced here, and a tap to switch to it.
     if (p.missingProduct) {
-      return `<div class="item-price">${amt(money(p.total))}${perKg}${qtyNote}</div>` +
-        `<div class="item-note">המוצר שבחרתם לא נמכר כאן. במקומו: ${escapeHtml(p.product.name)}</div>`;
+      return `<div class="item-price">${dealPrice(p, perKg)}${qtyNote} <span class="like-tag">דומה</span></div>` +
+        `<div class="item-alt">כאן: ${escapeHtml(p.product.name)} <span class="alt-swap" role="button" tabindex="0" data-act="swap">להחליף</span></div>`;
     }
     const label = it.productName || ui.choices[norm(it.name)]?.name || p.product.name;
     return `<div class="item-price">${dealPrice(p, perKg)}${qtyNote} <span class="muted">· ${escapeHtml(label)}</span></div>${dealLine(p)}`;
@@ -198,15 +199,15 @@ function priceLine(it) {
     // One short, quiet line: the typical price, then how close the match is ("בלי: פרווה",
     // "מחיר כללי") or how many kinds there are. Tapping the item opens the product choice.
     if (p.missingProduct) {
-      return `<div class="item-price est">${amt("~" + money(p.total))}${p.weighted && p.byKg && it.qty === 1 && it.unit !== "kg" ? " לק״ג" : ""}${qtyNote}</div>` +
-        `<div class="item-note">המוצר שבחרתם לא נמכר כאן. המחיר משוער, לפי מוצרים דומים</div>`;
+      return `<div class="item-price est">${amt("~" + money(p.total))}${p.weighted && p.byKg && it.qty === 1 && it.unit !== "kg" ? " לק״ג" : ""}${qtyNote} <span class="like-tag">דומה</span></div>` +
+        `<div class="item-alt">לא נמכר כאן · מחיר משוער לפי מוצרים דומים</div>`;
     }
     const note = p.fit === "partial" ? `<span class="warn">· בלי: ${escapeHtml(p.missing.join(" "))}</span>`
       : p.fit === "general" ? `<span class="warn">· מחיר כללי</span>`
       : p.count > 1 ? `<span class="muted">·&nbsp;${p.count}&nbsp;סוגים</span>` : "";
     return `<div class="item-price est">${amt("~" + money(p.total))}${p.weighted && p.byKg && it.qty === 1 && it.unit !== "kg" ? " לק״ג" : ""}${qtyNote} ${note}</div>`;
   }
-  return `<div class="item-price none">לא נמצא ב${escapeHtml(ui.cat.name)}</div>`;
+  return `<div class="item-price none">${it.barcode ? "לא נמכר" : "לא נמצא"} ב${escapeHtml(ui.cat.name)}</div>`;
 }
 
 // On a list shared by several people: who added the item, and who edited it if that was
@@ -275,6 +276,14 @@ function render() {
   const total = items.length;
 
   todoList.innerHTML = todo.map(itemHtml).join("");
+  // Chosen products this store doesn't sell: one calm line above the list, not a warning
+  // on each item (each shows a "דומה" tag and what's priced here instead).
+  const gaps = ui.cat ? todo.filter((i) => i._price.missingProduct || (i.barcode && i._price.kind === "none")) : [];
+  const similar = gaps.filter((i) => i._price.kind !== "none").length;
+  $("storeGap").hidden = !gaps.length;
+  $("storeGap").textContent = !gaps.length ? ""
+    : `${gaps.length === 1 ? "מוצר אחד מהרשימה לא נמכר" : `${gaps.length} מוצרים מהרשימה לא נמכרים`} ב${ui.cat.name}` +
+      (similar === gaps.length ? ". מצאנו דומים, מסומנים ב״דומה״." : similar ? `. ל־${similar} מצאנו דומים, מסומנים ב״דומה״.` : ".");
   $("todoHead").hidden = !total;
   const locked = backend === cloud && isLockedNow();
   document.body.classList.toggle("locked", lockedForMe());
@@ -706,34 +715,32 @@ function renderDeals() {
   if (!res.counted) { body.innerHTML = msg("לא מצאנו מחירים לפריטים ברשימה באף רשת."); return; }
 
   const ok = (x) => !x.missing && x.total > 0;
-  const byTotal = (a, b) => a.total - b.total || (a.km ?? 1e9) - (b.km ?? 1e9);
   const cur = res.current;
   const logo = (id) => `<img class="deal-logo" src="stores/${escapeHtml(id)}.png" alt="" />`;
   const est = (x) => (x.est ? "~" : "");
   const where = (b) => [b.name, b.city && !b.name.includes(b.city) ? b.city : ""].filter(Boolean).join(", ");
   const fromWhere = deals.where?.city ? `ממרכז ${deals.where.city}` : "ממך";
   const trip = (b) => b.km == null ? "" : `${kmText(b.km)} ${fromWhere}${b.prec === "c" ? " · משוער לפי העיר" : ""}`;
-  // Chosen products this store doesn't sell, priced by a similar product instead.
-  // Tap to see, per product: what was chosen and its price where it's sold, and what was priced here instead.
-  const subsNote = (x, short = false) => !x.subs || (cur && x.chain === cur.chain && cur.kind === "branch" && x.id === cur.id) ? "" :
-    `<details class="deal-warn${short ? " in-row" : ""}"><summary>⚠️ ${x.subs === 1 ? "מוצר אחד שבחרתם לא נמכר כאן" : `${x.subs} מוצרים שבחרתם לא נמכרים כאן`}` +
-    `${short ? "" : " — חושב לפי מחיר של מוצר דומה"} <span class="more">פרטים</span></summary><ul class="subs">` +
-    x.subList.map((d) => {
-      const q = d.qty > 1 ? ` <span class="muted">(×${d.qty})</span>` : "";
-      const chosen = d.chosenAt
-        ? `${escapeHtml(d.chosen || d.item)} — <strong>${amt(money(d.chosenAt.total))}</strong>${q} ב${escapeHtml(d.chosenAt.at)}`
-        : escapeHtml(d.chosen || d.item);
-      const instead = d.instead
-        ? `${escapeHtml(d.instead)} — <strong>${amt(money(d.total))}</strong>${q}`
-        : `מחיר טיפוסי של ${d.kinds > 1 ? `${d.kinds} סוגים` : "מוצר דומה"} — <strong>${amt("~" + money(d.total))}</strong>${q}`;
-      return `<li><b>${escapeHtml(d.item)}</b><span>בחרתם: ${chosen}</span><span>כאן במקומו: ${instead}</span></li>`;
-    }).join("") + `</ul></details>`;
   const isCur = (b) => cur?.kind === "branch" && cur.chain === b.chain && cur.id === b.id;
-  const save = (x) => {
-    if (!cur || !ok(cur)) return "";
-    const d = Math.round((cur.total - x.total) * 100) / 100;
-    return d >= 1 ? `<p class="deal-save">חוסכים ${amt(money(d))} לעומת ${escapeHtml(cur.chainName)}</p>` : "";
-  };
+  // Honest comparison: savings count only identical products (the same barcode in both
+  // stores); the rest are listed, not counted. A store with too few identical products
+  // can't be "the cheapest".
+  const counted = res.counted || 1;
+  const enough = (x) => x.same >= Math.max(1, Math.ceil(counted * 0.7));
+  const rank = (a, b) => enough(b) - enough(a) || b.sameSave - a.sameSave || a.total - b.total || (a.km ?? 1e9) - (b.km ?? 1e9);
+  const vs = cur ? `לעומת ${escapeHtml(cur.chainName)}` : "מהמחיר הנפוץ";
+  const matchLine = (x) => `<span class="match${x.same === counted ? " full" : ""}">${x.same}/${counted} מוצרים זהים</span>`;
+  const saveText = (x) => x.sameSave >= 1 ? `חוסכים ${amt(money(x.sameSave))} ${vs}`
+    : x.sameSave <= -1 ? `יקר ב־${amt(money(-x.sameSave))} ${vs}` : `אותו מחיר ${vs}`;
+  const saveLine = (x) => isCur(x) || (cur?.kind === "chain" && !x.id && x.chain === cur.chain) ? "" :
+    `<p class="deal-save${x.sameSave >= 1 ? "" : " flat"}">${saveText(x)}${x.same < counted ? ` <small>· על ${x.same} המוצרים הזהים</small>` : ""}</p>`;
+  // The items that aren't identical here: what was priced instead, or that it's missing.
+  const diffNote = (x) => !x.diff?.length || isCur(x) ? "" :
+    `<details class="deal-diff"><summary>${x.diff.length === 1 ? "מוצר אחד לא זהה כאן" : `${x.diff.length} מוצרים לא זהים כאן`} <span class="more">פרטים</span></summary><ul>` +
+    x.diff.map((d) => `<li><b>${escapeHtml(d.item)}${d.qty > 1 ? ` ×${d.qty}` : ""}</b> ` +
+      (d.missing ? "לא נמכר כאן" : d.est ? `מחיר משוער ${amt("~" + money(d.total))}`
+        : `כאן: ${escapeHtml(d.name || "")} <strong>${amt(money(d.total))}</strong>`) + `</li>`).join("") +
+    `</ul><p>לא נכללים בחישוב החיסכון.</p></details>`;
   const actions = (chain, b) => `<div class="deal-actions">
       <button type="button" class="btn primary" data-pick='${escapeHtml(JSON.stringify([chain, b?.id || null]))}'>לקנות כאן</button>
       ${b?.lat !== undefined ? `<a class="btn ghost" href="${wazeUrl(b)}" target="_blank" rel="noopener">ניווט ב-Waze</a>` : ""}
@@ -756,8 +763,8 @@ function renderDeals() {
     }
   }
 
-  // The cheapest branch within the chosen distance.
-  const nearby = res.branches.filter((b) => b.km != null && b.km <= maxKm && ok(b)).sort(byTotal);
+  // The best branch within the chosen distance: most saved on identical products.
+  const nearby = res.branches.filter((b) => b.km != null && b.km <= maxKm && ok(b)).sort(rank);
   const best = nearby[0];
   const box = (kicker, inner, cls = "") => `<section class="deal${cls}"><p class="deal-kicker">${kicker}</p>${inner}</section>`;
   const head = (id, name, sub, total) => `<div class="deal-head">${logo(id)}
@@ -766,8 +773,8 @@ function renderDeals() {
   let nearHtml;
   if (best) {
     nearHtml = head(best.chain, best.chainName, where(best), est(best) + money(best.total)) +
-      `<p class="deal-meta">${trip(best)}</p>${subsNote(best, true)}` +
-      (isCur(best) ? `<p class="deal-save">🎉 הסניף שלך הוא הכי זול באזור</p>` : save(best) + actions(best.chain, best));
+      `<p class="deal-meta">${trip(best)} · ${matchLine(best)}</p>` +
+      (isCur(best) ? `<p class="deal-save">🎉 הסניף שלך הוא הכי זול באזור</p>` : saveLine(best) + diffNote(best) + actions(best.chain, best));
   } else if (!deals.where) {
     // No location: pick a city instead (or allow location), and meanwhile the chains are
     // ranked by their common prices below.
@@ -783,7 +790,12 @@ function renderDeals() {
   } else if (deals.where?.city) {
     html += `<p class="deals-city">📍 לפי העיר <strong>${escapeHtml(deals.where.city)}</strong> · <button type="button" class="link-btn" data-act="city-change">שינוי</button> · <button type="button" class="link-btn" data-act="city-clear">לפי המיקום שלי</button></p>`;
   }
-  html += box(`📍 ${deals.where?.city ? `הכי זול ב${escapeHtml(deals.where.city)} והסביבה` : "הכי זול לידך"} · ${within}`, nearHtml, " main");
+  // Nothing nearby is cheaper on the same products than the user's own store: say so, and
+  // show the next best option instead of calling it "the cheapest".
+  const mineWins = cur && ok(cur) && best && !isCur(best) && best.sameSave < 1;
+  if (mineWins) html += `<p class="deal-win">🎉 ${escapeHtml(cur.chainName)} זולה יותר מכל הסניפים ${deals.where?.city ? `ב${escapeHtml(deals.where.city)} והסביבה` : "לידך"} על אותם מוצרים</p>`;
+  const area = deals.where?.city ? `ב${escapeHtml(deals.where.city)} והסביבה` : "לידך";
+  html += box(`📍 ${mineWins ? `האפשרות הבאה ${area}` : `הכי זול ${area}`} · ${within}`, nearHtml, mineWins ? "" : " main");
   // No location at all: the chains by their common prices (no branches needed).
   if (!deals.where) {
     const ranked = res.chains.filter(ok).sort((a, b) => a.total - b.total).slice(0, 7);
@@ -797,16 +809,17 @@ function renderDeals() {
     }
   }
 
-  // Other chains nearby: the cheapest branch of each.
+  // Other chains nearby: the best branch of each.
   const more = nearby.filter((b, k) => b.chain !== best?.chain && b.chain !== cur?.chain
     && nearby.findIndex((x) => x.chain === b.chain) === k).slice(0, 5);
   if (more.length) {
     html += `<p class="sheet-label">רשתות אחרות לידך</p><ul class="deal-list">` + more.map((b) => `
       <li><button type="button" class="deal-row" data-pick='${escapeHtml(JSON.stringify([b.chain, b.id]))}'>
         ${logo(b.chain)}
-        <span class="deal-name"><strong>${escapeHtml(b.chainName)}</strong><small>${escapeHtml(where(b))} · ${kmText(b.km)}</small></span>
+        <span class="deal-name"><strong>${escapeHtml(b.chainName)}</strong><small>${escapeHtml(where(b))} · ${kmText(b.km)}</small>
+          <small class="row-save${b.sameSave >= 1 ? "" : " flat"}">${b.same}/${counted} זהים · ${saveText(b)}</small></span>
         <strong class="deal-total">${amt(est(b) + money(b.total))}</strong>
-      </button>${subsNote(b, true)}</li>`).join("") + `</ul>`;
+      </button>${diffNote(b)}</li>`).join("") + `</ul>`;
   }
 
   // General items ("חלב") are compared on one product, the same at every chain: say which.
@@ -815,7 +828,7 @@ function renderDeals() {
       res.refs.map((x) => `<li><b>${escapeHtml(x.item)}</b> ← ${escapeHtml(x.product)}</li>`).join("") +
       `</ul><p>רוצים מוצר אחר? הקישו על הפריט ברשימה ובחרו.</p></details>`;
   }
-  const notes = [`המחירים כאן הם בדיוק מה שהרשימה תראה אחרי מעבר לחנות`];
+  const notes = [`החיסכון מחושב רק על מוצרים זהים (אותו ברקוד)`, `המחירים כאן הם בדיוק מה שהרשימה תראה אחרי מעבר לחנות`];
   const general = Math.max(cur?.est || 0, best?.est || 0);
   if (general) notes.push(`${general === 1 ? "פריט אחד כללי" : `${general} פריטים כלליים`} (כמו "גבינה") מתומחרים לפי מחיר טיפוסי, אז ההשוואה משוערת. להשוואה מדויקת, הקישו על פריט ברשימה ובחרו מוצר`);
   // Chains left out because they lack something on the list.
@@ -2175,6 +2188,18 @@ peopleSheet.addEventListener("click", onSheetAction);
 
 // ---------- List interactions ----------
 let suppressClick = false;
+// "להחליף": the item becomes the similar product this store sells (its own barcode).
+function swapToHere(id) {
+  const it = find(id);
+  const p = it && priceItem(ui.cat, it, ui.choices[norm(it.name)], {});
+  if (!p?.product) return;
+  backend.patch([id], { barcode: p.product.code, productName: p.product.name }).catch(fail);
+  ui.choices[norm(it.name)] = { code: p.product.code, name: p.product.name };
+  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), choices: ui.choices });
+  buzz(8);
+  showToast(`הוחלף ל${p.product.name}`, false);
+}
+
 function onListClick(e) {
   if (suppressClick) { suppressClick = false; return; }
   const btn = e.target.closest("[data-act]");
@@ -2185,6 +2210,7 @@ function onListClick(e) {
   switch (btn.dataset.act) {
     case "toggle": return toggle(id);
     case "edit": return openEdit(id);
+    case "swap": return swapToHere(id);
     case "inc": return changeQty(id, 1);
     case "dec": return changeQty(id, -1);
   }

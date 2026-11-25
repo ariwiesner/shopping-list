@@ -38,6 +38,10 @@ function pricesIn(cat, items, choices, club = false, refs = []) {
     return {
       total: p.total, est: p.kind === "estimate", sub: !!p.missingProduct, ref: !!p.reference && !p.similar,
       name: p.product?.name || null, kinds: p.kind === "estimate" ? p.count : null, // what was priced
+      // To tell identical products apart from similar ones: the barcode priced, and
+      // whether it's loose produce by its plain name ("עגבניה" by weight, comparable as is).
+      code: p.kind === "exact" ? p.product.code : null,
+      loose: p.kind === "exact" && !!p.product.weighted && !!p.auto && !p.missingProduct && !p.similar,
     };
   });
 }
@@ -149,13 +153,46 @@ function summarize(items, chains, branches, current) {
     });
     return { total: round(sum), missing, est, subs, subList };
   };
+  // Identical products: the same barcode in both stores (or loose produce by its plain
+  // name). Savings are counted on those only, so "חוסכים ₪5" never comes from a
+  // different product. The baseline is the user's store; with none, for each item the
+  // product most stores priced, at its middle price.
+  const same = (a, b) => !!a && !!b && !a.est && !b.est && ((!!a.code && a.code === b.code) || (a.loose && b.loose));
+  const all = [...chains, ...branches];
+  const base = items.map((_, i) => {
+    if (!counted[i]) return null;
+    if (mine) return mine.prices[i] && !mine.prices[i].est ? mine.prices[i] : null;
+    const groups = new Map();
+    for (const s of all) {
+      const p = s.prices[i];
+      if (!p || p.est) continue;
+      const k = p.loose ? "loose" : p.code;
+      if (k) groups.set(k, [...(groups.get(k) || []), p]);
+    }
+    const best = [...groups.values()].sort((a, b) => b.length - a.length)[0];
+    if (!best || best.length < 2) return null;
+    const ts = best.map((p) => p.total).sort((a, b) => a - b);
+    return { ...best[0], total: ts[ts.length >> 1] };
+  });
+  const versus = (prices) => {
+    let n = 0, here = 0, there = 0;
+    const diff = [];
+    prices.forEach((p, i) => {
+      if (!counted[i]) return;
+      if (base[i] && same(p, base[i])) { n++; here += p.total; there += base[i].total; return; }
+      diff.push({ item: items[i].name, qty: items[i].qty || 1, name: p?.name || null, total: p ? p.total : null, est: !!p?.est, missing: !p });
+    });
+    return { same: n, sameSave: round(there - here), diff };
+  };
+
   const out = {
     itemCount: items.length,
     counted: counted.filter(Boolean).length,
     // Items left out because the current store doesn't have them (but another chain does).
     excluded: mine ? items.filter((_, i) => !counted[i] && chains.some((c) => c.prices[i])).map((it) => it.name) : [],
-    chains: chains.map(({ prices, ...c }) => ({ ...c, ...total(prices) })),
-    branches: branches.map(({ prices, ...b }) => ({ ...b, ...total(prices) })),
+    chains: chains.map(({ prices, ...c }) => ({ ...c, ...total(prices), ...versus(prices) })),
+    branches: branches.map(({ prices, ...b }) => ({ ...b, ...total(prices), ...versus(prices) })),
+    baseline: mine ? "mine" : "typical",
     current: null,
   };
   if (mine) {
