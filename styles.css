@@ -387,7 +387,7 @@ h1 { margin: 2px 0 0; font-size: 18px; font-weight: 800; letter-spacing: 0; }
   display: flex; flex-direction: column;
   flex: 0 1 auto; min-height: 0;
 }
-.sheet .products, #listSwitcher, #shareBody .members, #dealsBody, .import-items {
+.sheet .products, .sheet .chain-list, #listSwitcher, #shareBody .members, #dealsBody, .import-items {
   flex: 0 1 auto; min-height: 96px; max-height: none;
   overflow-y: auto; overscroll-behavior: contain;
 }
@@ -1083,3 +1083,33 @@ body.asking-consent .content { padding-bottom: 130px; }
 #chainSheet { min-height: 75vh; }
 .stores-head { margin-bottom: 14px; }
 .deal-tip { margin: 6px 0 0; font-size: 13.5px; line-height: 1.45; color: var(--text); }
+
+/* ---------- The usual store ---------- */
+.star-btn {
+  flex: none; width: 44px; height: 44px; display: grid; place-items: center;
+  border-radius: 50%; color: var(--muted); transition: color .15s, transform .15s;
+}
+.star-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.star-btn.on { color: #f0a920; }
+.star-btn.on svg { fill: currentColor; }
+.star-btn:active { background: var(--surface-2); transform: scale(.9); }
+.chain-row { display: flex; align-items: center; gap: 4px; }
+.chain-row[hidden] { display: none; }
+.chain-row .chain-item { flex: 1; min-width: 0; }
+.chain-note { margin-top: -6px; margin-bottom: 10px; font-size: 13.5px; }
+.branch-row { display: flex; align-items: center; border-bottom: 1px solid var(--line); padding-inline-end: 4px; }
+.products li.branch-row:last-child { border-bottom: 0; }
+.branch-row .product { flex: 1; min-width: 0; border-bottom: 0; }
+
+.home-price {
+  width: 100%; margin: 0 0 12px; padding: 12px 16px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow);
+  text-align: start;
+}
+.home-price[hidden] { display: none; }
+.home-price:active { transform: scale(.99); }
+.home-price-text { min-width: 0; font-size: 13px; font-weight: 700; color: var(--muted); }
+.home-price-text b { display: block; margin-top: 1px; font-size: 15px; font-weight: 800; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-price-text small { display: block; margin-top: 2px; font-size: 12px; font-weight: 500; }
+.home-price strong { flex: none; font-size: 20px; font-weight: 800; letter-spacing: -.5px; color: var(--accent); font-variant-numeric: tabular-nums; }

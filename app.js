@@ -268,10 +268,10 @@ function itemHtml(it) {
 // An item's price in the selected store. A general item ("לחם") that the price comparison
 // matched to a product is priced on that same product, so the list and the comparison
 // show the same amount.
-function listPrice(it, opts) {
+function listPrice(it, opts, cat = ui.cat) {
   const choice = ui.choices[kindKey(it)];
-  const refs = !it.barcode && !choice && !(it.price > 0) && ui.cat ? ui.refs[kindKey(it)] : null;
-  return refs ? priceByReference(ui.cat, it, refs, opts) : priceItem(ui.cat, it, choice, opts);
+  const refs = !it.barcode && !choice && !(it.price > 0) && cat ? ui.refs[kindKey(it)] : null;
+  return refs ? priceByReference(cat, it, refs, opts) : priceItem(cat, it, choice, opts);
 }
 
 function render() {
@@ -314,6 +314,7 @@ function render() {
 
   renderTotal(items);
   renderMode();
+  renderHomePrice(items);
   renderStores();
   $("dealsBtn").hidden = !total || !ui.chains.length;
 
@@ -555,28 +556,67 @@ async function nearestBranch(chain, mayAsk) {
   loadStore(chain);
 }
 
-// ---------- Branch picker ----------
+// ---------- Chain and branch pickers, and the usual store ----------
+// Both sheets serve two purposes: where to shop now ("shop", from the wheel) or which store
+// is the usual one ("home", from the menu). In both, the star beside a chain or branch makes
+// it the usual store.
 const branchSheet = $("branchSheet");
+let chainPurpose = "shop";
+let branchCtx = { chain: null, purpose: "shop" };
+
+// The usual store: this device's own { chain, branch (null = all branches), branchName }, or null.
+const homeStore = () => (prefs.home?.chain && (!ui.chains.length || ui.chains.some((c) => c.id === prefs.home.chain)) ? prefs.home : null);
+const homeLabel = (h = homeStore()) => (h ? chainName(h.chain) + (h.branch ? ` · סניף ${h.branchName || h.branch}` : "") : "");
+const STAR_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg>';
+const starBtn = (on, data, what) => `<button type="button" class="star-btn${on ? " on" : ""}" data-star="${escapeHtml(String(data))}"
+  aria-pressed="${on}" aria-label="${on ? `הסרת ${escapeHtml(what)} מהחנות הקבועה` : `קביעת ${escapeHtml(what)} כחנות הקבועה`}">${STAR_SVG}</button>`;
+
+function setHome(chain, branch, quiet = false) {
+  const b = chain && branch ? ui.storeLists[chain]?.find((s) => s.id === branch) : null;
+  prefs.home = chain ? { chain, branch: branch || null, branchName: b?.name || null } : null;
+  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), home: prefs.home });
+  track("home_store", { store: chain || "none" });
+  buzz(12);
+  if (!quiet) showToast(chain ? `⭐ ${homeLabel()} נקבעה כחנות הקבועה שלך` : "החנות הקבועה הוסרה", false);
+  render();
+}
+
 // All chains as a plain list, for whoever prefers it to spinning the wheel.
-$("chainsBtn").addEventListener("click", () => {
-  const sel = currentStoreId() || "";
-  $("chainList").innerHTML = wheelItems().map((c, k) => `
-    <button type="button" class="sheet-item chain-item${c.id === sel ? " current" : ""}" data-k="${k}">
-      <span class="chain-logo">${STORE_LOGOS.has(c.id) ? `<img src="stores/${c.id}.png" alt="" />` : escapeHtml(c.name.slice(0, 2))}</span>
-      <span>${escapeHtml(c.name)}</span>
-      ${c.id === sel ? "<span class=\"chain-check\">✓</span>" : ""}
-    </button>`).join("");
+function openChainSheet(purpose = "shop") {
+  chainPurpose = purpose;
+  $("chainTitle").textContent = purpose === "home" ? "איפה קונים בדרך כלל?" : "איפה קונים היום?";
   $("chainSearch").value = "";
-  $("chainEmpty").hidden = true;
+  renderChainList();
   openSheet($("chainSheet"));
-});
+}
+function renderChainList() {
+  const h = homeStore();
+  const sel = chainPurpose === "home" ? h?.chain || "" : currentStoreId() || "";
+  const q = norm($("chainSearch").value);
+  let shown = 0;
+  $("chainList").innerHTML = wheelItems().map((c, k) => {
+    const hit = !q || norm(c.name).includes(q);
+    if (hit) shown++;
+    return `
+    <div class="chain-row"${hit ? "" : " hidden"}>
+      <button type="button" class="sheet-item chain-item${c.id === sel ? " current" : ""}" data-k="${k}">
+        <span class="chain-logo">${STORE_LOGOS.has(c.id) ? `<img src="stores/${c.id}.png" alt="" />` : escapeHtml(c.name.slice(0, 2))}</span>
+        <span>${escapeHtml(c.name)}</span>
+        ${c.id === sel ? "<span class=\"chain-check\">✓</span>" : ""}
+      </button>
+      ${starBtn(h?.chain === c.id, k, c.name)}
+    </div>`;
+  }).join("");
+  $("chainEmpty").hidden = shown > 0;
+}
+$("chainsBtn").addEventListener("click", () => openChainSheet("shop"));
 // Search the chains by name (any part of it; "פארם" finds both pharmacies).
 $("chainSearch").addEventListener("input", () => {
   const q = norm($("chainSearch").value);
   let shown = 0;
-  $("chainList").querySelectorAll(".chain-item").forEach((b) => {
-    const hit = !q || norm(b.textContent).includes(q);
-    b.hidden = !hit;
+  $("chainList").querySelectorAll(".chain-row").forEach((r) => {
+    const hit = !q || norm(r.querySelector(".chain-item").textContent).includes(q);
+    r.hidden = !hit;
     if (hit) shown++;
   });
   $("chainEmpty").hidden = shown > 0;
@@ -584,51 +624,136 @@ $("chainSearch").addEventListener("input", () => {
 $("chainSearch").addEventListener("keydown", (e) => {
   if (e.key !== "Enter") return;
   e.preventDefault();
-  $("chainList").querySelector(".chain-item:not([hidden])")?.click(); // Enter picks the first match
+  $("chainList").querySelector(".chain-row:not([hidden]) .chain-item")?.click(); // Enter picks the first match
 });
 $("chainList").addEventListener("click", (e) => {
+  const star = e.target.closest("[data-star]");
+  if (star) {
+    const c = wheelItems()[Number(star.dataset.star)];
+    if (!c) return;
+    // A chain's star: the whole chain, or the branch already picked for it when it's the one shown now.
+    if (homeStore()?.chain === c.id) setHome(null);
+    else setHome(c.id, c.id === currentStoreId() ? currentBranchId(c.id) : null);
+    renderChainList();
+    return;
+  }
   const b = e.target.closest("[data-k]");
   if (!b) return;
+  const k = Number(b.dataset.k);
+  if (chainPurpose === "home") {
+    const c = wheelItems()[k];
+    if (!c) return;
+    if (c.branches) { setHome(c.id, null, true); openBranchSheet(c.id, "home"); } // then which branch
+    else { setHome(c.id, null); closeSheets(); }
+    return;
+  }
   closeSheets();
-  spinToChain(Number(b.dataset.k)); // the wheel turns to it and selects it
+  spinToChain(k); // the wheel turns to it and selects it
 });
 
-$("branchBtn").addEventListener("click", async () => {
-  const chain = currentStoreId();
+async function openBranchSheet(chain, purpose = "shop") {
   if (!chain) return;
-  $("branchTitle").textContent = `באיזה סניף של ${ui.chains.find((c) => c.id === chain)?.name || ""}?`;
+  branchCtx = { chain, purpose };
+  $("branchTitle").textContent = purpose === "home" ? `באיזה סניף של ${chainName(chain)} קונים בדרך כלל?` : `באיזה סניף של ${chainName(chain)}?`;
   $("branchSearch").value = "";
   openSheet(branchSheet);
   renderBranches();
-  try { ui.storeLists[chain] = await loadStores(chain); renderBranches(); }
+  try { ui.storeLists[chain] = await loadStores(chain); if (branchCtx.chain === chain) renderBranches(); }
   catch (e) { console.error(e); $("branchList").innerHTML = `<li class="products-empty">לא הצלחנו לטעון את רשימת הסניפים</li>`; }
-});
+}
+$("branchBtn").addEventListener("click", () => openBranchSheet(currentStoreId(), "shop"));
 $("branchSearch").addEventListener("input", () => renderBranches());
 $("branchSearch").addEventListener("keydown", (e) => { if (e.key === "Enter") e.preventDefault(); });
 
 function renderBranches() {
-  const chain = currentStoreId();
+  const { chain, purpose } = branchCtx;
   const list = ui.storeLists[chain];
-  const sel = currentBranchId(chain);
+  const h = homeStore();
+  const homeHere = h?.chain === chain ? h.branch || "" : null; // the usual branch at this chain ("" = all)
+  const sel = purpose === "home" ? homeHere : currentBranchId(chain) || "";
   if (!list) { $("branchList").innerHTML = `<li class="products-empty">טוען סניפים…</li>`; return; }
   const q = norm($("branchSearch").value);
   const shown = q ? list.filter((s) => norm(`${s.name} ${s.city} ${s.address}`).includes(q)) : list;
   const where = (s) => [s.city, s.address].filter(Boolean).join(" · ");
-  const row = (id, title, sub, selected) => `
-    <li><button type="button" class="product${selected ? " selected" : ""}" data-branch="${escapeHtml(id)}" role="option" aria-selected="${selected}">
+  const row = (id, title, sub) => `
+    <li class="branch-row"><button type="button" class="product${id === sel ? " selected" : ""}" data-branch="${escapeHtml(id)}" role="option" aria-selected="${id === sel}">
       <span class="product-name">${title}${sub ? `<small>${sub}</small>` : ""}</span>
-    </button></li>`;
+    </button>${starBtn(id === homeHere, id, id ? "הסניף" : "הרשת")}</li>`;
   $("branchList").innerHTML =
-    (q ? "" : row("", "כל הסניפים", "המחיר הנפוץ ברוב הסניפים של הרשת", !sel)) +
-    shown.map((s) => row(s.id, escapeHtml(s.name), escapeHtml(where(s)), s.id === sel)).join("") +
+    (q ? "" : row("", "כל הסניפים", "המחיר הנפוץ ברוב הסניפים של הרשת")) +
+    shown.map((s) => row(s.id, escapeHtml(s.name), escapeHtml(where(s)))).join("") +
     (q && !shown.length ? `<li class="products-empty">לא מצאנו סניף כזה</li>` : "");
 }
 
 $("branchList").addEventListener("click", (e) => {
+  const { chain, purpose } = branchCtx;
+  const star = e.target.closest("[data-star]");
+  if (star) {
+    const id = star.dataset.star || null;
+    const h = homeStore();
+    setHome(h && h.chain === chain && (h.branch || null) === id ? null : chain, id);
+    renderBranches();
+    return;
+  }
   const b = e.target.closest("[data-branch]");
   if (!b) return;
-  selectBranch(b.dataset.branch || null);
+  if (purpose === "home") setHome(chain, b.dataset.branch || null);
+  else selectBranch(b.dataset.branch || null);
   closeSheets();
+});
+
+// "In your usual store: ₪X", above the list in the plain list mode. Prices the list at the
+// usual store (its branch prices when one is set), loaded on its own beside the store shown.
+const homeKey = (h) => `${h.chain}|${h.branch || ""}`;
+let homeLoading = null;
+async function loadHome(h) {
+  const key = homeKey(h);
+  if (ui.homeCat?.key === key || homeLoading === key) return;
+  homeLoading = key;
+  let cat = null;
+  try {
+    cat = await loadChain(h.chain);
+    if (h.branch) {
+      try { cat = await loadBranch(cat, h.branch); }
+      catch (e) { console.warn("Branch prices unavailable, using chain prices", e); }
+    }
+  } catch (e) { console.error(e); }
+  if (homeLoading !== key) return;
+  homeLoading = null;
+  ui.homeCat = { key, cat };
+  render();
+}
+function renderHomePrice(items) {
+  const el = $("homePrice");
+  const h = homeStore();
+  const show = !!h && viewMode() === MODE_LIST && items.length > 0;
+  const ready = show && ui.homeCat?.key === homeKey(h);
+  el.hidden = !show || (ready && !ui.homeCat.cat); // couldn't load its prices: say nothing
+  if (!show) return;
+  if (!ready) loadHome(h);
+  let amount = `<span class="skel skel-total"></span>`, note = "לחצו כדי להשוות לחנויות אחרות";
+  if (ready && ui.homeCat.cat) {
+    const cat = ui.homeCat.cat, opts = { club: isClubMember(cat.id) };
+    const basket = items.reduce((a, it) => a + listPrice(it, { ...opts, basket: 0 }, cat).total, 0);
+    let sum = 0, est = 0, none = 0;
+    for (const it of items) {
+      const p = listPrice(it, { ...opts, basket }, cat);
+      sum += p.total;
+      if (p.kind === "estimate") est++;
+      if (p.kind === "none") none++;
+    }
+    amount = (est ? "~" : "") + money(sum);
+    if (none) note = `${none === 1 ? "פריט אחד" : `${none} פריטים`} בלי מחיר שם · ${note}`;
+  }
+  el.innerHTML = `<span class="home-price-text">⭐ בחנות הקבועה שלך<b>${escapeHtml(homeLabel(h))}</b><small>${note}</small></span>
+    <strong dir="ltr">${amount}</strong>`;
+}
+// Tap: compare, starting from the usual store.
+$("homePrice").addEventListener("click", () => {
+  const h = homeStore();
+  if (!h) return;
+  chooseStore(h.chain, h.branch);
+  setMode(MODE_COMPARE);
 });
 
 // ---------- Where is it cheapest? ----------
@@ -1773,6 +1898,12 @@ function renderMenu() {
       ? `<hr class="sheet-sep" />
          <button class="sheet-item" data-action="sign-in">👤 <span>התחברות עם Google — לשיתוף ולגיבוי הרשימה</span></button>`
       : "";
+  const h = homeStore();
+  $("homeRow").innerHTML = !ui.chains.length ? "" : `<hr class="sheet-sep" />
+    <div class="list-row">
+      <button class="sheet-item" data-action="home-store">⭐ <span>${h ? `החנות הקבועה שלי: ${escapeHtml(homeLabel(h))}` : "לבחור חנות קבועה"}</span></button>
+      ${h ? `<button type="button" class="link-btn" data-action="home-clear">הסרה</button>` : ""}
+    </div>`;
 }
 
 // "Are you sure?" for destructive actions.
@@ -1866,6 +1997,10 @@ menuSheet.addEventListener("click", (e) => {
     openCloudList(el.dataset.list);
   } else if (action === "privacy") {
     openPrivacy();
+  } else if (action === "home-store") {
+    openChainSheet("home");
+  } else if (action === "home-clear") {
+    setHome(null);
   } else if (action === "new-list") {
     newList();
   } else if (action === "delete-list") {
