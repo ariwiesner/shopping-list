@@ -142,6 +142,8 @@
       </section>
 
       <section id="todoSection">
+        <!-- What the list costs at the usual store (plain list mode, when one is set) -->
+        <button type="button" class="home-price" id="homePrice" hidden></button>
         <p class="lock-banner" id="lockBanner" hidden></p>
         <div class="list-head" id="todoHead" hidden>
           <span>לקנות <span class="pill" id="todoCount">0</span></span>
@@ -185,6 +187,8 @@
     <h3 id="sheetTitle">אפשרויות רשימה</h3>
     <div id="listSwitcher"></div>
     <div id="accountRow"></div>
+    <!-- The usual store (chain and branch): its total shows above the list -->
+    <div id="homeRow"></div>
     <button class="sheet-item" data-action="privacy">🔒 <span>פרטיות</span></button>
     <button class="sheet-item cancel" data-action="close">ביטול</button>
   </div>
@@ -302,6 +306,7 @@
   <div class="sheet" id="chainSheet" role="dialog" aria-modal="true" aria-labelledby="chainTitle" hidden>
     <div class="sheet-handle" aria-hidden="true"></div>
     <h3 id="chainTitle">איפה קונים היום?</h3>
+    <p class="sheet-note chain-note">סמנו ⭐ ליד החנות שבה אתם קונים בדרך כלל</p>
     <input type="search" class="chain-search" id="chainSearch" placeholder="חיפוש רשת…" aria-label="חיפוש רשת" autocomplete="off" enterkeyhint="search" />
     <div class="chain-list" id="chainList"></div>
     <p class="chain-empty" id="chainEmpty" hidden>לא מצאנו רשת בשם הזה</p>
