@@ -194,6 +194,23 @@ def src_laib(edi):
     return source
 
 
+def src_bina(prefix):
+    """<prefix>.binaprojects.com (Zol VeBegadol, Shuk HaIr, Bareket, King Store, Super
+    Sapir): MainIO_Hok.aspx lists files by type (1 stores, 4 PriceFull, 5 PromoFull,
+    with past days too); each downloads from /Download/<name>."""
+    def source():
+        base = f"https://{prefix}.binaprojects.com"
+        def of(kind):
+            body = urllib.parse.urlencode({"WStore": "", "WDate": "", "WFileType": kind}).encode()
+            return [x["FileNm"] for x in json.loads(fetch(base + "/MainIO_Hok.aspx", data=body, timeout=90)) if x.get("FileNm")]
+        url = lambda n: f"{base}/Download/{n}"
+        files = [{"store": store_id_of(n), "url": url(n), "file": n} for n in of(4) if n.lower().startswith("pricefull")]
+        promos = [{"store": store_id_of(n), "url": url(n), "file": n} for n in of(5) if n.lower().startswith("promofull")]
+        stores = sorted((n for n in of(1) if n.lower().startswith("store")), key=stamp_of)
+        return files, (url(stores[-1]) if stores else None), fetch, promos
+    return source
+
+
 CHAINS = [
     {"id": "shufersal", "name": "שופרסל", "color": "#d71f26", "source": src_shufersal},
     {"id": "rami-levy", "name": "רמי לוי", "color": "#0a5bab", "source": src_cerberus("RamiLevi")},
@@ -210,6 +227,11 @@ CHAINS = [
     {"id": "stop-market", "name": "סטופ מרקט", "color": "#e2231a", "source": src_cerberus("Stop_Market")},
     {"id": "politzer", "name": "פוליצר", "color": "#1b75bb", "source": src_cerberus("politzer")},
     {"id": "salach-dabach", "name": "סאלח דבאח", "color": "#00924a", "source": src_cerberus("SalachD")},
+    {"id": "zol-vebegadol", "name": "זול ובגדול", "color": "#ed1c24", "source": src_bina("zolvebegadol")},
+    {"id": "shuk-hair", "name": "שוק העיר", "color": "#f58220", "source": src_bina("shuk-hayir")},
+    {"id": "bareket", "name": "ברקת", "color": "#00a3e0", "source": src_bina("superbareket")},
+    {"id": "king-store", "name": "קינג סטור", "color": "#b8860b", "source": src_bina("kingstore")},
+    {"id": "super-sapir", "name": "סופר ספיר", "color": "#1f9d55", "source": src_bina("supersapir")},
 ]
 
 
