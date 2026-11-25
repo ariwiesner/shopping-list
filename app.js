@@ -313,6 +313,7 @@ function render() {
   doneList.hidden = !ui.doneOpen;
 
   renderTotal(items);
+  renderMode();
   renderStores();
   $("dealsBtn").hidden = !total || !ui.chains.length;
 
@@ -393,7 +394,42 @@ const canWriteList = () => backend === cloud && !!ui.list && !lockedForMe();
 const ownerFirstName = () => (ui.members.find((m) => m.id === ui.list?.ownerId)?.name || "").split(" ")[0] || "יוצר/ת הרשימה";
 function lockedNotice() { buzz(20); showToast(`🔒 הרשימה נעולה. רק ${ownerFirstName()} יכול/ה לשנות אותה`, false); }
 const storeChoice = () => (lockedForMe() ? prefs.store || ui.list?.store : (backend === cloud && ui.list?.store) || prefs.store) || null;
-const currentStoreId = () => { const s = storeChoice(); return s && s !== NO_STORE ? s : null; };
+// The view mode is this device's own: "list" (a plain list, no prices) or "compare" (the store
+// wheel, prices, totals and "where is it cheapest"). Before the switch existed, the mode followed
+// the store picked on this device: a chain meant comparing, "no store" (or nothing) a plain list.
+const MODE_LIST = "list", MODE_COMPARE = "compare";
+const viewMode = () => (prefs.mode === MODE_LIST || prefs.mode === MODE_COMPARE ? prefs.mode
+  : prefs.store && prefs.store !== NO_STORE ? MODE_COMPARE : MODE_LIST);
+const knownChain = (id) => !!id && id !== NO_STORE && (!ui.chains.length || ui.chains.some((c) => c.id === id));
+// When comparing there's always a store: the list's (or this device's) choice, else the last
+// chain used here, else the first chain.
+const currentStoreId = () => (viewMode() === MODE_LIST ? null
+  : [storeChoice(), prefs.lastChain].find(knownChain) || ui.chains[0]?.id || null);
+
+function setMode(mode) {
+  if (mode === viewMode()) return;
+  track("view_mode", { mode });
+  prefs.mode = mode;
+  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), mode });
+  buzz(8);
+  const chain = currentStoreId();
+  loadStore(chain); // re-renders (no store = no prices)
+  if (chain) { requestAnimationFrame(layoutWheel); nearestBranch(chain, false); }
+}
+$("modeSwitch").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-mode]");
+  if (b) setMode(b.dataset.mode);
+});
+function renderMode() {
+  const mode = viewMode();
+  $("modeSwitch").querySelectorAll("[data-mode]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.mode === mode)));
+  $("storesSection").hidden = mode === MODE_LIST;
+}
+const rememberChain = (id) => {
+  if (!id || prefs.lastChain === id) return;
+  prefs.lastChain = id;
+  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), lastChain: id });
+};
 
 function renderStores() {
   const sel = currentStoreId();
@@ -415,8 +451,7 @@ function renderStores() {
   $("branchName").textContent = !b ? "כל הסניפים — מחיר נפוץ ברשת"
     : (branch ? `סניף ${branch.name}${branch.city && !branch.name.includes(branch.city) ? `, ${branch.city}` : ""}` : `סניף ${b}`)
       + (isAutoBranch(sel) && !userPickedBranch(sel) ? " · הקרוב אליך" : "");
-  $("storeNote").textContent = !sel
-    ? "רשימה בלי מחירים · סובבו לחנות כדי לראות כמה הקנייה תעלה"
+  $("storeNote").textContent = !sel ? ""
     : ui.catError ? "לא הצלחנו לטעון את המחירים. נסו שוב."
     : ui.catId === sel && (!ui.cat || ui.cat.id !== sel || (ui.cat.branch || null) !== b) ? "טוען מחירים…"
     : c ? `המחירים עודכנו ב־${new Date(c.updated).toLocaleDateString("he-IL")}` : "";
@@ -452,6 +487,7 @@ async function loadStore(id) {
 // id: a chain id, or null for a plain list with no store (no prices).
 function selectStore(id) {
   if (id) track("select_store", { store: id });
+  rememberChain(id);
   requestAnimationFrame(layoutWheel);
   const choice = id || NO_STORE;
   if (choice === storeChoice()) return loadStore(id || null);
@@ -526,8 +562,8 @@ $("chainsBtn").addEventListener("click", () => {
   const sel = currentStoreId() || "";
   $("chainList").innerHTML = wheelItems().map((c, k) => `
     <button type="button" class="sheet-item chain-item${c.id === sel ? " current" : ""}" data-k="${k}">
-      <span class="chain-logo">${c === NO_STORE_SLOT ? NO_STORE_ICON : STORE_LOGOS.has(c.id) ? `<img src="stores/${c.id}.png" alt="" />` : escapeHtml(c.name.slice(0, 2))}</span>
-      <span>${escapeHtml(c.name)}${c === NO_STORE_SLOT ? ` <small>רשימה בלי מחירים</small>` : ""}</span>
+      <span class="chain-logo">${STORE_LOGOS.has(c.id) ? `<img src="stores/${c.id}.png" alt="" />` : escapeHtml(c.name.slice(0, 2))}</span>
+      <span>${escapeHtml(c.name)}</span>
       ${c.id === sel ? "<span class=\"chain-check\">✓</span>" : ""}
     </button>`).join("");
   $("chainSearch").value = "";
@@ -659,6 +695,7 @@ function cityPicker() {
 
 function chooseStore(chain, branch) {
   track("compare_pick_store", { store: chain });
+  rememberChain(chain);
   prefs.store = chain;
   saveBranch(chain, branch || null, false);
   store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), store: chain });
@@ -917,12 +954,10 @@ const STORE_LOGOS = new Set(["shufersal", "carrefour", "hazi-hinam", "rami-levy"
   "zol-vebegadol", "shuk-hair", "bareket", "king-store", "super-sapir",
   "politzer", "het-cohen", "maayan-2000", "shefa-birkat-hashem", "city-market", "alonit", "super-pharm", "good-pharm", "netiv-hesed"]);
 
-const NO_STORE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg>';
 const mod = (a, n) => ((a % n) + n) % n;
 const wrapDist = (d, n) => { d = mod(d, n); return d > n / 2 ? d - n : d; };
-// The first slot on the wheel is "no store": a plain list without prices.
-const NO_STORE_SLOT = { id: "", name: "בלי חנות", color: "#8a8f98" };
-const wheelItems = () => (ui.chains.length ? [NO_STORE_SLOT, ...ui.chains] : []);
+// The wheel holds the chains only: a plain list without prices is the "list" mode.
+const wheelItems = () => ui.chains;
 const wheelIndex = () => { const n = wheelItems().length; return n ? mod(Math.round(wheel.rot), wheel.slots) % n : -1; };
 
 function buildWheel() {
@@ -937,8 +972,7 @@ function buildWheel() {
     slots.map((c, s) => `
       <button class="store" data-slot="${s}" tabindex="-1" aria-hidden="${s >= n}"
               style="--store-color:${/^#[0-9a-f]{6}$/i.test(c.color) ? c.color : "#2f9e6b"}">
-        <span class="store-circle${c === NO_STORE_SLOT ? " no-store" : ""}">${c === NO_STORE_SLOT ? NO_STORE_ICON
-          : STORE_LOGOS.has(c.id) ? `<img src="stores/${c.id}.png" alt="" draggable="false" />`
+        <span class="store-circle">${STORE_LOGOS.has(c.id) ? `<img src="stores/${c.id}.png" alt="" draggable="false" />`
           : escapeHtml(c.name.split(" ").map((w) => w[0]).join("").slice(0, 2))}</span>
         <span class="store-name">${escapeHtml(c.name)}</span>
       </button>`).join("");
@@ -1126,9 +1160,9 @@ async function initStores() {
     ui.catError = true;
   }
   render();
-  // New users start on "no store" (a plain list); a store that no longer exists falls back to it too.
-  if (currentStoreId() && ui.chains.length && !ui.chains.some((c) => c.id === currentStoreId())) selectStore(null);
-  else loadStore(currentStoreId());
+  // New users start in the plain list mode. When comparing, a store that no longer exists
+  // falls back to another chain (see currentStoreId).
+  loadStore(currentStoreId());
   nearestBranch(currentStoreId(), false); // follow the user if their branch was picked as the nearest
 }
 
