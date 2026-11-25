@@ -1,21 +1,21 @@
 {
- "generated": "2026-11-25T08:06Z",
+ "generated": "2026-11-25T13:32Z",
  "chains": [
   {
    "id": "shufersal",
    "name": "שופרסל",
    "color": "#d71f26",
-   "count": 38754,
-   "branches": 414,
-   "updated": "2026-11-24T11:44Z"
+   "count": 38805,
+   "branches": 426,
+   "updated": "2026-11-25T13:20Z"
   },
   {
    "id": "rami-levy",
    "name": "רמי לוי",
    "color": "#0a5bab",
-   "count": 26235,
+   "count": 26355,
    "branches": 98,
-   "updated": "2026-11-24T10:52Z"
+   "updated": "2026-11-25T13:23Z"
   },
   {
    "id": "carrefour",
@@ -29,17 +29,17 @@
    "id": "yochananof",
    "name": "יוחננוף",
    "color": "#e4002b",
-   "count": 18201,
+   "count": 18213,
    "branches": 47,
-   "updated": "2026-11-24T10:59Z"
+   "updated": "2026-11-25T13:29Z"
   },
   {
    "id": "osher-ad",
    "name": "אושר עד",
    "color": "#f7a600",
-   "count": 9608,
+   "count": 9618,
    "branches": 24,
-   "updated": "2026-11-24T10:59Z"
+   "updated": "2026-11-25T13:30Z"
   },
   {
    "id": "hazi-hinam",
@@ -53,169 +53,9 @@
    "id": "tiv-taam",
    "name": "טיב טעם",
    "color": "#00843d",
-   "count": 32339,
+   "count": 32292,
    "branches": 53,
-   "updated": "2026-11-24T11:03Z"
-  },
-  {
-   "id": "victory",
-   "name": "ויקטורי",
-   "color": "#f47920",
-   "count": 17035,
-   "branches": 64,
-   "updated": "2026-11-25T07:12Z"
-  },
-  {
-   "id": "mahsanei-hashuk",
-   "name": "מחסני השוק",
-   "color": "#00843d",
-   "count": 28038,
-   "branches": 72,
-   "updated": "2026-11-25T07:16Z"
-  },
-  {
-   "id": "het-cohen",
-   "name": "היפר כהן",
-   "color": "#f2c500",
-   "count": 14770,
-   "branches": 5,
-   "updated": "2026-11-25T07:44Z"
-  },
-  {
-   "id": "freshmarket",
-   "name": "פרשמרקט",
-   "color": "#d7141a",
-   "count": 19722,
-   "branches": 46,
-   "updated": "2026-11-25T07:17Z"
-  },
-  {
-   "id": "keshet",
-   "name": "קשת טעמים",
-   "color": "#2e3192",
-   "count": 21077,
-   "branches": 2,
-   "updated": "2026-11-25T07:17Z"
-  },
-  {
-   "id": "stop-market",
-   "name": "סטופ מרקט",
-   "color": "#c8102e",
-   "count": 24950,
-   "branches": 11,
-   "updated": "2026-11-25T07:18Z"
-  },
-  {
-   "id": "politzer",
-   "name": "פוליצר",
-   "color": "#e2231a",
-   "count": 23163,
-   "branches": 8,
-   "updated": "2026-11-25T07:45Z"
-  },
-  {
-   "id": "salach-dabach",
-   "name": "סאלח דבאח",
-   "color": "#e30613",
-   "count": 23258,
-   "branches": 6,
-   "updated": "2026-11-25T07:06Z"
-  },
-  {
-   "id": "zol-vebegadol",
-   "name": "זול ובגדול",
-   "color": "#e30613",
-   "count": 16361,
-   "branches": 34,
-   "updated": "2026-11-25T07:13Z"
-  },
-  {
-   "id": "shuk-hair",
-   "name": "שוק העיר",
-   "color": "#2e9e48",
-   "count": 13863,
-   "branches": 25,
-   "updated": "2026-11-25T07:13Z"
-  },
-  {
-   "id": "bareket",
-   "name": "ברקת",
-   "color": "#f2a900",
-   "count": 12046,
-   "branches": 14,
-   "updated": "2026-11-25T07:13Z"
-  },
-  {
-   "id": "king-store",
-   "name": "קינג סטור",
-   "color": "#c8102e",
-   "count": 15323,
-   "branches": 48,
-   "updated": "2026-11-25T07:14Z"
-  },
-  {
-   "id": "super-sapir",
-   "name": "סופר ספיר",
-   "color": "#3aa655",
-   "count": 23881,
-   "branches": 89,
-   "updated": "2026-11-25T07:14Z"
-  },
-  {
-   "id": "maayan-2000",
-   "name": "מעיין 2000",
-   "color": "#e31e24",
-   "count": 12129,
-   "branches": 38,
-   "updated": "2026-11-25T07:45Z"
-  },
-  {
-   "id": "shefa-birkat-hashem",
-   "name": "שפע ברכת השם",
-   "color": "#00a651",
-   "count": 9797,
-   "branches": 22,
-   "updated": "2026-11-25T07:46Z"
-  },
-  {
-   "id": "city-market",
-   "name": "סיטי מרקט",
-   "color": "#e31e24",
-   "count": 14002,
-   "branches": 24,
-   "updated": "2026-11-25T07:46Z"
-  },
-  {
-   "id": "alonit",
-   "name": "אלונית",
-   "color": "#6ab023",
-   "count": 16221,
-   "branches": 156,
-   "updated": "2026-11-25T07:48Z"
-  },
-  {
-   "id": "netiv-hesed",
-   "name": "נתיב החסד",
-   "color": "#d71920",
-   "count": 18003,
-   "branches": 91,
-   "updated": "2026-11-25T07:56Z"
-  },
-  {
-   "id": "super-pharm",
-   "name": "סופר-פארם",
-   "color": "#e2001a",
-   "count": 22219,
-   "branches": 306,
-   "updated": "2026-11-25T08:01Z"
-  },
-  {
-   "id": "good-pharm",
-   "name": "גוד פארם",
-   "color": "#222222",
-   "count": 15536,
-   "branches": 83,
-   "updated": "2026-11-25T08:02Z"
+   "updated": "2026-11-25T13:31Z"
   }
  ]
 }
