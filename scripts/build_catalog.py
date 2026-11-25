@@ -221,17 +221,21 @@ CHAINS = [
     {"id": "tiv-taam", "name": "טיב טעם", "color": "#00843d", "source": src_cerberus("TivTaam")},
     {"id": "victory", "name": "ויקטורי", "color": "#f47920", "source": src_laib("7290696200003")},
     {"id": "mahsanei-hashuk", "name": "מחסני השוק", "color": "#00843d", "source": src_laib("7290661400001")},
-    {"id": "het-cohen", "name": "ח. כהן", "color": "#b5121b", "source": src_laib("7290455000004")},
+    {"id": "het-cohen", "name": "היפר כהן", "color": "#f2c500", "source": src_laib("7290455000004")},
     {"id": "freshmarket", "name": "פרשמרקט", "color": "#d7141a", "source": src_cerberus("freshmarket")},
     {"id": "keshet", "name": "קשת טעמים", "color": "#2e3192", "source": src_cerberus("Keshet")},
     {"id": "stop-market", "name": "סטופ מרקט", "color": "#c8102e", "source": src_cerberus("Stop_Market")},
-    {"id": "politzer", "name": "פוליצר", "color": "#1b75bb", "source": src_cerberus("politzer")},
+    {"id": "politzer", "name": "פוליצר", "color": "#e2231a", "source": src_cerberus("politzer")},
     {"id": "salach-dabach", "name": "סאלח דבאח", "color": "#e30613", "source": src_cerberus("SalachD")},
     {"id": "zol-vebegadol", "name": "זול ובגדול", "color": "#e30613", "source": src_bina("zolvebegadol")},
     {"id": "shuk-hair", "name": "שוק העיר", "color": "#2e9e48", "source": src_bina("shuk-hayir")},
     {"id": "bareket", "name": "ברקת", "color": "#f2a900", "source": src_bina("superbareket")},
     {"id": "king-store", "name": "קינג סטור", "color": "#c8102e", "source": src_bina("kingstore")},
     {"id": "super-sapir", "name": "סופר ספיר", "color": "#3aa655", "source": src_bina("supersapir")},
+    {"id": "maayan-2000", "name": "מעיין 2000", "color": "#e31e24", "source": src_bina("maayan2000")},
+    {"id": "shefa-birkat-hashem", "name": "שפע ברכת השם", "color": "#00a651", "source": src_bina("shefabirkathashem")},
+    {"id": "city-market", "name": "סיטי מרקט", "color": "#e31e24", "source": src_bina("citymarketkiryatgat")},
+    {"id": "alonit", "name": "אלונית", "color": "#6ab023", "source": src_cerberus("doralon")},
 ]
 
 
