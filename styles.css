@@ -1067,3 +1067,4 @@ body.asking-consent .content { padding-bottom: 130px; }
 .chain-item[hidden] { display: none; }
 .chain-empty { margin: 8px 4px; color: var(--muted); font-size: 14px; }
 #chainSheet { min-height: 75vh; }
+.stores-head { margin-bottom: 14px; }
