@@ -44,10 +44,14 @@ export const norm = (s) =>
     .trim();
 
 // Rough Hebrew stem so singular/plural match: עגבניות/עגבניה → עגבני, ביצים/ביצה → ביצ
+// Once a suffix is cut, the new last letter takes its final form, as it would in the
+// singular: "מלפפונים" → "מלפפונ" → "מלפפון", the same as "מלפפון" itself.
+const FINAL = { "נ": "ן", "מ": "ם", "צ": "ץ", "פ": "ף", "כ": "ך" };
+const final = (w) => w.slice(0, -1) + (FINAL[w.slice(-1)] || w.slice(-1));
 export function stem(w) {
-  if (w.length >= 4 && /(ים|ות)$/.test(w)) return w.slice(0, -2);
-  if (w.length >= 4 && /ה$/.test(w)) return w.slice(0, -1);
-  if (w.length >= 5 && /ת$/.test(w)) return w.slice(0, -1); // "גלידת" (construct) = "גלידה"
+  if (w.length >= 4 && /(ים|ות)$/.test(w)) return final(w.slice(0, -2));
+  if (w.length >= 4 && /ה$/.test(w)) return final(w.slice(0, -1));
+  if (w.length >= 5 && /ת$/.test(w)) return final(w.slice(0, -1)); // "גלידת" (construct) = "גלידה"
   return w;
 }
 const words = (s) => norm(s).split(" ").filter(Boolean);
@@ -416,12 +420,14 @@ export function priceByReference(cat, item, refs, opts = {}) {
     const both = [...a].filter((x) => b.has(x)).length;
     return both / (a.size + b.size - both || 1);
   };
-  const near = refs.slice(1).filter((r) => cat.byCode.has(r.code) && r.price <= main.price * 1.6 && r.price >= main.price / 1.6)
+  const marks = kashrut(main.name);
+  const keeps = (name) => marks.every((m) => kashrut(name).includes(m));
+  const near = refs.slice(1).filter((r) => cat.byCode.has(r.code) && keeps(r.name) && r.price <= main.price * 1.6 && r.price >= main.price / 1.6)
     .map((r) => ({ r, s: sim(r) })).filter((x) => x.s >= 0.5)
     .sort((a, b) => b.s - a.s || Math.abs(a.r.price - main.price) - Math.abs(b.r.price - main.price))[0];
   if (near) return { ...priceItem(cat, { ...item, barcode: near.r.code }, null, opts), reference: true, similar: true };
   if (main.like) {
-    const qty = item.qty || 1, like = main.like;
+    const qty = item.qty || 1, like = [main.like, ...marks.filter((m) => !kashrut(main.like).includes(m))].join(" ");
     const auto = resolve(cat, like);
     if (auto) {
       const deal = dealFor(cat, auto, qty, opts);
@@ -432,6 +438,13 @@ export function priceByReference(cat, item, refs, opts = {}) {
     if (est && est.fit === "all") return { kind: "estimate", unit: est.price, total: round(est.price * qty), ...est, similar: true };
   }
   return priceItem(cat, item, null, opts);
+}
+
+// Kashrut marks in a product name (normalized): a stand-in must carry the same ones, so a
+// kosher product is never replaced by one that isn't (or by a lower certification).
+const KASHRUT = { "מהדרין": "מהדרין", "בדצ": "בדצ", "בדץ": "בדצ", "גלאט": "גלאט", "עדח": "עדח", "לנדא": "לנדא", "לפסח": "לפסח", "כשלפ": "לפסח", "רובין": "רובין" };
+export function kashrut(name) {
+  return [...new Set(words(name || "").map((w) => KASHRUT[w]).filter(Boolean))];
 }
 
 // Typical price for a vague item name like "גבינה".
@@ -476,7 +489,47 @@ export function dealFor(cat, product, qty, opts = {}) {
   return { ...best, applied, total, saving: round(unit * qty - total), clubHint };
 }
 
+// Produce sold by weight but counted in units on a list ("2 עגבניות" = two tomatoes, not
+// 2 kg): a typical weight per unit, in kg. Names not listed here keep counting in kg.
+const UNIT_KG = [
+  ["תפוחי אדמה", 0.2], ["תפוח אדמה", 0.2], ["תפוחי עץ", 0.18], ["תפוח עץ", 0.18],
+  ["עגבני", 0.15], ["מלפפו", 0.13], ["בצל", 0.18], ["תפוח", 0.18], ["גזר", 0.1], ["פלפל", 0.2],
+  ["חציל", 0.35], ["קישוא", 0.25], ["בטט", 0.3], ["אבוקדו", 0.25], ["לימו", 0.12], ["תפוז", 0.25],
+  ["קלמנטינ", 0.1], ["אשכולי", 0.35], ["בננ", 0.18], ["אגס", 0.2], ["אפרסק", 0.15], ["נקטרינ", 0.15],
+  ["שזיף", 0.07], ["מנגו", 0.35], ["קיווי", 0.08], ["רימו", 0.3], ["כרובי", 1.0], ["כרוב", 1.2],
+  ["ברוקולי", 0.4], ["סלק", 0.2], ["צנו", 0.1], ["קולרבי", 0.3], ["דלעת", 1.5], ["אבטיח", 6],
+  ["מלו", 1.5], ["אננס", 1.2], ["פומל", 1], ["חס", 0.4], ["שום", 0.05], ["אפרסמו", 0.2], ["פפאיה", 0.8],
+];
+export function unitKg(name) {
+  const n = norm(name);
+  for (const [k, kg] of UNIT_KG) {
+    if (k.includes(" ") ? n.includes(k) : words(n).some((w) => w.startsWith(k))) return kg;
+  }
+  return null;
+}
+
+// A replacement the user approved for this chain (item.alts[chain] = { code, name }): priced
+// instead of the chosen product here only; the item keeps its own product everywhere else.
+export function withAlt(cat, item) {
+  const alt = cat && item.alts?.[cat.id];
+  return alt && cat.byCode.has(alt.code) && !(item.barcode && cat.byCode.has(item.barcode))
+    ? { ...item, barcode: alt.code, productName: alt.name, _alt: true } : item;
+}
+
+// An item's price, with weighed produce counted in units unless the item says kg.
 export function priceItem(cat, item, choice, opts = {}) {
+  const it2 = withAlt(cat, item);
+  if (it2 !== item) return { ...priceItem(cat, it2, null, opts), alt: true };
+  const p = priceItemByKg(cat, item, choice, opts);
+  if (!p.weighted || p.kind === "manual" || p.kind === "none") return p;
+  const per = item.unit === "kg" ? null : unitKg(item.name) || unitKg(p.product?.name || "");
+  if (!per) return { ...p, byKg: true, kg: item.qty || 1 };
+  const k = per, sc = (v) => (typeof v === "number" ? round(v * k) : v);
+  return { ...p, total: sc(p.total), regular: sc(p.regular), unitKg: per, kg: round((item.qty || 1) * per),
+    deal: p.deal ? { ...p.deal, total: sc(p.deal.total), saving: sc(p.deal.saving) } : p.deal };
+}
+
+function priceItemByKg(cat, item, choice, opts = {}) {
   const qty = item.qty || 1;
   if (typeof item.price === "number" && item.price > 0) {
     return { kind: "manual", unit: item.price, total: round(item.price * qty) };
@@ -495,8 +548,13 @@ export function priceItem(cat, item, choice, opts = {}) {
   // When a specific product was chosen and this store doesn't sell it, only a product
   // with every detail of the name stands in for it: "חלב עמיד 3%" (long-life) isn't sold
   // at every chain, and fresh milk is not the same thing. Otherwise it's "not sold here".
+  // Kashrut is kept: a stand-in for a מהדרין / בד"צ product must say so too.
   const missingProduct = !!code;
-  for (const n of [...new Set([item.productName, item.name].filter(Boolean))]) {
+  const marks = kashrut(item.productName);
+  const withMarks = (n) => (marks.length ? [n, ...marks.filter((m) => !kashrut(n).includes(m))].join(" ") : n);
+  for (const n of [...new Set([item.productName, item.name].filter(Boolean).map(withMarks))]) {
+    // Only kashrut marks and packaging words left ("אריזת בד"צ"): nothing to match by.
+    if (!words(n).some((w) => !FILLER.has(w) && !KASHRUT[w])) continue;
     const auto = resolve(cat, n);
     if (auto) {
       const deal = dealFor(cat, auto, qty, opts);
@@ -504,6 +562,18 @@ export function priceItem(cat, item, choice, opts = {}) {
         deal, product: auto, weighted: auto.weighted, auto: true, missingProduct, matchedBy: n };
     }
     const est = estimate(cat, n);
+    if (est && missingProduct && est.fit === "all") {
+      // A chosen product isn't sold here: name one real product instead of an estimate
+      // (the typical one of those matching every detail), so the list can say what it is
+      // and offer to switch to it.
+      const pool = estimatePool(cat, n).filter((p) => !p.weighted === !est.weighted);
+      const near = pool.sort((a, b) => Math.abs(a.price - est.price) - Math.abs(b.price - est.price))[0];
+      if (near) {
+        const deal = dealFor(cat, near, qty, opts);
+        return { kind: "exact", unit: near.price, total: deal?.applied ? deal.total : round(near.price * qty), regular: round(near.price * qty),
+          deal, product: near, weighted: near.weighted, auto: true, missingProduct, matchedBy: n };
+      }
+    }
     if (est && (!missingProduct || est.fit === "all")) {
       return { kind: "estimate", unit: est.price, total: round(est.price * qty), ...est, missingProduct };
     }
