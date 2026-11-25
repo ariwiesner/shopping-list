@@ -444,7 +444,7 @@ h1 { margin: 2px 0 0; font-size: 18px; font-weight: 800; letter-spacing: 0; }
 
 /* List / compare mode switch */
 .mode-switch {
-  display: flex; gap: 4px; margin: 4px 0 14px; padding: 4px;
+  display: flex; gap: 4px; margin: 12px 0 0; padding: 4px;
   background: var(--surface-2); border-radius: 99px;
 }
 .mode-switch button {
