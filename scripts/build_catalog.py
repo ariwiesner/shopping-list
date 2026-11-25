@@ -271,6 +271,18 @@ def src_netiv_hesed():
     return source
 
 
+def src_json_list(url):
+    """A JSON list of files ({type, name, url, date}) - Mishnat Yosef (KT) on Cloudflare."""
+    def source():
+        rows = json.loads(text(url, timeout=90))
+        of = lambda kind: [r for r in rows if r.get("type") == kind and r.get("url")]
+        files = [{"store": store_id_of(r["name"]), "url": r["url"], "file": r["name"]} for r in of("PriceFull")]
+        promos = [{"store": store_id_of(r["name"]), "url": r["url"], "file": r["name"]} for r in of("PromoFull")]
+        stores = sorted(of("Stores"), key=lambda r: r.get("date") or "")
+        return files, (stores[-1]["url"] if stores else None), fetch, promos
+    return source
+
+
 CHAINS = [
     {"id": "shufersal", "name": "שופרסל", "color": "#d71f26", "source": src_shufersal},
     {"id": "rami-levy", "name": "רמי לוי", "color": "#0a5bab", "source": src_cerberus("RamiLevi")},
@@ -297,6 +309,8 @@ CHAINS = [
     {"id": "city-market", "name": "סיטי מרקט", "color": "#e31e24", "source": src_bina("citymarketkiryatgat")},
     {"id": "alonit", "name": "אלונית", "color": "#6ab023", "source": src_cerberus("doralon")},
     {"id": "netiv-hesed", "name": "נתיב החסד", "color": "#d71920", "source": src_netiv_hesed()},
+    # Mishnat Yosef (KT, src_json_list("https://list-files.w5871031-kt.workers.dev/")) publishes
+    # empty price files for now; add it back when they have products.
     {"id": "super-pharm", "name": "סופר-פארם", "color": "#e2001a", "source": src_superpharm()},
     {"id": "good-pharm", "name": "גוד פארם", "color": "#222222", "source": src_bina("goodpharm")},
 ]
