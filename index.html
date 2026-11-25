@@ -103,12 +103,18 @@
     </header>
 
     <main class="content" id="content">
+      <!-- Two ways to use the app: a plain shopping list, or the list with prices and store comparison.
+           Each person picks their own mode (on a shared list too). -->
+      <div class="mode-switch" id="modeSwitch" role="tablist" aria-label="מצב תצוגה">
+        <button type="button" role="tab" data-mode="list" aria-selected="true">📝 רשימת קניות</button>
+        <button type="button" role="tab" data-mode="compare" aria-selected="false">💰 השוואת מחירים</button>
+      </div>
       <!-- The planned shopping, front and centre (everyone on the list sees it; the owner taps to change it) -->
       <button type="button" class="plan-card" id="planLine" hidden>
         <span class="plan-main" id="planMain"></span>
         <span class="plan-sub" id="planSub"></span>
       </button>
-      <section class="stores" aria-labelledby="storesTitle">
+      <section class="stores" id="storesSection" aria-labelledby="storesTitle">
         <div class="stores-head">
           <p class="stores-title" id="storesTitle">איפה קונים היום?</p>
           <button type="button" class="chains-btn" id="chainsBtn" aria-haspopup="dialog" hidden>☰ כל הרשתות</button>
