@@ -96,7 +96,7 @@ export async function createCloud(config) {
   const stamp = () => ({ updatedBy: me().uid, updatedByName: firstName(), updatedAt: serverTimestamp() });
   const itemData = (it) => ({
     name: it.name, qty: it.qty, done: !!it.done, price: it.price ?? null,
-    barcode: it.barcode ?? null, productName: it.productName ?? null, unit: it.unit ?? null,
+    barcode: it.barcode ?? null, productName: it.productName ?? null, unit: it.unit ?? null, alts: it.alts ?? null,
     createdAt: it.createdAt || Date.now(), sortKey: it.sortKey || Date.now(), ...stamp(),
     // Who added the item (kept when it's restored by undo) and who last edited it.
     // A new item gets whoever adds it. An item put back (undo) keeps what it had,
@@ -110,7 +110,7 @@ export async function createCloud(config) {
   const fromDoc = (d) => {
     const x = d.data();
     return { id: d.id, name: x.name, qty: x.qty, done: x.done, price: x.price ?? null,
-      barcode: x.barcode ?? null, productName: x.productName ?? null, unit: x.unit ?? null,
+      barcode: x.barcode ?? null, productName: x.productName ?? null, unit: x.unit ?? null, alts: x.alts ?? null,
       createdAt: x.createdAt, sortKey: x.sortKey, updatedBy: x.updatedBy, updatedByName: x.updatedByName,
       createdBy: x.createdBy ?? null, createdByName: x.createdByName ?? null,
       editedBy: x.editedBy ?? null, editedByName: x.editedByName ?? null, askedBy: x.askedBy ?? null };

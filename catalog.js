@@ -508,8 +508,18 @@ export function unitKg(name) {
   return null;
 }
 
+// A replacement the user approved for this chain (item.alts[chain] = { code, name }): priced
+// instead of the chosen product here only; the item keeps its own product everywhere else.
+export function withAlt(cat, item) {
+  const alt = cat && item.alts?.[cat.id];
+  return alt && cat.byCode.has(alt.code) && !(item.barcode && cat.byCode.has(item.barcode))
+    ? { ...item, barcode: alt.code, productName: alt.name, _alt: true } : item;
+}
+
 // An item's price, with weighed produce counted in units unless the item says kg.
 export function priceItem(cat, item, choice, opts = {}) {
+  const it2 = withAlt(cat, item);
+  if (it2 !== item) return { ...priceItem(cat, it2, null, opts), alt: true };
   const p = priceItemByKg(cat, item, choice, opts);
   if (!p.weighted || p.kind === "manual" || p.kind === "none") return p;
   const per = item.unit === "kg" ? null : unitKg(item.name) || unitKg(p.product?.name || "");

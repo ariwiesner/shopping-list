@@ -36,7 +36,7 @@ function pricesIn(cat, items, choices, club = false, refs = []) {
     const p = price(it, i, { club, basket });
     if (p.kind === "none") return null;
     return {
-      total: p.total, est: p.kind === "estimate", sub: !!p.missingProduct, ref: !!p.reference && !p.similar,
+      total: p.total, est: p.kind === "estimate", sub: !!p.missingProduct, ref: !!p.reference && !p.similar, alt: !!p.alt,
       name: p.product?.name || null, kinds: p.kind === "estimate" ? p.count : null, // what was priced
       // To tell identical products apart from similar ones: the barcode priced, and
       // whether it's loose produce by its plain name ("עגבניה" by weight, comparable as is).
@@ -157,7 +157,8 @@ function summarize(items, chains, branches, current) {
   // name). Savings are counted on those only, so "חוסכים ₪5" never comes from a
   // different product. The baseline is the user's store; with none, for each item the
   // product most stores priced, at its middle price.
-  const same = (a, b) => !!a && !!b && !a.est && !b.est && ((!!a.code && a.code === b.code) || (a.loose && b.loose));
+  // A replacement the user approved for that chain counts too (they decided it's the same).
+  const same = (a, b) => !!a && !!b && !a.est && !b.est && ((!!a.code && a.code === b.code) || (a.loose && b.loose) || a.alt || b.alt);
   const all = [...chains, ...branches];
   const base = items.map((_, i) => {
     if (!counted[i]) return null;

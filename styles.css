@@ -1041,3 +1041,12 @@ body.asking-consent .content { padding-bottom: 130px; }
 .deal-win { margin: 0 4px 12px; padding: 12px 14px; border-radius: 16px; background: var(--surface); border: 1.5px solid var(--accent); font-weight: 800; color: var(--accent); }
 .deal-name .row-save.flat, .deal-save.flat { color: var(--muted); }
 .deal-save.flat { font-size: 15px; }
+
+.alt-tag { display: inline-block; padding: 0 7px; border-radius: 99px; font-size: 11px; font-weight: 700; line-height: 18px; vertical-align: 1px;
+  background: var(--accent-soft, rgba(47,158,107,.14)); color: var(--accent); }
+.match.low { color: var(--muted); }
+
+/* "חסר 2": products chosen on the list that this chain doesn't sell */
+.wheel .store { position: absolute; }
+.store-miss { position: absolute; top: 0; inset-inline-end: 4px; padding: 0 6px; border-radius: 99px; background: #fff3dc; color: #a15c00;
+  border: 1px solid #f1c27d; font-size: 10.5px; font-weight: 800; line-height: 17px; pointer-events: none; }
