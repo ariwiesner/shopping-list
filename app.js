@@ -586,9 +586,12 @@ function openChainSheet(purpose = "shop") {
   chainPurpose = purpose;
   $("chainTitle").textContent = purpose === "home" ? "איפה קונים בדרך כלל?" : "איפה קונים היום?";
   $("chainSearch").value = "";
+  // Changing the usual store: it can also be removed from here.
+  $("homeClear").hidden = !(purpose === "home" && homeStore());
   renderChainList();
   openSheet($("chainSheet"));
 }
+$("homeClear").addEventListener("click", () => { setHome(null); closeSheets(); });
 function renderChainList() {
   const h = homeStore();
   const sel = chainPurpose === "home" ? h?.chain || "" : currentStoreId() || "";
@@ -731,7 +734,7 @@ function renderHomePrice(items) {
   el.hidden = !show || (ready && !ui.homeCat.cat); // couldn't load its prices: say nothing
   if (!show) return;
   if (!ready) loadHome(h);
-  let amount = `<span class="skel skel-total"></span>`, note = "לחצו כדי להשוות לחנויות אחרות";
+  let amount = "…", note = "";
   if (ready && ui.homeCat.cat) {
     const cat = ui.homeCat.cat, opts = { club: isClubMember(cat.id) };
     const basket = items.reduce((a, it) => a + listPrice(it, { ...opts, basket: 0 }, cat).total, 0);
@@ -743,10 +746,12 @@ function renderHomePrice(items) {
       if (p.kind === "none") none++;
     }
     amount = (est ? "~" : "") + money(sum);
-    if (none) note = `${none === 1 ? "פריט אחד" : `${none} פריטים`} בלי מחיר שם · ${note}`;
+    if (none) note = `${none === 1 ? "פריט אחד" : `${none} פריטים`} בלי מחיר שם`;
   }
-  el.innerHTML = `<span class="home-price-text">⭐ בחנות הקבועה שלך<b>${escapeHtml(homeLabel(h))}</b><small>${note}</small></span>
-    <strong dir="ltr">${amount}</strong>`;
+  // One small line: the store and the price (tap to compare).
+  el.innerHTML = `<span class="home-price-name">⭐ ${escapeHtml(homeLabel(h))}</span><strong dir="ltr">${amount}</strong>`;
+  el.title = [note, "לחצו כדי להשוות לחנויות אחרות"].filter(Boolean).join(" · ");
+  el.setAttribute("aria-label", `המחיר ב${homeLabel(h)}: ${amount}. ${el.title}`);
 }
 // Tap: compare, starting from the usual store.
 $("homePrice").addEventListener("click", () => {
@@ -1902,7 +1907,7 @@ function renderMenu() {
   $("homeRow").innerHTML = !ui.chains.length ? "" : `<hr class="sheet-sep" />
     <div class="list-row">
       <button class="sheet-item" data-action="home-store">⭐ <span>${h ? `החנות הקבועה שלי: ${escapeHtml(homeLabel(h))}` : "לבחור חנות קבועה"}</span></button>
-      ${h ? `<button type="button" class="link-btn" data-action="home-clear">הסרה</button>` : ""}
+      ${h ? `<button type="button" class="link-btn" data-action="home-store">שינוי</button>` : ""}
     </div>`;
 }
 
@@ -1999,8 +2004,6 @@ menuSheet.addEventListener("click", (e) => {
     openPrivacy();
   } else if (action === "home-store") {
     openChainSheet("home");
-  } else if (action === "home-clear") {
-    setHome(null);
   } else if (action === "new-list") {
     newList();
   } else if (action === "delete-list") {
