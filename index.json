@@ -60,7 +60,7 @@
   {
    "id": "victory",
    "name": "ויקטורי",
-   "color": "#e30613",
+   "color": "#f47920",
    "count": 17035,
    "branches": 64,
    "updated": "2026-11-25T07:12Z"
@@ -68,7 +68,7 @@
   {
    "id": "mahsanei-hashuk",
    "name": "מחסני השוק",
-   "color": "#0067b1",
+   "color": "#00843d",
    "count": 28038,
    "branches": 72,
    "updated": "2026-11-25T07:16Z"
@@ -84,7 +84,7 @@
   {
    "id": "freshmarket",
    "name": "פרשמרקט",
-   "color": "#7ab929",
+   "color": "#d7141a",
    "count": 19722,
    "branches": 46,
    "updated": "2026-11-25T07:17Z"
@@ -92,7 +92,7 @@
   {
    "id": "keshet",
    "name": "קשת טעמים",
-   "color": "#8e2a8e",
+   "color": "#2e3192",
    "count": 21077,
    "branches": 2,
    "updated": "2026-11-25T07:17Z"
@@ -100,7 +100,7 @@
   {
    "id": "stop-market",
    "name": "סטופ מרקט",
-   "color": "#e2231a",
+   "color": "#c8102e",
    "count": 24950,
    "branches": 11,
    "updated": "2026-11-25T07:18Z"
@@ -116,7 +116,7 @@
   {
    "id": "salach-dabach",
    "name": "סאלח דבאח",
-   "color": "#00924a",
+   "color": "#e30613",
    "count": 23258,
    "branches": 6,
    "updated": "2026-11-25T07:06Z"
@@ -124,7 +124,7 @@
   {
    "id": "zol-vebegadol",
    "name": "זול ובגדול",
-   "color": "#ed1c24",
+   "color": "#e30613",
    "count": 16361,
    "branches": 34,
    "updated": "2026-11-25T07:13Z"
@@ -132,7 +132,7 @@
   {
    "id": "shuk-hair",
    "name": "שוק העיר",
-   "color": "#f58220",
+   "color": "#2e9e48",
    "count": 13863,
    "branches": 25,
    "updated": "2026-11-25T07:13Z"
@@ -140,7 +140,7 @@
   {
    "id": "bareket",
    "name": "ברקת",
-   "color": "#00a3e0",
+   "color": "#f2a900",
    "count": 12046,
    "branches": 14,
    "updated": "2026-11-25T07:13Z"
@@ -148,7 +148,7 @@
   {
    "id": "king-store",
    "name": "קינג סטור",
-   "color": "#b8860b",
+   "color": "#c8102e",
    "count": 15323,
    "branches": 48,
    "updated": "2026-11-25T07:14Z"
@@ -156,7 +156,7 @@
   {
    "id": "super-sapir",
    "name": "סופר ספיר",
-   "color": "#1f9d55",
+   "color": "#3aa655",
    "count": 23881,
    "branches": 89,
    "updated": "2026-11-25T07:14Z"
