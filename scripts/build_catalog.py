@@ -46,8 +46,20 @@ WORKERS = 6       # parallel downloads per chain (be polite to the chains' serve
 # HTTP helpers
 # ---------------------------------------------------------------------------
 
+# Trusted certificate authorities: certifi's up-to-date list when installed (some systems'
+# lists miss newer chains, e.g. Let's Encrypt's), else the system's.
+try:
+    import certifi
+    import ssl
+    TLS = urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=certifi.where()))
+except ImportError:
+    TLS = None
+
+
 def make_opener(cookies=False):
     handlers = [urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())] if cookies else []
+    if TLS:
+        handlers.append(TLS)
     op = urllib.request.build_opener(*handlers)
     op.addheaders = [("User-Agent", UA)]
     return op
@@ -240,6 +252,25 @@ def src_superpharm():
     return source
 
 
+def src_netiv_hesed():
+    """app.netiv-hesed.com: one page per day (?Date=YYYY-MM-DD) listing that day's files;
+    each downloads from /Prices/Download?fileName=<name>. Today's, else yesterday's."""
+    base = "https://app.netiv-hesed.com"
+    def source():
+        names = []
+        for days in (0, 1):
+            day = (dt.datetime.now() - dt.timedelta(days=days)).strftime("%Y-%m-%d")
+            names = re.findall(r'href="/Prices/Download\?fileName=([^"&]+)"', text(f"{base}/?Date={day}"))
+            if any(n.startswith("PriceFull") for n in names):
+                break
+        url = lambda n: f"{base}/Prices/Download?fileName={urllib.parse.quote(n)}"
+        files = [{"store": store_id_of(n), "url": url(n), "file": n} for n in names if n.startswith("PriceFull")]
+        promos = [{"store": store_id_of(n), "url": url(n), "file": n} for n in names if n.startswith("PromoFull")]
+        stores = sorted((n for n in names if n.startswith("Stores")), key=stamp_of)
+        return files, (url(stores[-1]) if stores else None), fetch, promos
+    return source
+
+
 CHAINS = [
     {"id": "shufersal", "name": "שופרסל", "color": "#d71f26", "source": src_shufersal},
     {"id": "rami-levy", "name": "רמי לוי", "color": "#0a5bab", "source": src_cerberus("RamiLevi")},
@@ -265,6 +296,7 @@ CHAINS = [
     {"id": "shefa-birkat-hashem", "name": "שפע ברכת השם", "color": "#00a651", "source": src_bina("shefabirkathashem")},
     {"id": "city-market", "name": "סיטי מרקט", "color": "#e31e24", "source": src_bina("citymarketkiryatgat")},
     {"id": "alonit", "name": "אלונית", "color": "#6ab023", "source": src_cerberus("doralon")},
+    {"id": "netiv-hesed", "name": "נתיב החסד", "color": "#d71920", "source": src_netiv_hesed()},
     {"id": "super-pharm", "name": "סופר-פארם", "color": "#e2001a", "source": src_superpharm()},
     {"id": "good-pharm", "name": "גוד פארם", "color": "#222222", "source": src_bina("goodpharm")},
 ]
