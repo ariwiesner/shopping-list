@@ -178,6 +178,22 @@ def src_cerberus(user):
     return source
 
 
+def src_laib(edi):
+    """laibcatalog.co.il (Victory, Mahsanei HaShuk, H. Cohen): a JSON file list per chain
+    (its 'edi' code); files download from /webapi/<edi>/<name>."""
+    def source():
+        base = "https://laibcatalog.co.il"
+        listing = json.loads(text(f"{base}/webapi/api/getfiles?edi={edi}", timeout=90))
+        def of(kind):
+            return [x["fileName"] for x in listing if (x.get("fileType") or "").lower() == kind and x.get("fileName")]
+        url = lambda n: f"{base}/webapi/{edi}/{n}"
+        files = [{"store": store_id_of(n), "url": url(n), "file": n} for n in of("pricefull")]
+        promos = [{"store": store_id_of(n), "url": url(n), "file": n} for n in of("promofull")]
+        stores = sorted(of("stores") + of("storesfull"), key=stamp_of)
+        return files, (url(stores[-1]) if stores else None), fetch, promos
+    return source
+
+
 CHAINS = [
     {"id": "shufersal", "name": "שופרסל", "color": "#d71f26", "source": src_shufersal},
     {"id": "rami-levy", "name": "רמי לוי", "color": "#0a5bab", "source": src_cerberus("RamiLevi")},
@@ -186,6 +202,14 @@ CHAINS = [
     {"id": "osher-ad", "name": "אושר עד", "color": "#f7a600", "source": src_cerberus("osherad")},
     {"id": "hazi-hinam", "name": "חצי חינם", "color": "#f28c00", "source": src_hazi_hinam},
     {"id": "tiv-taam", "name": "טיב טעם", "color": "#00843d", "source": src_cerberus("TivTaam")},
+    {"id": "victory", "name": "ויקטורי", "color": "#e30613", "source": src_laib("7290696200003")},
+    {"id": "mahsanei-hashuk", "name": "מחסני השוק", "color": "#0067b1", "source": src_laib("7290661400001")},
+    {"id": "het-cohen", "name": "ח. כהן", "color": "#b5121b", "source": src_laib("7290455000004")},
+    {"id": "freshmarket", "name": "פרשמרקט", "color": "#7ab929", "source": src_cerberus("freshmarket")},
+    {"id": "keshet", "name": "קשת טעמים", "color": "#8e2a8e", "source": src_cerberus("Keshet")},
+    {"id": "stop-market", "name": "סטופ מרקט", "color": "#e2231a", "source": src_cerberus("Stop_Market")},
+    {"id": "politzer", "name": "פוליצר", "color": "#1b75bb", "source": src_cerberus("politzer")},
+    {"id": "salach-dabach", "name": "סאלח דבאח", "color": "#00924a", "source": src_cerberus("SalachD")},
 ]
 
 
