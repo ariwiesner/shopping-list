@@ -867,7 +867,9 @@ const WHEEL = { step: (34 * Math.PI) / 180, radius: 250, top: 50, pxPerStep: 110
 const wheel = { el: $("storeRow"), btns: [], key: "", slots: 0, rot: 0, dragging: false, anim: 0, lastTick: null };
 
 // Chains with a logo in /stores (others show their initials).
-const STORE_LOGOS = new Set(["shufersal", "carrefour", "hazi-hinam", "rami-levy", "yochananof", "osher-ad", "tiv-taam"]);
+const STORE_LOGOS = new Set(["shufersal", "carrefour", "hazi-hinam", "rami-levy", "yochananof", "osher-ad", "tiv-taam",
+  "victory", "mahsanei-hashuk", "freshmarket", "keshet", "stop-market", "salach-dabach",
+  "zol-vebegadol", "shuk-hair", "bareket", "king-store", "super-sapir"]);
 
 const NO_STORE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg>';
 const mod = (a, n) => ((a % n) + n) % n;
