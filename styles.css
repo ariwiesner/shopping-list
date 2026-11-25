@@ -1050,3 +1050,4 @@ body.asking-consent .content { padding-bottom: 130px; }
 .wheel .store { position: absolute; }
 .store-miss { position: absolute; top: 0; inset-inline-end: 4px; padding: 0 6px; border-radius: 99px; background: #fff3dc; color: #a15c00;
   border: 1px solid #f1c27d; font-size: 10.5px; font-weight: 800; line-height: 17px; pointer-events: none; }
+.deal-logo.initials { display: grid; place-items: center; font-weight: 800; font-size: 15px; color: var(--muted); }

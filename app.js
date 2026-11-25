@@ -199,8 +199,10 @@ function priceLine(it) {
       return `<div class="item-price">${dealPrice(p, perKg)}${qtyNote} <span class="like-tag">דומה</span></div>` +
         `<div class="item-alt">כאן: ${escapeHtml(p.product.name)} <span class="alt-swap" role="button" tabindex="0" data-act="swap">להחליף</span></div>`;
     }
-    const label = it.productName || ui.choices[norm(it.name)]?.name || p.product.name;
-    return `<div class="item-price">${dealPrice(p, perKg)}${qtyNote} <span class="muted">· ${escapeHtml(label)}</span></div>${dealLine(p)}`;
+    const label = it.productName || ui.choices[kindKey(it)]?.name || p.product.name;
+    // The title is already the product's name: don't say it twice.
+    const same = it.barcode && (norm(label).startsWith(norm(it.name)) || norm(it.name).startsWith(norm(label).split(" ").slice(0, -1).join(" ")));
+    return `<div class="item-price">${dealPrice(p, perKg)}${qtyNote}${same ? "" : ` <span class="muted">· ${escapeHtml(label)}</span>`}</div>${dealLine(p)}`;
   }
   if (p.kind === "estimate") {
     // One short, quiet line: the typical price, then how close the match is ("בלי: פרווה",
@@ -248,7 +250,7 @@ function itemHtml(it) {
           <span class="check-box">${CHECK_SVG}</span>
         </button>
         <button class="item-main" data-act="edit" aria-label="עריכת ${name}">
-          <div class="item-name"><span class="item-emoji" aria-hidden="true">${emojiFor(it.name)}</span>${name}</div>
+          <div class="item-name"><span class="item-emoji" aria-hidden="true">${emojiFor(it.kind || it.name)}</span>${name}</div>
           ${priceLine(it)}
           ${ui.flash.has(it.id) && it.updatedByName ? `<div class="item-by">${escapeHtml(it.updatedByName)} עדכן/ה עכשיו</div>` : ""}
           ${it.importNote && Date.now() - it.importNote.at < 864e5 ? `<div class="item-by import-note">📥 שימו לב: ${it.importNote.added === 1 ? "נוסף 1" : `נוספו ${it.importNote.added}`} מהרשימה המיובאת</div>` : ""}
@@ -267,8 +269,8 @@ function itemHtml(it) {
 // matched to a product is priced on that same product, so the list and the comparison
 // show the same amount.
 function listPrice(it, opts) {
-  const choice = ui.choices[norm(it.name)];
-  const refs = !it.barcode && !choice && !(it.price > 0) && ui.cat ? ui.refs[norm(it.name)] : null;
+  const choice = ui.choices[kindKey(it)];
+  const refs = !it.barcode && !choice && !(it.price > 0) && ui.cat ? ui.refs[kindKey(it)] : null;
   return refs ? priceByReference(ui.cat, it, refs, opts) : priceItem(ui.cat, it, choice, opts);
 }
 
@@ -668,7 +670,7 @@ function getLocation() {
 
 async function runDeals(force = false) {
   if (deals.stage) return; // already running
-  const items = ui.items.map(({ name, qty, barcode, productName, price, unit, alts }) => ({ name, qty, barcode, productName, price, unit, alts }));
+  const items = ui.items.map(({ name, kind, qty, barcode, productName, price, unit, alts }) => ({ name, kind, qty, barcode, productName, price, unit, alts }));
   if (!items.length) { renderDeals(); return; }
   const current = currentStoreId() ? { chain: currentStoreId(), branch: currentBranchId() } : null;
   deals.error = false; deals.stage = "locating"; renderDeals();
@@ -727,7 +729,9 @@ function renderDeals() {
 
   const ok = (x) => !x.missing && x.total > 0;
   const cur = res.current;
-  const logo = (id) => `<img class="deal-logo" src="stores/${escapeHtml(id)}.png" alt="" />`;
+  // A chain's logo, or its initials when there's no logo file for it.
+  const logo = (id) => STORE_LOGOS.has(id) ? `<img class="deal-logo" src="stores/${escapeHtml(id)}.png" alt="" />`
+    : `<span class="deal-logo initials">${escapeHtml((ui.chains.find((c) => c.id === id)?.name || "").split(" ").map((w) => w[0]).join("").slice(0, 2))}</span>`;
   const est = (x) => (x.est ? "~" : "");
   const where = (b) => [b.name, b.city && !b.name.includes(b.city) ? b.city : ""].filter(Boolean).join(", ");
   const fromWhere = deals.where?.city ? `ממרכז ${deals.where.city}` : "ממך";
@@ -1342,26 +1346,57 @@ async function commitImport() {
 const find = (id) => ui.items.find((i) => i.id === id);
 const fail = (e) => { console.error(e); showToast("משהו השתבש — נסו שוב", false); };
 
+// An item's kind: what the user typed ("חלב"). When a product is chosen, the item's title
+// becomes the product's name, and the kind stays behind it for the emoji, for merging the
+// same thing added twice, and for remembering which product "חלב" means.
+const kindKey = (it) => norm(it.kind || it.name);
+
+// A product's name as a title: the fullest wording any chain uses (chains cut names short),
+// without stray dots, stars and internal codes.
+function productTitle(product) {
+  let n = product.name || "";
+  const full = (typeof commonCat !== "undefined" && commonCat?.byCode.get(product.code)?.name) || badgeCommon?.byCode.get(product.code)?.name;
+  const head = norm(n).split(" ").slice(0, -1).join(" ");
+  if (full && full.length > n.length && head && norm(full).startsWith(head)) n = full;
+  // A chain's name cut off mid-word ("חלב תנובה 1% 1 לי"): drop the fragment, and a number
+  // it leaves hanging.
+  if (n.length >= 15) {
+    const ws = n.trim().split(/\s+/);
+    if (ws.length > 2 && ws[ws.length - 1].length <= 2 && !/\d/.test(ws[ws.length - 1])) {
+      ws.pop();
+      if (ws.length > 2 && /^\d+$/.test(ws[ws.length - 1])) ws.pop();
+      n = ws.join(" ");
+    }
+  }
+  n = n.replace(/קוד פנימי\s*\d+/g, "").replace(/\*+/g, " ").replace(/[.,\-–\s]+$/g, "").replace(/^[.,\-–\s]+/, "").replace(/\s+/g, " ").trim();
+  return capitalize(n.slice(0, 60)) || product.name;
+}
+
 function addItem(text, product = null) {
-  const { name, qty, unit } = parseInput(text);
-  if (!name) return;
+  const { name: typed, qty, unit } = parseInput(text);
+  if (!typed) return;
+  // A chosen product: its name is the title, what was typed is the kind.
+  const name = product ? productTitle(product) : typed;
+  const kind = product ? typed : null;
   if (product) {
     // Chosen while typing: this exact product (its barcode is the same at every chain),
     // and "חלב" means it next time too, as when choosing it in the item's sheet.
-    ui.choices[norm(name)] = { code: product.code, name: product.name };
+    ui.choices[norm(typed)] = { code: product.code, name: product.name };
     store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), choices: ui.choices });
   }
   track("add_item", { shared: ui.members.length > 1 ? 1 : 0 });
-  const existing = ui.items.find((i) => !i.done && i.name.toLowerCase() === name.toLowerCase());
+  // The same thing again: the same product, or the same kind/title as typed.
+  const existing = ui.items.find((i) => !i.done && ((product && i.barcode === product.code)
+    || norm(i.kind || i.name) === norm(typed) || norm(i.name) === norm(name)));
   // Shared list, and someone else asked for it: ask whether to add for me too.
   if (existing && askedByOthers(existing)) return askDuplicate(existing, qty);
   if (existing) {
     const next = Math.min(existing.qty + qty, 999);
-    backend.patch([existing.id], { qty: next, ...(product ? { barcode: product.code, productName: product.name } : {}) }).catch(fail);
+    backend.patch([existing.id], { qty: next, ...(product ? { barcode: product.code, productName: product.name, name, kind: existing.kind || kind } : {}) }).catch(fail);
     showToast(`${existing.name} כבר ברשימה — עכשיו ×${next}`, false);
   } else {
     const now = Date.now();
-    backend.put([{ id: uid(), name, qty, done: false, price: null, createdAt: now, sortKey: now, unit: unit || null,
+    backend.put([{ id: uid(), name, kind, qty, done: false, price: null, createdAt: now, sortKey: now, unit: unit || null,
       ...(product ? { barcode: product.code, productName: product.name } : {}) }]).catch(fail);
   }
   buzz();
@@ -1504,7 +1539,7 @@ function hideToast() { toast.hidden = true; }
 toastUndo.addEventListener("click", undo);
 
 // ---------- Sheets ----------
-let editingId = null, editQty = 1, editUnit = null;
+let editingId = null, editQty = 1, editUnit = null, editPicked = false;
 // The phone's back gesture/button closes an open sheet instead of leaving the app:
 // opening a sheet adds a history entry, and "back" (popstate) closes it. Closing a
 // sheet any other way removes that entry again. Switching straight from one sheet to
@@ -1772,6 +1807,7 @@ function openEdit(id) {
   editingId = id;
   editQty = it.qty;
   editUnit = it.unit || null;
+  editPicked = false;
   $("editName").value = it.name;
   $("editQty").textContent = editQty;
   // Units or kg: for produce sold by weight.
@@ -1779,7 +1815,7 @@ function openEdit(id) {
   $("editUnit").hidden = !weighed;
   syncEditUnit();
   $("editPrice").value = typeof it.price === "number" && it.price > 0 ? it.price : "";
-  const remembered = ui.choices[norm(it.name)];
+  const remembered = ui.choices[kindKey(it)];
   editProduct = it.barcode ? { code: it.barcode, name: it.productName } : remembered || null;
   // The name field also searches the store's products (when a store is chosen).
   $("productStore").textContent = ui.cat ? `(${ui.cat.name})` : "";
@@ -1840,6 +1876,7 @@ $("productList").addEventListener("click", (e) => {
   if (!b) return;
   const p = b.dataset.code && ui.cat?.byCode.get(b.dataset.code);
   editProduct = p ? { code: p.code, name: p.name } : null;
+  editPicked = true;
   buzz(5);
   renderProducts();
   // Picking a product is the decision: save right away (with any name/qty/price edits)
@@ -1881,7 +1918,16 @@ $("editForm").addEventListener("submit", (e) => {
       // remember it for this item name so next time "גבינה" means the same cheese.
       fields.barcode = editProduct?.code || null;
       fields.productName = editProduct?.name || null;
-      const key = norm(fields.name);
+      // Just picked a product: it names the item, and what was there becomes its kind.
+      // Back to "any kind": the item takes its kind's name again. Otherwise the text wins.
+      if (editPicked && editProduct) {
+        fields.kind = it.kind || name;
+        fields.name = productTitle(editProduct);
+      } else if (editPicked && !editProduct && it.kind) {
+        fields.name = it.kind;
+        fields.kind = null;
+      }
+      const key = norm(fields.kind || it.kind || fields.name);
       if (editProduct) ui.choices[key] = editProduct; else delete ui.choices[key];
       store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), choices: ui.choices });
     }
@@ -2238,7 +2284,7 @@ let suppressClick = false;
 // keeps its own product, which comes back at every other chain.
 function swapToHere(id) {
   const it = find(id);
-  const p = it && ui.cat && priceItem(ui.cat, it, ui.choices[norm(it.name)], {});
+  const p = it && ui.cat && priceItem(ui.cat, it, ui.choices[kindKey(it)], {});
   if (!p?.product) return;
   backend.patch([id], { alts: { ...(it.alts || {}), [ui.cat.id]: { code: p.product.code, name: p.product.name } } }).catch(fail);
   buzz(8);

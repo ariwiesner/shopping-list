@@ -27,7 +27,7 @@ function km(a, b) {
 //   ref: a general item priced on the same product as at the other chains (refs[i])
 function pricesIn(cat, items, choices, club = false, refs = []) {
   const price = (it, i, opts) => {
-    const choice = choices[norm(it.name)] || null;
+    const choice = choices[norm(it.kind || it.name)] || null;
     return refs[i]?.length && !choice ? priceByReference(cat, it, refs[i], opts) : priceItem(cat, it, choice, opts);
   };
   // Deals as on the list: first without basket-minimum deals to get the total, then with them.
@@ -48,7 +48,7 @@ function pricesIn(cat, items, choices, club = false, refs = []) {
 
 // General items ("חלב", "שמן"): which product to compare them on, the same at every chain.
 // Gathered chain by chain (only a small summary of each is kept).
-const isGeneral = (it, choices) => !it.barcode && !(typeof it.price === "number" && it.price > 0) && !choices[norm(it.name)];
+const isGeneral = (it, choices) => !it.barcode && !(typeof it.price === "number" && it.price > 0) && !choices[norm(it.kind || it.name)];
 
 self.onmessage = async ({ data }) => {
   const { id, items, choices, here, maxKm, current, clubs = false } = data;
