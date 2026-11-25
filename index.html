@@ -298,6 +298,18 @@
     <div class="chain-list" id="chainList"></div>
   </div>
 
+  <!-- Replacements for chosen products the selected chain doesn't sell -->
+  <div class="sheet" id="altSheet" role="dialog" aria-modal="true" aria-labelledby="altTitle" hidden>
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <h3 id="altTitle">תחליפים</h3>
+    <p class="sheet-note" id="altNote"></p>
+    <ul class="alt-list" id="altList"></ul>
+    <div class="edit-actions">
+      <button type="button" class="btn ghost" id="altSkip">סגירה</button>
+      <button type="button" class="btn primary" id="altGo" hidden>להשוות</button>
+    </div>
+  </div>
+
   <!-- Confirm deleting the whole list -->
   <div class="sheet" id="confirmSheet" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmText" hidden>
     <div class="sheet-handle" aria-hidden="true"></div>

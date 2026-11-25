@@ -1,5 +1,5 @@
 import { firebaseConfig } from "./firebase-config.js";
-import { loadIndex, loadChain, loadStores, loadBranch, loadCommon, fetchJson, search, resolve, estimate, priceItem, priceByReference, unitKg, dealFor, norm, money } from "./catalog.js";
+import { loadIndex, loadChain, loadStores, loadBranch, loadCommon, fetchJson, search, resolve, estimate, priceItem, priceByReference, unitKg, kashrut, stem, dealFor, norm, money } from "./catalog.js";
 import { parseList, cleanItems, looksLikeMessage } from "./import-parse.js";
 import { PHOTO_URL } from "./photo-config.js";
 
@@ -287,12 +287,13 @@ function render() {
   todoList.innerHTML = todo.map(itemHtml).join("");
   // Chosen products this store doesn't sell: one calm line above the list, not a warning
   // on each item (each shows a "דומה" tag and what's priced here instead).
-  const gaps = ui.cat ? todo.filter((i) => i._price.missingProduct || (i.barcode && i._price.kind === "none")) : [];
+  const gaps = storeGaps(todo);
   const similar = gaps.filter((i) => i._price.kind !== "none").length;
   $("storeGap").hidden = !gaps.length;
-  $("storeGap").textContent = !gaps.length ? ""
-    : `${gaps.length === 1 ? "מוצר אחד מהרשימה לא נמכר" : `${gaps.length} מוצרים מהרשימה לא נמכרים`} ב${ui.cat.name}` +
-      (similar === gaps.length ? ". מצאנו דומים, מסומנים ב״דומה״." : similar ? `. ל־${similar} מצאנו דומים, מסומנים ב״דומה״.` : ".");
+  $("storeGap").innerHTML = !gaps.length ? ""
+    : escapeHtml(`${gaps.length === 1 ? "מוצר אחד מהרשימה לא נמכר" : `${gaps.length} מוצרים מהרשימה לא נמכרים`} ב${ui.cat.name}` +
+      (similar === gaps.length ? ". מצאנו דומים, מסומנים ב״דומה״." : similar ? `. ל־${similar} מצאנו דומים, מסומנים ב״דומה״.` : ".")) +
+      ` <button type="button" class="link-btn" id="gapChoose">לבחור תחליפים</button>`;
   $("todoHead").hidden = !total;
   const locked = backend === cloud && isLockedNow();
   document.body.classList.toggle("locked", lockedForMe());
@@ -586,7 +587,13 @@ const dealRadius = () => (RADII.includes(prefs.dealKm) ? prefs.dealKm : 20);
 const kmText = (km) => (km < 1 ? "פחות מק״מ" : `${km < 10 ? km.toFixed(1) : Math.round(km)} ק״מ`);
 const wazeUrl = (b) => `https://waze.com/ul?ll=${b.lat},${b.lon}&navigate=yes`;
 
-$("dealsBtn").addEventListener("click", () => { track("compare_open"); openSheet(dealsSheet); runDeals(); });
+$("dealsBtn").addEventListener("click", () => {
+  track("compare_open");
+  // Products from another chain this store doesn't sell: offer to choose replacements first,
+  // so the comparison is as accurate as it can be (it can also go ahead without).
+  if (storeGaps().length) return openAltSheet(true);
+  openSheet(dealsSheet); runDeals();
+});
 $("dealsRadius").addEventListener("click", (e) => {
   const b = e.target.closest("[data-km]");
   if (!b) return;
@@ -741,24 +748,32 @@ function renderDeals() {
   // stores); the rest are listed, not counted. A store with too few identical products
   // can't be "the cheapest".
   const counted = res.counted || 1;
+  const listN = res.itemCount || counted; // the whole list, for "מבוסס על 4 מתוך 6"
+  const unc = res.uncounted || [];
   // Like CHP's basket survey: a store must have at least 85% of the list's products to be
   // ranked; below that it "doesn't cover the list".
   const enough = (x) => x.same >= Math.max(1, Math.ceil(counted * 0.85));
   const rank = (a, b) => enough(b) - enough(a) || b.sameSave - a.sameSave || a.total - b.total || (a.km ?? 1e9) - (b.km ?? 1e9);
   const vs = cur ? `לעומת ${escapeHtml(cur.chainName)}` : "מהמחיר הנפוץ";
-  const matchLine = (x) => `<span class="match${x.same === counted ? " full" : ""}">מבוסס על ${x.same} מתוך ${counted} מוצרים</span>` +
+  const matchLine = (x) => `<span class="match${x.same === listN ? " full" : ""}">מבוסס על ${x.same} מתוך ${listN} מוצרים</span>` +
     (enough(x) ? "" : ` <span class="match low">· לא מכסה את הסל</span>`);
   const saveText = (x) => x.sameSave >= 1 ? `חוסכים ${amt(money(x.sameSave))} ${vs}`
     : x.sameSave <= -1 ? `יקר ב־${amt(money(-x.sameSave))} ${vs}` : `אותו מחיר ${vs}`;
   const saveLine = (x) => isCur(x) || (cur?.kind === "chain" && !x.id && x.chain === cur.chain) ? "" :
     `<p class="deal-save${x.sameSave >= 1 ? "" : " flat"}">${saveText(x)}${x.same < counted ? ` <small>· על ${x.same} המוצרים הזהים</small>` : ""}</p>`;
   // The items that aren't identical here: what was priced instead, or that it's missing.
-  const diffNote = (x) => !x.diff?.length || isCur(x) ? "" :
-    `<details class="deal-diff"><summary>${x.diff.length === 1 ? "מוצר אחד לא זהה כאן" : `${x.diff.length} מוצרים לא זהים כאן`} <span class="more">פרטים</span></summary><ul>` +
-    x.diff.map((d) => `<li><b>${escapeHtml(d.item)}${d.qty > 1 ? ` ×${d.qty}` : ""}</b> ` +
-      (d.missing ? "לא נמכר כאן" : d.est ? `מחיר משוער ${amt("~" + money(d.total))}`
-        : `כאן: ${escapeHtml(d.name || "")} <strong>${amt(money(d.total))}</strong>`) + `</li>`).join("") +
-    `</ul><p>לא נכללים בחישוב החיסכון.</p></details>`;
+  // Also the products not compared at all (the user's store doesn't sell them).
+  const diffNote = (x) => {
+    const n = (x.diff?.length || 0) + unc.length;
+    if (!n || isCur(x)) return "";
+    return `<details class="deal-diff"><summary>${n === 1 ? "מוצר אחד לא נכלל" : `${n} מוצרים לא נכללו`} <span class="more">פרטים</span></summary><ul>` +
+      x.diff.map((d) => `<li><b>${escapeHtml(d.item)}${d.qty > 1 ? ` ×${d.qty}` : ""}</b> ` +
+        (d.missing ? "לא נמכר כאן" : d.est ? `מחיר משוער ${amt("~" + money(d.total))}`
+          : `כאן: ${escapeHtml(d.name || "")} <strong>${amt(money(d.total))}</strong>`) + `</li>`).join("") +
+      unc.map((d) => `<li><b>${escapeHtml(d.item)}${d.qty > 1 ? ` ×${d.qty}` : ""}</b> ` +
+        (d.nowhere ? "לא נמצא באף רשת" : cur ? `לא נמכר ב${escapeHtml(cur.chainName)}, אז לא הושווה` : "לא הושווה") + `</li>`).join("") +
+      `</ul><p>לא נכללים בחישוב החיסכון.</p></details>`;
+  };
   const actions = (chain, b) => `<div class="deal-actions">
       <button type="button" class="btn primary" data-pick='${escapeHtml(JSON.stringify([chain, b?.id || null]))}'>לקנות כאן</button>
       ${b?.lat !== undefined ? `<a class="btn ghost" href="${wazeUrl(b)}" target="_blank" rel="noopener">ניווט ב-Waze</a>` : ""}
@@ -835,7 +850,7 @@ function renderDeals() {
       <li><button type="button" class="deal-row" data-pick='${escapeHtml(JSON.stringify([b.chain, b.id]))}'>
         ${logo(b.chain)}
         <span class="deal-name"><strong>${escapeHtml(b.chainName)}</strong><small>${escapeHtml(where(b))} · ${kmText(b.km)}</small>
-          <small class="row-save${b.sameSave >= 1 && enough(b) ? "" : " flat"}">${b.same}/${counted} מוצרים${enough(b) ? "" : " · לא מכסה את הסל"} · ${saveText(b)}</small></span>
+          <small class="row-save${b.sameSave >= 1 && enough(b) ? "" : " flat"}">${b.same}/${listN} מוצרים${enough(b) ? "" : " · לא מכסה את הסל"} · ${saveText(b)}</small></span>
         <strong class="deal-total">${amt(est(b) + money(b.total))}</strong>
       </button>${diffNote(b)}</li>`).join("") + `</ul>`;
   }
@@ -2282,6 +2297,78 @@ peopleSheet.addEventListener("click", onSheetAction);
 // ---------- List interactions ----------
 let suppressClick = false;
 // "להחליף": the item becomes the similar product this store sells (its own barcode).
+// ---------- Choosing replacements for products this chain doesn't sell ----------
+// Items whose chosen product the selected store doesn't sell (no replacement approved yet).
+function storeGaps(priced) {
+  if (!ui.cat) return [];
+  const list = priced || ui.items.filter((i) => !i.done).map((it) => ({ ...it, _price: listPrice(it, {}) }));
+  return list.filter((i) => !i.done && i.barcode && !i.alts?.[ui.cat.id] && (i._price.missingProduct || i._price.kind === "none"));
+}
+// Up to 4 products of this store that could replace it: the app's own pick first, then the
+// closest by name (same words, size), never dropping a kashrut mark, then cheapest.
+function altCandidates(it) {
+  const marks = kashrut(it.productName);
+  // What it is: the first real word of what was typed ("שוקולד"), which every option must have.
+  const content = (s) => norm(s).split(" ").filter((w) => w.length > 1 && !/\d/.test(w));
+  const head = stem(content(it.kind || it.name)[0] || "");
+  const want = new Set(content(it.productName || it.name).map(stem));
+  const auto = it._price?.product;
+  const seen = new Map();
+  for (const p of [...(auto ? [auto] : []), ...search(ui.cat, it.kind || it.name, 60)]) {
+    if (!p || seen.has(norm(p.name)) || !marks.every((m) => kashrut(p.name).includes(m))) continue;
+    if (head && !content(p.name).some((w) => stem(w).startsWith(head))) continue;
+    seen.set(norm(p.name), p);
+  }
+  const overlap = (p) => content(p.name).filter((w) => want.has(stem(w))).length;
+  return [...seen.values()].sort((a, b) => (b === auto) - (a === auto) || overlap(b) - overlap(a) || a.price - b.price).slice(0, 4);
+}
+const altSheet = $("altSheet");
+let altForCompare = false;
+function openAltSheet(forCompare = false) {
+  altForCompare = forCompare;
+  renderAltSheet();
+  openSheet(altSheet);
+}
+function renderAltSheet() {
+  const gaps = storeGaps();
+  const name = ui.cat?.name || "";
+  $("altTitle").textContent = `תחליפים ב${name}`;
+  $("altNote").textContent = gaps.length
+    ? `${gaps.length === 1 ? "מוצר אחד שבחרת לא נמכר" : `${gaps.length} מוצרים שבחרת לא נמכרים`} ב${name}. בחרו מה לקנות במקום${altForCompare ? ", כדי שההשוואה תהיה מדויקת ככל האפשר" : ""}. הבחירה נשמרת רק ל${name}.`
+    : `כל המוצרים ברשימה נמכרים ב${name}.`;
+  $("altList").innerHTML = gaps.map((it) => {
+    const opts = altCandidates(it);
+    return `<li class="alt-item" data-id="${escapeHtml(it.id)}">
+      <p class="alt-head"><b>${escapeHtml(it.name)}</b>${it.productName && it.productName !== it.name ? `<small>בחרת: ${escapeHtml(it.productName)}</small>` : ""}</p>
+      ${opts.length ? opts.map((p) => `<button type="button" class="product alt-opt" data-code="${escapeHtml(p.code)}">
+          <span class="product-name">${escapeHtml(p.name)}</span>
+          <span class="product-price">${amt(money(p.price))}${p.weighted ? "<small>לק״ג</small>" : ""}</span></button>`).join("")
+        : `<p class="alt-none">אין ב${escapeHtml(name)} מוצר דומה</p>`}
+    </li>`;
+  }).join("");
+  $("altGo").hidden = !altForCompare;
+  $("altSkip").textContent = altForCompare ? "להשוות בלי לבחור" : "סגירה";
+}
+altSheet.addEventListener("click", (e) => {
+  const opt = e.target.closest(".alt-opt");
+  if (opt) {
+    const id = opt.closest("[data-id]").dataset.id, it = find(id), p = ui.cat?.byCode.get(opt.dataset.code);
+    if (!it || !p) return;
+    const alts = { ...(it.alts || {}), [ui.cat.id]: { code: p.code, name: p.name } };
+    it.alts = alts; // shown at once; the backend update follows
+    backend.patch([id], { alts }).catch(fail);
+    track("alt_pick");
+    buzz(8);
+    renderAltSheet();
+    return;
+  }
+  if (e.target.closest("#altGo")) { openSheet(dealsSheet); runDeals(true); return; }
+  if (e.target.closest("#altSkip")) {
+    if (altForCompare) { openSheet(dealsSheet); runDeals(); } else closeSheets();
+  }
+});
+document.addEventListener("click", (e) => { if (e.target.closest("#gapChoose")) openAltSheet(false); });
+
 // "להחליף": approve the similar product as this chain's replacement. Only here: the item
 // keeps its own product, which comes back at every other chain.
 function swapToHere(id) {

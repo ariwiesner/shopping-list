@@ -191,6 +191,8 @@ function summarize(items, chains, branches, current) {
     counted: counted.filter(Boolean).length,
     // Items left out because the current store doesn't have them (but another chain does).
     excluded: mine ? items.filter((_, i) => !counted[i] && chains.some((c) => c.prices[i])).map((it) => it.name) : [],
+    // Everything on the list that isn't compared (not sold at the user's store, or nowhere).
+    uncounted: items.map((it, i) => (counted[i] ? null : { item: it.name, qty: it.qty || 1, nowhere: !chains.some((c) => c.prices[i]) })).filter(Boolean),
     chains: chains.map(({ prices, ...c }) => ({ ...c, ...total(prices), ...versus(prices) })),
     branches: branches.map(({ prices, ...b }) => ({ ...b, ...total(prices), ...versus(prices) })),
     baseline: mine ? "mine" : "typical",
