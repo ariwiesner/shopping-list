@@ -1060,3 +1060,10 @@ body.asking-consent .content { padding-bottom: 130px; }
 .alt-opt { width: 100%; }
 .alt-none { margin: 0 4px; color: var(--muted); font-size: 13px; }
 .store-gap .link-btn { display: inline; padding: 0; font-size: 13px; }
+
+.chain-search { width: 100%; height: 44px; margin: 0 0 8px; padding: 0 14px; border-radius: 12px; border: 1.5px solid var(--line);
+  background: var(--bg); font: inherit; font-size: 16px; }
+.chain-search:focus { outline: none; border-color: var(--accent); }
+.chain-item[hidden] { display: none; }
+.chain-empty { margin: 8px 4px; color: var(--muted); font-size: 14px; }
+#chainSheet { min-height: 75vh; }

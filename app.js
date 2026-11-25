@@ -530,7 +530,25 @@ $("chainsBtn").addEventListener("click", () => {
       <span>${escapeHtml(c.name)}${c === NO_STORE_SLOT ? ` <small>רשימה בלי מחירים</small>` : ""}</span>
       ${c.id === sel ? "<span class=\"chain-check\">✓</span>" : ""}
     </button>`).join("");
+  $("chainSearch").value = "";
+  $("chainEmpty").hidden = true;
   openSheet($("chainSheet"));
+});
+// Search the chains by name (any part of it; "פארם" finds both pharmacies).
+$("chainSearch").addEventListener("input", () => {
+  const q = norm($("chainSearch").value);
+  let shown = 0;
+  $("chainList").querySelectorAll(".chain-item").forEach((b) => {
+    const hit = !q || norm(b.textContent).includes(q);
+    b.hidden = !hit;
+    if (hit) shown++;
+  });
+  $("chainEmpty").hidden = shown > 0;
+});
+$("chainSearch").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  $("chainList").querySelector(".chain-item:not([hidden])")?.click(); // Enter picks the first match
 });
 $("chainList").addEventListener("click", (e) => {
   const b = e.target.closest("[data-k]");
