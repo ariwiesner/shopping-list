@@ -731,7 +731,7 @@ function renderHomePrice(items) {
   el.hidden = !show || (ready && !ui.homeCat.cat); // couldn't load its prices: say nothing
   if (!show) return;
   if (!ready) loadHome(h);
-  let amount = `<span class="skel skel-total"></span>`, note = "לחצו כדי להשוות לחנויות אחרות";
+  let amount = "…", note = "";
   if (ready && ui.homeCat.cat) {
     const cat = ui.homeCat.cat, opts = { club: isClubMember(cat.id) };
     const basket = items.reduce((a, it) => a + listPrice(it, { ...opts, basket: 0 }, cat).total, 0);
@@ -743,10 +743,12 @@ function renderHomePrice(items) {
       if (p.kind === "none") none++;
     }
     amount = (est ? "~" : "") + money(sum);
-    if (none) note = `${none === 1 ? "פריט אחד" : `${none} פריטים`} בלי מחיר שם · ${note}`;
+    if (none) note = `${none === 1 ? "פריט אחד" : `${none} פריטים`} בלי מחיר שם`;
   }
-  el.innerHTML = `<span class="home-price-text">⭐ בחנות הקבועה שלך<b>${escapeHtml(homeLabel(h))}</b><small>${note}</small></span>
-    <strong dir="ltr">${amount}</strong>`;
+  // One small line: the store and the price (tap to compare).
+  el.innerHTML = `<span class="home-price-name">⭐ ${escapeHtml(homeLabel(h))}</span><strong dir="ltr">${amount}</strong>`;
+  el.title = [note, "לחצו כדי להשוות לחנויות אחרות"].filter(Boolean).join(" · ");
+  el.setAttribute("aria-label", `המחיר ב${homeLabel(h)}: ${amount}. ${el.title}`);
 }
 // Tap: compare, starting from the usual store.
 $("homePrice").addEventListener("click", () => {
