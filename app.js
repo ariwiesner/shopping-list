@@ -586,9 +586,12 @@ function openChainSheet(purpose = "shop") {
   chainPurpose = purpose;
   $("chainTitle").textContent = purpose === "home" ? "איפה קונים בדרך כלל?" : "איפה קונים היום?";
   $("chainSearch").value = "";
+  // Changing the usual store: it can also be removed from here.
+  $("homeClear").hidden = !(purpose === "home" && homeStore());
   renderChainList();
   openSheet($("chainSheet"));
 }
+$("homeClear").addEventListener("click", () => { setHome(null); closeSheets(); });
 function renderChainList() {
   const h = homeStore();
   const sel = chainPurpose === "home" ? h?.chain || "" : currentStoreId() || "";
@@ -1904,7 +1907,7 @@ function renderMenu() {
   $("homeRow").innerHTML = !ui.chains.length ? "" : `<hr class="sheet-sep" />
     <div class="list-row">
       <button class="sheet-item" data-action="home-store">⭐ <span>${h ? `החנות הקבועה שלי: ${escapeHtml(homeLabel(h))}` : "לבחור חנות קבועה"}</span></button>
-      ${h ? `<button type="button" class="link-btn" data-action="home-clear">הסרה</button>` : ""}
+      ${h ? `<button type="button" class="link-btn" data-action="home-store">שינוי</button>` : ""}
     </div>`;
 }
 
@@ -2001,8 +2004,6 @@ menuSheet.addEventListener("click", (e) => {
     openPrivacy();
   } else if (action === "home-store") {
     openChainSheet("home");
-  } else if (action === "home-clear") {
-    setHome(null);
   } else if (action === "new-list") {
     newList();
   } else if (action === "delete-list") {

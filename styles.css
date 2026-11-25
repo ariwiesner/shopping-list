@@ -1095,6 +1095,8 @@ body.asking-consent .content { padding-bottom: 130px; }
 .star-btn:active { background: var(--surface-2); transform: scale(.9); }
 .chain-row { display: flex; align-items: center; gap: 4px; }
 .chain-row[hidden] { display: none; }
+.home-clear { justify-content: center; margin-top: 8px; background: var(--surface-2); }
+.home-clear[hidden] { display: none; }
 .chain-row .chain-item { flex: 1; min-width: 0; }
 .chain-note { margin-top: -6px; margin-bottom: 10px; font-size: 13.5px; }
 .branch-row { display: flex; align-items: center; border-bottom: 1px solid var(--line); padding-inline-end: 4px; }
