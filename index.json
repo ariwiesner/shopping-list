@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-25T07:21Z",
+ "generated": "2026-11-25T08:06Z",
  "chains": [
   {
    "id": "shufersal",
@@ -75,11 +75,11 @@
   },
   {
    "id": "het-cohen",
-   "name": "ח. כהן",
-   "color": "#b5121b",
+   "name": "היפר כהן",
+   "color": "#f2c500",
    "count": 14770,
    "branches": 5,
-   "updated": "2026-11-25T07:06Z"
+   "updated": "2026-11-25T07:44Z"
   },
   {
    "id": "freshmarket",
@@ -108,10 +108,10 @@
   {
    "id": "politzer",
    "name": "פוליצר",
-   "color": "#1b75bb",
+   "color": "#e2231a",
    "count": 23163,
    "branches": 8,
-   "updated": "2026-11-25T07:19Z"
+   "updated": "2026-11-25T07:45Z"
   },
   {
    "id": "salach-dabach",
@@ -160,6 +160,62 @@
    "count": 23881,
    "branches": 89,
    "updated": "2026-11-25T07:14Z"
+  },
+  {
+   "id": "maayan-2000",
+   "name": "מעיין 2000",
+   "color": "#e31e24",
+   "count": 12129,
+   "branches": 38,
+   "updated": "2026-11-25T07:45Z"
+  },
+  {
+   "id": "shefa-birkat-hashem",
+   "name": "שפע ברכת השם",
+   "color": "#00a651",
+   "count": 9797,
+   "branches": 22,
+   "updated": "2026-11-25T07:46Z"
+  },
+  {
+   "id": "city-market",
+   "name": "סיטי מרקט",
+   "color": "#e31e24",
+   "count": 14002,
+   "branches": 24,
+   "updated": "2026-11-25T07:46Z"
+  },
+  {
+   "id": "alonit",
+   "name": "אלונית",
+   "color": "#6ab023",
+   "count": 16221,
+   "branches": 156,
+   "updated": "2026-11-25T07:48Z"
+  },
+  {
+   "id": "netiv-hesed",
+   "name": "נתיב החסד",
+   "color": "#d71920",
+   "count": 18003,
+   "branches": 91,
+   "updated": "2026-11-25T07:56Z"
+  },
+  {
+   "id": "super-pharm",
+   "name": "סופר-פארם",
+   "color": "#e2001a",
+   "count": 22219,
+   "branches": 306,
+   "updated": "2026-11-25T08:01Z"
+  },
+  {
+   "id": "good-pharm",
+   "name": "גוד פארם",
+   "color": "#222222",
+   "count": 15536,
+   "branches": 83,
+   "updated": "2026-11-25T08:02Z"
   }
  ]
 }
