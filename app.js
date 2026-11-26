@@ -2151,7 +2151,11 @@ function openEdit(id) {
   // Search for a specific product (any words: "תנובה 3%"), beside the name.
   $("editSearch").value = "";
   $("editSearch").hidden = !ui.cat;
-  if (ui.cat) $("editSearch").placeholder = `חיפוש אחר ${it.kind || it.name} ספציפי ב${ui.cat.name}`;
+  editNameTouched = false;
+  // A product already chosen: offer a different one; otherwise a specific one.
+  if (ui.cat) $("editSearch").placeholder = it.barcode
+    ? `חפש אחר ${it.kind || it.name} שונה`
+    : `חיפוש אחר ${it.kind || it.name} ספציפי ב${ui.cat.name}`;
   $("productList").hidden = !ui.cat;
   if (ui.cat) renderProducts();
 }
@@ -2166,7 +2170,11 @@ function pickerPrice(p) {
 }
 
 function renderProducts() {
-  const q = $("editSearch").value.trim() || $("editName").value.trim();
+  // What to list: the search box; else the name. An item that already is a product
+  // ("חלב 3% תנובה") lists its kind ("חלב"), so the other options show too.
+  const cur = find(editingId);
+  const base = !editNameTouched && cur?.barcode && cur.kind ? cur.kind : $("editName").value.trim();
+  const q = $("editSearch").value.trim() || base;
   // Best matches first (the typed words as whole words: "חלב" is milk, not "חלבה"), and
   // within them cheapest first; the same name twice (two barcodes) shows once, the cheaper.
   const typed = norm(q).split(" ").filter(Boolean);
@@ -2178,7 +2186,7 @@ function renderProducts() {
   }
   // Searching for a specific one ("תנובה 3%" for milk): the item's own products come first.
   const searching = !!$("editSearch").value.trim();
-  const own = searching ? norm($("editName").value).split(" ").filter((w) => w.length > 1 && !/\d/.test(w)).map(stem) : [];
+  const own = searching ? norm(base).split(" ").filter((w) => w.length > 1 && !/\d/.test(w)).map(stem) : [];
   const isIt = (p) => (own.length && norm(p.name).split(" ").some((w) => own.includes(stem(w))) ? 1 : 0);
   const results = [...seen.values()].sort((a, b) => isIt(b) - isIt(a) || whole(b) - whole(a) || a.price - b.price).slice(0, 40);
   const sel = editProduct?.code;
@@ -2202,8 +2210,9 @@ function renderProducts() {
     (q && !results.length ? `<li class="products-empty">לא מצאנו מוצרים בשם הזה</li>` : "");
 }
 
-let productSearchTimer;
+let productSearchTimer, editNameTouched = false;
 $("editName").addEventListener("input", () => {
+  editNameTouched = true;
   if (!ui.cat) return;
   clearTimeout(productSearchTimer);
   productSearchTimer = setTimeout(renderProducts, 120);

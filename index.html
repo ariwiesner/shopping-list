@@ -388,10 +388,12 @@
           </div>
           <div class="name-col">
             <label class="col-label" for="editName">שם המוצר <small id="productStore"></small></label>
-            <input id="editName" type="text" maxlength="60" required autocomplete="off" />
+            <div class="name-inputs">
+              <input id="editName" type="text" maxlength="60" required autocomplete="off" />
+              <input id="editSearch" class="edit-search" type="search" autocomplete="off" enterkeyhint="search" aria-label="חיפוש מוצר ספציפי" hidden />
+            </div>
           </div>
         </div>
-        <input id="editSearch" class="edit-search" type="search" autocomplete="off" enterkeyhint="search" aria-label="חיפוש מוצר ספציפי" hidden />
         <div class="seg unit-seg" id="editUnit" role="radiogroup" aria-label="יחידות או קילו" hidden>
           <button type="button" role="radio" data-unit="">לפי יחידות</button>
           <button type="button" role="radio" data-unit="kg">לפי ק״ג</button>

@@ -1169,10 +1169,18 @@ body.asking-consent .content { padding-bottom: 130px; }
 }
 
 /* The item's sheet: search for a specific product, under its name */
+/* The name, and beside it the product search; the amount on its own line under them */
+.name-inputs { display: flex; gap: 6px; }
+#editSheet .name-row { flex-wrap: wrap; row-gap: 10px; }
+#editSheet .name-col:not(.qty-col) { flex: 1 1 100%; }
+#editSheet .name-col.qty-col { order: 2; flex-direction: row; align-items: center; gap: 10px; }
+#editSheet .name-inputs input { min-width: 0; }
+#editName { flex: 1.4 1 0; }
 .edit-search {
-  width: 100%; height: 42px; margin-top: 10px; padding: 0 12px;
+  flex: 3 1 0; width: auto; height: 44px; margin: 0; padding: 0 10px;
   border: 1.5px solid var(--line); border-radius: 12px; background: var(--surface-2);
   font: inherit; font-size: 16px; color: var(--text);
 }
 .edit-search:focus { outline: none; border-color: var(--accent); }
+.edit-search::placeholder, .match-search::placeholder { font-size: 12.5px; }
 .edit-search[hidden] { display: none; }
