@@ -2138,7 +2138,7 @@ function openEdit(id) {
   editUnit = it.unit || null;
   editPicked = false;
   $("editName").value = it.name;
-  $("editQty").textContent = editQty;
+  $("editQty").value = editQty;
   // Units or kg: for produce sold by weight.
   const weighed = !!find(id) && (unitKg(it.name) || listPrice(it, {}).weighted);
   $("editUnit").hidden = !weighed;
@@ -2243,7 +2243,7 @@ editSheet.addEventListener("click", (e) => {
   if (!step) return;
   const kg = editUnit === "kg";
   editQty = Math.min(Math.max(editQty + +step.dataset.step * (kg ? 0.5 : 1), kg ? 0.5 : 1), 999);
-  $("editQty").textContent = editQty;
+  $("editQty").value = editQty;
   buzz(5);
 });
 function syncEditUnit() {
@@ -2255,12 +2255,24 @@ $("editUnit").addEventListener("click", (e) => {
   if (!b) return;
   editUnit = b.dataset.unit || null;
   if (editUnit !== "kg") editQty = Math.max(1, Math.round(editQty));
-  $("editQty").textContent = editQty;
+  $("editQty").value = editQty;
   syncEditUnit();
   buzz(5);
 });
+// The amount in the item's sheet can be typed too (kg in halves; at least 1 unit or ½ kg).
+function readEditQty() {
+  const kg = editUnit === "kg";
+  const v = parseFloat(String($("editQty").value).replace(",", "."));
+  if (Number.isFinite(v) && v > 0) editQty = Math.min(kg ? Math.max(Math.round(v * 2) / 2, 0.5) : Math.max(Math.round(v), 1), 999);
+  $("editQty").value = editQty;
+}
+$("editQty").addEventListener("change", readEditQty);
+$("editQty").addEventListener("focus", (e) => { e.target.select(); e.target.dataset.fresh = "1"; });
+$("editQty").addEventListener("pointerup", (e) => { if (e.target.dataset.fresh) { delete e.target.dataset.fresh; e.preventDefault(); e.target.select(); } });
+$("editQty").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } });
 $("editForm").addEventListener("submit", (e) => {
   e.preventDefault();
+  readEditQty(); // typed but not yet left the box
   const id = editingId;
   const it = find(id);
   const name = $("editName").value.trim();

@@ -382,7 +382,7 @@
             <span class="col-label" id="qtyLabel">כמות</span>
             <div class="stepper inline" role="group" aria-labelledby="qtyLabel">
               <button type="button" data-step="1" aria-label="הגדלת כמות">+</button>
-              <output id="editQty" aria-live="polite">1</output>
+              <input id="editQty" class="qty-input" type="text" inputmode="decimal" enterkeyhint="done" maxlength="5" value="1" aria-labelledby="qtyLabel" />
               <button type="button" data-step="-1" aria-label="הקטנת כמות">−</button>
             </div>
           </div>
