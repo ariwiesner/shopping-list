@@ -1191,3 +1191,15 @@ body.asking-consent .content { padding-bottom: 130px; }
 .edit-search:focus { outline: none; border-color: var(--accent); }
 .edit-search::placeholder, .match-search::placeholder { font-size: 12.5px; }
 .edit-search[hidden] { display: none; }
+
+/* Units or kg, beside the amount (produce) */
+.unit-btn {
+  flex: none; min-width: 34px; height: 28px; padding: 0 6px; margin-inline-start: 4px;
+  border-radius: 99px; border: 1.5px solid var(--line);
+  font-size: 12px; font-weight: 700; color: var(--muted);
+}
+.unit-btn.kg { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.unit-btn:active { transform: scale(.94); }
+body.locked .list .unit-btn { display: none; }
+/* The plain list: a chosen product's price, small, under its name */
+.item-price.list-price { font-size: 12.5px; margin-top: 1px; }
