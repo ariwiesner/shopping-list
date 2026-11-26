@@ -323,7 +323,8 @@ function render() {
   const basket = items0.reduce((a, it) => a + listPrice(it, { ...dealOpts, basket: 0 }).total, 0);
   ui.lastBasket = basket;
   const items = items0.map((it) => ({ ...it, _price: listPrice(it, { ...dealOpts, basket }) }));
-  const todo = items.filter((i) => !i.done);
+  // To buy: oldest first, so a new item goes to the end. In the cart: the latest on top.
+  const todo = items.filter((i) => !i.done).reverse();
   const done = items.filter((i) => i.done);
   const total = items.length;
 
@@ -445,8 +446,8 @@ const storeChoice = () => (lockedForMe() ? prefs.store || ui.list?.store : (back
 // wheel, prices, totals and "where is it cheapest"). Before the switch existed, the mode followed
 // the store picked on this device: a chain meant comparing, "no store" (or nothing) a plain list.
 const MODE_LIST = "list", MODE_COMPARE = "compare";
-const viewMode = () => (prefs.mode === MODE_LIST || prefs.mode === MODE_COMPARE ? prefs.mode
-  : prefs.store && prefs.store !== NO_STORE ? MODE_COMPARE : MODE_LIST);
+let sessionMode = MODE_LIST; // the app always opens on the shopping list
+const viewMode = () => sessionMode;
 const knownChain = (id) => !!id && id !== NO_STORE && (!ui.chains.length || ui.chains.some((c) => c.id === id));
 // When comparing there's always a store: the list's (or this device's) choice, else the last
 // chain used here, else the first chain.
@@ -456,9 +457,11 @@ const currentStoreId = () => (viewMode() === MODE_LIST ? null
 function setMode(mode) {
   if (mode === viewMode()) return;
   track("view_mode", { mode });
-  prefs.mode = mode;
-  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), mode });
+  sessionMode = mode;
   buzz(8);
+  // A short fade, so the change of page is seen.
+  const c = $("content");
+  c.classList.remove("mode-enter"); void c.offsetWidth; c.classList.add("mode-enter");
   const chain = currentStoreId();
   loadStore(chain); // re-renders (no store = no prices)
   if (chain) { requestAnimationFrame(layoutWheel); nearestBranch(chain, false); }
@@ -1581,8 +1584,8 @@ async function commitImport() {
     .filter((it) => it.name);
   if (!rows.length || imp.busy) return;
   const now = Date.now();
-  // First item on top: the list shows the highest sortKey first.
-  const make = (it, k) => ({ id: uid(), name: it.name, qty: it.qty, done: !!it.done, price: null, createdAt: now, sortKey: now - k });
+  // In their order: the list shows the lowest sortKey first (new items go to the end).
+  const make = (it, k) => ({ id: uid(), name: it.name, qty: it.qty, done: !!it.done, price: null, createdAt: now, sortKey: now + k });
   track("import_list", { source: imp.photo ? "photo" : "text", items: rows.length });
   if (intoNewList()) {
     imp.busy = true;
@@ -1702,11 +1705,22 @@ function addItem(text, product = null) {
     backend.patch([existing.id], { qty: next, ...(product ? { barcode: product.code, productName: product.name, name, kind: existing.kind || kind } : {}) }).catch(fail);
     showToast(`${existing.name} כבר ברשימה — עכשיו ×${next}`, false);
   } else {
-    const now = Date.now();
-    backend.put([{ id: uid(), name, kind, qty, done: false, price: null, createdAt: now, sortKey: now, unit: unit || null,
+    const now = Date.now(), id = uid();
+    backend.put([{ id, name, kind, qty, done: false, price: null, createdAt: now, sortKey: now, unit: unit || null,
       ...(product ? { barcode: product.code, productName: product.name } : {}) }]).catch(fail);
+    showNewItem(id);
   }
   buzz();
+}
+// New items go to the end of the list: bring one into view if it's hidden (below the screen,
+// or behind the input box at the bottom).
+function showNewItem(id, tries = 10) {
+  requestAnimationFrame(() => {
+    const li = todoList.querySelector(`[data-id="${CSS.escape(id)}"]`);
+    if (!li) { if (tries > 0) setTimeout(() => showNewItem(id, tries - 1), 60); return; }
+    const r = li.getBoundingClientRect(), bottom = composer.getBoundingClientRect().top - 8;
+    if (r.bottom > bottom || r.top < 0) window.scrollBy({ top: r.bottom - bottom, behavior: "smooth" });
+  });
 }
 
 // ---------- The same item, asked for by several people (shared lists) ----------
@@ -2133,7 +2147,11 @@ function openEdit(id) {
   const remembered = choiceOf(kindKey(it));
   editProduct = it.barcode ? { code: it.barcode, name: it.productName } : remembered || null;
   // The name field also searches the store's products (when a store is chosen).
-  $("productStore").textContent = ui.cat ? `(${ui.cat.name})` : "";
+  $("productStore").textContent = "";
+  // Search for a specific product (any words: "תנובה 3%"), beside the name.
+  $("editSearch").value = "";
+  $("editSearch").hidden = !ui.cat;
+  if (ui.cat) $("editSearch").placeholder = `חיפוש אחר ${it.kind || it.name} ספציפי ב${ui.cat.name}`;
   $("productList").hidden = !ui.cat;
   if (ui.cat) renderProducts();
 }
@@ -2148,7 +2166,7 @@ function pickerPrice(p) {
 }
 
 function renderProducts() {
-  const q = $("editName").value.trim();
+  const q = $("editSearch").value.trim() || $("editName").value.trim();
   // Best matches first (the typed words as whole words: "חלב" is milk, not "חלבה"), and
   // within them cheapest first; the same name twice (two barcodes) shows once, the cheaper.
   const typed = norm(q).split(" ").filter(Boolean);
@@ -2158,7 +2176,11 @@ function renderProducts() {
     const k = norm(p.name), had = seen.get(k);
     if (!had || p.price < had.price) seen.set(k, p);
   }
-  const results = [...seen.values()].sort((a, b) => whole(b) - whole(a) || a.price - b.price).slice(0, 40);
+  // Searching for a specific one ("תנובה 3%" for milk): the item's own products come first.
+  const searching = !!$("editSearch").value.trim();
+  const own = searching ? norm($("editName").value).split(" ").filter((w) => w.length > 1 && !/\d/.test(w)).map(stem) : [];
+  const isIt = (p) => (own.length && norm(p.name).split(" ").some((w) => own.includes(stem(w))) ? 1 : 0);
+  const results = [...seen.values()].sort((a, b) => isIt(b) - isIt(a) || whole(b) - whole(a) || a.price - b.price).slice(0, 40);
   const sel = editProduct?.code;
   const selected = sel && ui.cat.byCode.get(sel);
   const list = selected && !results.includes(selected) ? [selected, ...results] : results;
@@ -2186,6 +2208,12 @@ $("editName").addEventListener("input", () => {
   clearTimeout(productSearchTimer);
   productSearchTimer = setTimeout(renderProducts, 120);
 });
+$("editSearch").addEventListener("input", () => {
+  if (!ui.cat) return;
+  clearTimeout(productSearchTimer);
+  productSearchTimer = setTimeout(renderProducts, 120);
+});
+$("editSearch").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } });
 $("productList").addEventListener("click", (e) => {
   const b = e.target.closest("[data-code]");
   if (!b) return;
@@ -2699,7 +2727,7 @@ function renderMatchSheet() {
   $("matchList").innerHTML = items.map((it) => {
     return `<li class="alt-item" data-id="${escapeHtml(it.id)}">
       <div class="match-head"><b>${escapeHtml(it.name)}</b>
-        <input type="search" class="match-search" placeholder="חיפוש ${escapeHtml(it.name)} ברשת ${escapeHtml(name)}" aria-label="חיפוש ${escapeHtml(it.name)} ברשת ${escapeHtml(name)}"
+        <input type="search" class="match-search" placeholder="חיפוש אחר ${escapeHtml(it.name)} ספציפי ב${escapeHtml(name)}" aria-label="חיפוש אחר ${escapeHtml(it.name)} ספציפי ב${escapeHtml(name)}"
           value="${escapeHtml(matchQuery.get(kindKey(it)) || "")}" autocomplete="off" enterkeyhint="search" /></div>
       <div class="match-opts">${matchOptsHtml(it)}</div>
     </li>`;
