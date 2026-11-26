@@ -1203,4 +1203,9 @@ body.asking-consent .content { padding-bottom: 130px; }
 .item-price.list-price { font-size: 12.5px; margin-top: 1px; }
 
 /* The unit inside the amount box: small, under or beside the number */
-.qty-field small { font-size: 10.5px; font-weight: 700; color: var(--muted); margin-inline-start: 1px; }
+/* Out of the layout, so every amount box is the same size: tiny, right under the number */
+.list .qty-field { position: relative; }
+.list .qty-field small {
+  position: absolute; left: 50%; bottom: -3px; transform: translateX(-50%);
+  margin: 0; font-size: 8.5px; font-weight: 700; line-height: 1; color: var(--muted); pointer-events: none; white-space: nowrap;
+}
