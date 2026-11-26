@@ -175,6 +175,15 @@ h1 { margin: 2px 0 0; font-size: 18px; font-weight: 800; letter-spacing: 0; }
 .qty-badge { display: none; color: var(--muted); font-weight: 700; padding-inline-end: 12px; }
 .done .qty-badge { display: block; }
 
+/* In the item row: a compact amount (+ and − close to the number) and a trash icon beside it */
+.list .item-body { gap: 8px; padding-inline-end: 4px; }
+.list .stepper { height: 38px; }
+.list .stepper button { width: 32px; height: 38px; font-size: 20px; border-radius: 99px; }
+.list .qty-input { width: 1.9em; min-width: 24px; padding: 2px 0; }
+.item-del { flex: none; width: 36px; height: 44px; display: grid; place-items: center; border-radius: 12px; color: var(--muted); }
+.item-del svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.item-del:active { background: var(--surface-2); color: var(--danger); }
+
 @keyframes pop { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }
 
 /* ---------- Done section ---------- */

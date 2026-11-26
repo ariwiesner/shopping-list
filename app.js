@@ -345,6 +345,7 @@ function itemHtml(it) {
           <button data-act="dec" aria-label="הקטנת כמות">−</button>
         </div>
         ${it.unit === "kg" ? `<span class="qty-badge">${it.qty} ק״ג</span>` : it.qty > 1 ? `<span class="qty-badge">×${it.qty}</span>` : ""}
+        <button class="item-del" data-act="del" aria-label="מחיקת ${name}">${TRASH_SVG}</button>
       </div>
     </li>`;
 }
@@ -671,6 +672,7 @@ let branchCtx = { chain: null, purpose: "shop" };
 // The usual store: this device's own { chain, branch (null = all branches), branchName }, or null.
 const homeStore = () => (prefs.home?.chain && (!ui.chains.length || ui.chains.some((c) => c.id === prefs.home.chain)) ? prefs.home : null);
 const homeLabel = (h = homeStore()) => (h ? chainName(h.chain) + (h.branch ? ` · סניף ${h.branchName || h.branch}` : "") : "");
+const TRASH_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
 const STAR_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg>';
 const starBtn = (on, data, what) => `<button type="button" class="star-btn${on ? " on" : ""}" data-star="${escapeHtml(String(data))}"
   aria-pressed="${on}" aria-label="${on ? `הסרת ${escapeHtml(what)} מהחנות הקבועה` : `קביעת ${escapeHtml(what)} כחנות הקבועה`}">${STAR_SVG}</button>`;
@@ -2976,6 +2978,7 @@ function onListClick(e) {
     case "unalt": return undoAlt(id);
     case "inc": return changeQty(id, 1);
     case "dec": return changeQty(id, -1);
+    case "del": return removeItems([id]); // with undo in the toast
   }
 }
 todoList.addEventListener("click", onListClick);
