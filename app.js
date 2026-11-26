@@ -47,8 +47,46 @@ const KG = String.raw`(?:ק"ג|ק״ג|קג|קילו|ק\.ג|kg)`;
 const KG_FIRST = new RegExp(String.raw`^(\d+(?:[.,]\d+)?)\s*${KG}\s+(.+)$`, "i");
 const KG_LAST = new RegExp(String.raw`^(.+?)\s+(\d+(?:[.,]\d+)?)\s*${KG}$`, "i");
 const KG_ONLY = new RegExp(String.raw`^${KG}\s+(.+)$`, "i");
+// Amounts written as Hebrew words: "חמש עוגיות", "שתי חלות", "עוגיות חמש", "שני קילו
+// עגבניות", "שתים עשרה ביצים", "עשרים ושלוש". They become digits before parsing.
+const NUM_UNITS = {
+  אחד: 1, אחת: 1, שניים: 2, שנים: 2, שני: 2, שתיים: 2, שתים: 2, שתי: 2,
+  שלוש: 3, שלש: 3, שלושה: 3, שלשה: 3, שלושת: 3, שלשת: 3, ארבע: 4, ארבעה: 4, ארבעת: 4,
+  חמש: 5, חמישה: 5, חמשה: 5, חמשת: 5, חמישת: 5, שש: 6, שישה: 6, ששה: 6, ששת: 6, שישת: 6,
+  שבע: 7, שבעה: 7, שבעת: 7, שמונה: 8, שמונת: 8, תשע: 9, תשעה: 9, תשעת: 9, עשר: 10, עשרה: 10, עשרת: 10,
+};
+const NUM_TENS = { עשרים: 20, שלושים: 30, שלשים: 30, ארבעים: 40, חמישים: 50, שישים: 60, שבעים: 70, שמונים: 80, תשעים: 90, מאה: 100 };
+// A number from words[i]: { value, len } (how many words it took), or null.
+function numberAt(words, i) {
+  const w = words[i];
+  if (w in NUM_TENS) {
+    const and = words[i + 1]?.startsWith("ו") ? words[i + 1].slice(1) : null; // "עשרים ושלוש"
+    if (and && and in NUM_UNITS && NUM_UNITS[and] < 10) return { value: NUM_TENS[w] + NUM_UNITS[and], len: 2 };
+    return { value: NUM_TENS[w], len: 1 };
+  }
+  if (w in NUM_UNITS) {
+    const v = NUM_UNITS[w];
+    if (v < 10 && (words[i + 1] === "עשר" || words[i + 1] === "עשרה")) return { value: 10 + v, len: 2 }; // "חמש עשרה"
+    return { value: v, len: 1 };
+  }
+  return null;
+}
+function numberWordsToDigits(s) {
+  const words = s.split(" ");
+  if (words.length < 2) return s;
+  const first = numberAt(words, 0);
+  if (first && first.len < words.length) return [String(first.value), ...words.slice(first.len)].join(" ");
+  // At the end ("עוגיות חמש"), or just before a kg word ("עגבניות שני קילו").
+  const kgAt = words.length >= 3 && new RegExp(String.raw`^${KG}$`, "i").test(words[words.length - 1]) ? words.length - 1 : words.length;
+  for (let k = Math.max(1, kgAt - 2); k < kgAt; k++) {
+    const n = numberAt(words, k);
+    if (n && k + n.len === kgAt) return [...words.slice(0, k), String(n.value), ...words.slice(kgAt)].join(" ");
+  }
+  return s;
+}
+
 function parseInput(text) {
-  let s = text.trim().replace(/\s+/g, " ");
+  let s = numberWordsToDigits(text.trim().replace(/\s+/g, " "));
   let km = s.match(KG_FIRST);
   if (km || (km = s.match(KG_LAST))) {
     const [num, rest] = s.match(KG_FIRST) ? [km[1], km[2]] : [km[2], km[1]];
@@ -257,7 +295,8 @@ function itemHtml(it) {
         </button>
         <div class="stepper" role="group" aria-label="כמות">
           <button data-act="inc" aria-label="הגדלת כמות">+</button>
-          <output aria-live="polite">${it.qty}${it.unit === "kg" ? "<small>ק״ג</small>" : ""}</output>
+          <label class="qty-field"><input class="qty-input" data-act="qty" type="text" inputmode="decimal" enterkeyhint="done"
+            maxlength="5" value="${it.qty}" aria-label="כמות של ${name}"${askedByOthers(it) ? " readonly" : ""} />${it.unit === "kg" ? "<small>ק״ג</small>" : ""}</label>
           <button data-act="dec" aria-label="הקטנת כמות">−</button>
         </div>
         ${it.unit === "kg" ? `<span class="qty-badge">${it.qty} ק״ג</span>` : it.qty > 1 ? `<span class="qty-badge">×${it.qty}</span>` : ""}
@@ -367,7 +406,7 @@ function renderTotal(items) {
   }
   const general = ui.cat ? generalItems().length : 0;
   $("matchBtn").hidden = !general;
-  $("matchBtn").textContent = `לדייק ${general === 1 ? "פריט כללי" : `${general} פריטים כלליים`}`;
+  $("matchBtn").textContent = "לבחור מוצרים מדויקים ←";
   ui.listSum = { total: sum, est: estCount, club: items.some((i) => i._price.deal?.applied && i._price.deal.club) };
   $("totalStore").textContent = ui.cat ? ui.cat.name : "רשימה";
   $("totalAmount").textContent = (estCount ? "~" : "") + money(sum);
@@ -2738,6 +2777,49 @@ function onListClick(e) {
 todoList.addEventListener("click", onListClick);
 doneList.addEventListener("click", onListClick);
 
+// The amount itself can be typed: tap the number, type, Enter (or tap elsewhere).
+// 0 removes the item (with undo); kg go in half kilos.
+function setQty(id, raw) {
+  const it = find(id);
+  if (!it) return;
+  let v = parseFloat(String(raw).replace(",", "."));
+  if (!Number.isFinite(v)) { render(); return; } // not a number: back to what it was
+  v = it.unit === "kg" ? Math.round(v * 2) / 2 : Math.round(v);
+  if (v <= 0) return removeItems([id]);
+  v = Math.min(v, 999);
+  if (v === it.qty) return;
+  buzz(5);
+  backend.patch([id], { qty: v, ...(it.importNote ? { importNote: null } : {}) }).catch(fail);
+}
+todoList.addEventListener("focusin", (e) => {
+  const q = e.target.closest(".qty-input");
+  if (!q) return;
+  if (lockedForMe()) { q.blur(); return lockedNotice(); }
+  if (q.readOnly) { q.blur(); return showToast("כמה אנשים ביקשו את הפריט: שנו את הכמות עם + ו־−", false); }
+  // Select the number so typing replaces it. The tap that focused it would then put the caret
+  // in instead, so its release selects again.
+  q.select();
+  q.dataset.fresh = "1";
+});
+todoList.addEventListener("pointerup", (e) => {
+  const q = e.target.closest(".qty-input");
+  if (!q || !q.dataset.fresh) return;
+  delete q.dataset.fresh;
+  e.preventDefault();
+  q.select();
+});
+todoList.addEventListener("focusout", (e) => { const q = e.target.closest(".qty-input"); if (q) delete q.dataset.fresh; });
+todoList.addEventListener("change", (e) => {
+  const q = e.target.closest(".qty-input");
+  if (q) setQty(q.closest(".item").dataset.id, q.value);
+});
+todoList.addEventListener("keydown", (e) => {
+  const q = e.target.closest(".qty-input");
+  if (!q) return;
+  if (e.key === "Enter") { e.preventDefault(); q.blur(); }
+  if (e.key === "Escape") { q.value = find(q.closest(".item").dataset.id)?.qty ?? q.value; q.blur(); }
+});
+
 doneToggle.addEventListener("click", () => {
   ui.doneOpen = !ui.doneOpen;
   store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), doneOpen: ui.doneOpen });
@@ -2752,7 +2834,8 @@ function enableSwipe(list) {
   list.addEventListener("pointerdown", (e) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     body = e.target.closest(".item-body");
-    if (!body || lockedForMe()) { body = null; return; } // locked: no swipe-to-delete
+    // Locked: no swipe-to-delete. Typing an amount isn't a swipe either.
+    if (!body || lockedForMe() || e.target.closest(".qty-input")) { body = null; return; }
     li = body.parentElement;
     startX = e.clientX; startY = e.clientY; dx = 0;
     active = true; decided = false;

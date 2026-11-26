@@ -161,6 +161,16 @@ h1 { margin: 2px 0 0; font-size: 18px; font-weight: 800; letter-spacing: 0; }
 }
 .stepper button:active { background: var(--line); }
 .stepper output { min-width: 22px; text-align: center; font-weight: 800; font-variant-numeric: tabular-nums; }
+/* The amount: a number you can tap and type */
+.qty-field { display: flex; align-items: baseline; justify-content: center; cursor: text; }
+.qty-input {
+  width: 2.4em; min-width: 28px; padding: 2px 0; border: 0; border-radius: 8px;
+  background: transparent; color: inherit; text-align: center;
+  font: inherit; font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums;
+}
+.qty-input:focus { outline: 2px solid var(--accent); background: var(--surface); }
+.qty-input[readonly]:focus { outline: none; background: transparent; }
+.qty-field small { font-size: 11px; color: var(--muted); margin-inline-start: 1px; }
 .done .stepper { display: none; }
 .qty-badge { display: none; color: var(--muted); font-weight: 700; padding-inline-end: 12px; }
 .done .qty-badge { display: block; }
@@ -1113,9 +1123,6 @@ body.asking-consent .content { padding-bottom: 130px; }
 .home-price strong { flex: none; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
 
 /* ---------- Simple list mode ---------- */
-/* Just a checkbox and the name: the quantity shows as "×2" (tap the item to change it). */
-.mode-list .stepper { display: none; }
-.mode-list .qty-badge { display: block; }
 .suggest-name-only { justify-content: flex-start; }
 
 /* Matching general items, from the total */
