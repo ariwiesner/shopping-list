@@ -95,8 +95,8 @@
            Each person picks their own mode (on a shared list too).
            In the sticky header, so it stays in reach while scrolling. -->
       <div class="mode-switch" id="modeSwitch" role="tablist" aria-label="מצב תצוגה">
-        <button type="button" role="tab" data-mode="list" aria-selected="true">📝 רשימת קניות</button>
-        <button type="button" role="tab" data-mode="compare" aria-selected="false">💰 השוואת מחירים</button>
+        <button type="button" role="tab" data-mode="list" aria-selected="true"><span class="ms-icon" aria-hidden="true">📝</span><span class="ms-label">רשימת קניות</span><span class="ms-short" aria-hidden="true">רשימה</span></button>
+        <button type="button" role="tab" data-mode="compare" aria-selected="false"><span class="ms-icon" aria-hidden="true">💰</span><span class="ms-label">השוואת מחירים</span><span class="ms-short" aria-hidden="true">השוואה</span></button>
       </div>
       <div class="progress-card" id="progressCard" hidden>
         <div class="total" id="totalBox" hidden>
@@ -382,13 +382,18 @@
             <span class="col-label" id="qtyLabel">כמות</span>
             <div class="stepper inline" role="group" aria-labelledby="qtyLabel">
               <button type="button" data-step="1" aria-label="הגדלת כמות">+</button>
-              <output id="editQty" aria-live="polite">1</output>
+              <input id="editQty" class="qty-input" type="text" inputmode="decimal" enterkeyhint="done" maxlength="5" value="1" aria-labelledby="qtyLabel" />
               <button type="button" data-step="-1" aria-label="הקטנת כמות">−</button>
             </div>
           </div>
           <div class="name-col">
-            <label class="col-label" for="editName">שם <small id="productStore"></small></label>
+            <label class="col-label" for="editName">שם המוצר <small id="productStore"></small></label>
             <input id="editName" type="text" maxlength="60" required autocomplete="off" />
+          </div>
+          <!-- Search for a specific product (compare mode): same width as the name -->
+          <div class="name-col search-col" id="editSearchCol" hidden>
+            <label class="col-label" for="editSearch" id="editSearchLabel">חיפוש</label>
+            <input id="editSearch" class="edit-search" type="search" autocomplete="off" enterkeyhint="search" placeholder="למשל: תנובה 3%" />
           </div>
         </div>
         <div class="seg unit-seg" id="editUnit" role="radiogroup" aria-label="יחידות או קילו" hidden>

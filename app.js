@@ -215,7 +215,11 @@ function priceLine(it) {
   // Switching chain: a placeholder where the price will be, until its prices arrive.
   if (pricesLoading() && p?.kind !== "manual") return `<div class="item-price skel" aria-label="טוען מחיר"></div>`;
   // No store chosen: still show which product was chosen, as a quiet second line.
-  if (!ui.cat && p?.kind !== "manual") return it.productName ? `<div class="item-alt">🏷️ ${escapeHtml(it.productName)}</div>` : "";
+  if (!ui.cat && p?.kind !== "manual") {
+    // The product's name, unless the title already is that name.
+    const pn = it.productName && norm(it.productName), n = norm(it.name);
+    return pn && !pn.startsWith(n) && !n.startsWith(pn) ? `<div class="item-alt">🏷️ ${escapeHtml(it.productName)}</div>` : "";
+  }
   if (!p) return "";
   // Weighed produce: counted in units (≈ kg by a typical weight) or in kg.
   const qtyNote = p.unitKg ? ` <span class="muted">(≈${fmtKg(p.kg)} ק״ג · ${amt(money(p.unit))} לק״ג)</span>`
@@ -319,7 +323,8 @@ function render() {
   const basket = items0.reduce((a, it) => a + listPrice(it, { ...dealOpts, basket: 0 }).total, 0);
   ui.lastBasket = basket;
   const items = items0.map((it) => ({ ...it, _price: listPrice(it, { ...dealOpts, basket }) }));
-  const todo = items.filter((i) => !i.done);
+  // To buy: oldest first, so a new item goes to the end. In the cart: the latest on top.
+  const todo = items.filter((i) => !i.done).reverse();
   const done = items.filter((i) => i.done);
   const total = items.length;
 
@@ -441,8 +446,8 @@ const storeChoice = () => (lockedForMe() ? prefs.store || ui.list?.store : (back
 // wheel, prices, totals and "where is it cheapest"). Before the switch existed, the mode followed
 // the store picked on this device: a chain meant comparing, "no store" (or nothing) a plain list.
 const MODE_LIST = "list", MODE_COMPARE = "compare";
-const viewMode = () => (prefs.mode === MODE_LIST || prefs.mode === MODE_COMPARE ? prefs.mode
-  : prefs.store && prefs.store !== NO_STORE ? MODE_COMPARE : MODE_LIST);
+let sessionMode = MODE_LIST; // the app always opens on the shopping list
+const viewMode = () => sessionMode;
 const knownChain = (id) => !!id && id !== NO_STORE && (!ui.chains.length || ui.chains.some((c) => c.id === id));
 // When comparing there's always a store: the list's (or this device's) choice, else the last
 // chain used here, else the first chain.
@@ -452,9 +457,11 @@ const currentStoreId = () => (viewMode() === MODE_LIST ? null
 function setMode(mode) {
   if (mode === viewMode()) return;
   track("view_mode", { mode });
-  prefs.mode = mode;
-  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), mode });
+  sessionMode = mode;
   buzz(8);
+  // A short fade, so the change of page is seen.
+  const c = $("content");
+  c.classList.remove("mode-enter"); void c.offsetWidth; c.classList.add("mode-enter");
   const chain = currentStoreId();
   loadStore(chain); // re-renders (no store = no prices)
   if (chain) { requestAnimationFrame(layoutWheel); nearestBranch(chain, false); }
@@ -1577,8 +1584,8 @@ async function commitImport() {
     .filter((it) => it.name);
   if (!rows.length || imp.busy) return;
   const now = Date.now();
-  // First item on top: the list shows the highest sortKey first.
-  const make = (it, k) => ({ id: uid(), name: it.name, qty: it.qty, done: !!it.done, price: null, createdAt: now, sortKey: now - k });
+  // In their order: the list shows the lowest sortKey first (new items go to the end).
+  const make = (it, k) => ({ id: uid(), name: it.name, qty: it.qty, done: !!it.done, price: null, createdAt: now, sortKey: now + k });
   track("import_list", { source: imp.photo ? "photo" : "text", items: rows.length });
   if (intoNewList()) {
     imp.busy = true;
@@ -1698,11 +1705,22 @@ function addItem(text, product = null) {
     backend.patch([existing.id], { qty: next, ...(product ? { barcode: product.code, productName: product.name, name, kind: existing.kind || kind } : {}) }).catch(fail);
     showToast(`${existing.name} כבר ברשימה — עכשיו ×${next}`, false);
   } else {
-    const now = Date.now();
-    backend.put([{ id: uid(), name, kind, qty, done: false, price: null, createdAt: now, sortKey: now, unit: unit || null,
+    const now = Date.now(), id = uid();
+    backend.put([{ id, name, kind, qty, done: false, price: null, createdAt: now, sortKey: now, unit: unit || null,
       ...(product ? { barcode: product.code, productName: product.name } : {}) }]).catch(fail);
+    showNewItem(id);
   }
   buzz();
+}
+// New items go to the end of the list: bring one into view if it's hidden (below the screen,
+// or behind the input box at the bottom).
+function showNewItem(id, tries = 10) {
+  requestAnimationFrame(() => {
+    const li = todoList.querySelector(`[data-id="${CSS.escape(id)}"]`);
+    if (!li) { if (tries > 0) setTimeout(() => showNewItem(id, tries - 1), 60); return; }
+    const r = li.getBoundingClientRect(), bottom = composer.getBoundingClientRect().top - 8;
+    if (r.bottom > bottom || r.top < 0) window.scrollBy({ top: r.bottom - bottom, behavior: "smooth" });
+  });
 }
 
 // ---------- The same item, asked for by several people (shared lists) ----------
@@ -2120,7 +2138,7 @@ function openEdit(id) {
   editUnit = it.unit || null;
   editPicked = false;
   $("editName").value = it.name;
-  $("editQty").textContent = editQty;
+  $("editQty").value = editQty;
   // Units or kg: for produce sold by weight.
   const weighed = !!find(id) && (unitKg(it.name) || listPrice(it, {}).weighted);
   $("editUnit").hidden = !weighed;
@@ -2129,7 +2147,18 @@ function openEdit(id) {
   const remembered = choiceOf(kindKey(it));
   editProduct = it.barcode ? { code: it.barcode, name: it.productName } : remembered || null;
   // The name field also searches the store's products (when a store is chosen).
-  $("productStore").textContent = ui.cat ? `(${ui.cat.name})` : "";
+  $("productStore").textContent = "";
+  // Search for a specific product (any words: "תנובה 3%"), beside the name.
+  $("editSearch").value = "";
+  $("editSearchCol").hidden = !ui.cat;
+  // Comparing prices: the name comes from the product chosen below, not typed. (In the plain
+  // list there are no products to choose, so the name is typed there.)
+  $("editName").readOnly = !!ui.cat;
+  editNameTouched = false;
+  // A product already chosen: offer a different one; otherwise a specific one.
+  if (ui.cat) $("editSearchLabel").textContent = it.barcode
+    ? `חפש אחר ${it.kind || it.name} שונה`
+    : `חיפוש אחר ${it.kind || it.name} ספציפי ב${ui.cat.name}`;
   $("productList").hidden = !ui.cat;
   if (ui.cat) renderProducts();
 }
@@ -2144,7 +2173,11 @@ function pickerPrice(p) {
 }
 
 function renderProducts() {
-  const q = $("editName").value.trim();
+  // What to list: the search box; else the name. An item that already is a product
+  // ("חלב 3% תנובה") lists its kind ("חלב"), so the other options show too.
+  const cur = find(editingId);
+  const base = !editNameTouched && cur?.barcode && cur.kind ? cur.kind : $("editName").value.trim();
+  const q = $("editSearch").value.trim() || base;
   // Best matches first (the typed words as whole words: "חלב" is milk, not "חלבה"), and
   // within them cheapest first; the same name twice (two barcodes) shows once, the cheaper.
   const typed = norm(q).split(" ").filter(Boolean);
@@ -2154,34 +2187,48 @@ function renderProducts() {
     const k = norm(p.name), had = seen.get(k);
     if (!had || p.price < had.price) seen.set(k, p);
   }
-  const results = [...seen.values()].sort((a, b) => whole(b) - whole(a) || a.price - b.price).slice(0, 40);
+  // Searching for a specific one ("תנובה 3%" for milk): the item's own products come first.
+  const searching = !!$("editSearch").value.trim();
+  const own = searching ? norm(base).split(" ").filter((w) => w.length > 1 && !/\d/.test(w)).map(stem) : [];
+  const isIt = (p) => (own.length && norm(p.name).split(" ").some((w) => own.includes(stem(w))) ? 1 : 0);
+  const results = [...seen.values()].sort((a, b) => isIt(b) - isIt(a) || whole(b) - whole(a) || a.price - b.price).slice(0, 40);
   const sel = editProduct?.code;
   const selected = sel && ui.cat.byCode.get(sel);
-  const list = selected && !results.includes(selected) ? [selected, ...results] : results;
-  // First option: let the app decide (the clearly-meant product, or a typical price).
-  const auto = ui.cat && resolve(ui.cat, $("editName").value.trim());
+  // The product chosen now comes first, whatever is searched; then "let the app decide";
+  // then the other options.
+  const list = results.filter((p) => p !== selected);
+  // Let the app decide: the clearly-meant product, or else a typical price.
+  const auto = ui.cat && resolve(ui.cat, base);
   // Otherwise the common price of the matching products (their middle price).
-  const typical = !auto && ui.cat && estimate(ui.cat, $("editName").value.trim());
-  $("productList").innerHTML = `
+  const typical = !auto && ui.cat && estimate(ui.cat, base);
+  const row = (p) => `
+    <li><button type="button" class="product${p.code === sel ? " selected" : ""}" data-code="${escapeHtml(p.code)}" role="option" aria-selected="${p.code === sel}">
+      <span class="product-name">${escapeHtml(p.name)}${p.brand ? `<small>${escapeHtml(p.brand)}</small>` : ""}</span>
+      <span class="product-price">${pickerPrice(p)}${p.weighted ? "<small>לק״ג</small>" : ""}</span>
+    </button></li>`;
+  $("productList").innerHTML = (selected ? row(selected) : "") + `
     <li><button type="button" class="product${!sel ? " selected" : ""}" data-code="" role="option" aria-selected="${!sel}">
       <span class="product-name">${auto ? `אוטומטי — ${escapeHtml(auto.name)}` : "לא משנה איזה — לפי הערכה"}</span>
       <span class="product-price${auto ? "" : " muted"}">${auto ? amt(money(auto.price)) + (auto.weighted ? "<small>לק״ג</small>" : "")
         : typical ? amt("~" + money(typical.price)) + "<small>מחיר נפוץ</small>" : "מחיר נפוץ"}</span>
     </button></li>` +
-    list.map((p) => `
-    <li><button type="button" class="product${p.code === sel ? " selected" : ""}" data-code="${escapeHtml(p.code)}" role="option" aria-selected="${p.code === sel}">
-      <span class="product-name">${escapeHtml(p.name)}${p.brand ? `<small>${escapeHtml(p.brand)}</small>` : ""}</span>
-      <span class="product-price">${pickerPrice(p)}${p.weighted ? "<small>לק״ג</small>" : ""}</span>
-    </button></li>`).join("") +
+    list.map(row).join("") +
     (q && !results.length ? `<li class="products-empty">לא מצאנו מוצרים בשם הזה</li>` : "");
 }
 
-let productSearchTimer;
+let productSearchTimer, editNameTouched = false;
 $("editName").addEventListener("input", () => {
+  editNameTouched = true;
   if (!ui.cat) return;
   clearTimeout(productSearchTimer);
   productSearchTimer = setTimeout(renderProducts, 120);
 });
+$("editSearch").addEventListener("input", () => {
+  if (!ui.cat) return;
+  clearTimeout(productSearchTimer);
+  productSearchTimer = setTimeout(renderProducts, 120);
+});
+$("editSearch").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } });
 $("productList").addEventListener("click", (e) => {
   const b = e.target.closest("[data-code]");
   if (!b) return;
@@ -2199,7 +2246,7 @@ editSheet.addEventListener("click", (e) => {
   if (!step) return;
   const kg = editUnit === "kg";
   editQty = Math.min(Math.max(editQty + +step.dataset.step * (kg ? 0.5 : 1), kg ? 0.5 : 1), 999);
-  $("editQty").textContent = editQty;
+  $("editQty").value = editQty;
   buzz(5);
 });
 function syncEditUnit() {
@@ -2211,12 +2258,24 @@ $("editUnit").addEventListener("click", (e) => {
   if (!b) return;
   editUnit = b.dataset.unit || null;
   if (editUnit !== "kg") editQty = Math.max(1, Math.round(editQty));
-  $("editQty").textContent = editQty;
+  $("editQty").value = editQty;
   syncEditUnit();
   buzz(5);
 });
+// The amount in the item's sheet can be typed too (kg in halves; at least 1 unit or ½ kg).
+function readEditQty() {
+  const kg = editUnit === "kg";
+  const v = parseFloat(String($("editQty").value).replace(",", "."));
+  if (Number.isFinite(v) && v > 0) editQty = Math.min(kg ? Math.max(Math.round(v * 2) / 2, 0.5) : Math.max(Math.round(v), 1), 999);
+  $("editQty").value = editQty;
+}
+$("editQty").addEventListener("change", readEditQty);
+$("editQty").addEventListener("focus", (e) => { e.target.select(); e.target.dataset.fresh = "1"; });
+$("editQty").addEventListener("pointerup", (e) => { if (e.target.dataset.fresh) { delete e.target.dataset.fresh; e.preventDefault(); e.target.select(); } });
+$("editQty").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } });
 $("editForm").addEventListener("submit", (e) => {
   e.preventDefault();
+  readEditQty(); // typed but not yet left the box
   const id = editingId;
   const it = find(id);
   const name = $("editName").value.trim();
@@ -2658,6 +2717,34 @@ function openMatchSheet(forCompare = false) {
   // How many chains sell each product helps rank the options: load it, then rank again.
   if (!commonCat) loadCommon().then((c) => { commonCat = c; if (!matchSheet.hidden) renderMatchSheet(); }).catch(() => {});
 }
+// One item's options: the 3 likeliest; opened, all of them, or what its search box finds
+// (any words: "תנובה 3%"), with a button to open or close.
+const matchQuery = new Map(); // kindKey → what was typed in its search box
+function matchOptsHtml(it) {
+  const name = ui.cat?.name || "";
+  const open = matchOpen.has(kindKey(it));
+  const q = (matchQuery.get(kindKey(it)) || "").trim();
+  let opts, more = 0;
+  if (q) {
+    const seen = new Set();
+    // Products that are the item ("חלב" when searching "תנובה 3%" for milk) come first.
+    const own = norm(it.kind || it.name).split(" ").filter((w) => w.length > 1 && !/\d/.test(w)).map(stem);
+    const isIt = (p) => (norm(p.name).split(" ").some((w) => own.includes(stem(w))) ? 1 : 0);
+    opts = ui.cat ? search(ui.cat, q, 200)
+      .filter((p) => { const k = norm(p.name); if (seen.has(k)) return false; seen.add(k); return true; })
+      .map((p, i) => ({ p, i, own: isIt(p) })).sort((a, b) => b.own - a.own || a.i - b.i).map((x) => x.p) : [];
+  } else {
+    const all = matchCandidates(it, Infinity, true);
+    opts = open ? all : matchCandidates(it);
+    more = all.length - opts.length;
+  }
+  return (opts.length ? opts.map((p) => `<button type="button" class="product alt-opt" data-code="${escapeHtml(p.code)}">
+      <span class="product-name">${escapeHtml(p.name)}</span>
+      <span class="product-price">${amt(money(p.price))}${p.weighted ? "<small>לק״ג</small>" : ""}</span></button>`).join("")
+    : `<p class="alt-none">${q ? `לא מצאנו ב${escapeHtml(name)} מוצר כזה` : `לא מצאנו ב${escapeHtml(name)} מוצר מתאים`}</p>`) +
+    (q ? "" : more > 0 ? `<button type="button" class="link-btn match-more" data-more>עוד ${more} אפשרויות ↓</button>`
+      : open && opts.length > 3 ? `<button type="button" class="link-btn match-more" data-less>פחות אפשרויות ↑</button>` : "");
+}
 function renderMatchSheet() {
   const items = generalItems();
   const name = ui.cat?.name || "";
@@ -2665,19 +2752,11 @@ function renderMatchSheet() {
     ? `${items.length === 1 ? "פריט אחד נכתב" : `${items.length} פריטים נכתבו`} בלי מוצר מדויק, אז המחיר שלהם משוער. בחרו מוצר פעם אחת: הבחירה נשמרת ברשימה, ובפעם הבאה שמישהו יכתוב אותו שם זה יהיה המוצר הזה.`
     : "כל הפריטים ברשימה מותאמים למוצר מדויק.";
   $("matchList").innerHTML = items.map((it) => {
-    // The 3 likeliest, and a button for all of them (the one wanted may not be in the 3).
-    const all = matchCandidates(it, Infinity, true);
-    const open = matchOpen.has(kindKey(it));
-    const opts = open ? all : matchCandidates(it);
-    const more = all.length - opts.length;
     return `<li class="alt-item" data-id="${escapeHtml(it.id)}">
-      <p class="alt-head"><b>${escapeHtml(it.name)}</b></p>
-      ${opts.length ? opts.map((p) => `<button type="button" class="product alt-opt" data-code="${escapeHtml(p.code)}">
-          <span class="product-name">${escapeHtml(p.name)}</span>
-          <span class="product-price">${amt(money(p.price))}${p.weighted ? "<small>לק״ג</small>" : ""}</span></button>`).join("")
-        : `<p class="alt-none">לא מצאנו ב${escapeHtml(name)} מוצר מתאים</p>`}
-      ${more > 0 ? `<button type="button" class="link-btn match-more" data-more>עוד ${more} אפשרויות ↓</button>`
-        : open && all.length > 3 ? `<button type="button" class="link-btn match-more" data-less>פחות אפשרויות ↑</button>` : ""}
+      <div class="match-head"><b>${escapeHtml(it.name)}</b>
+        <input type="search" class="match-search" placeholder="חיפוש אחר ${escapeHtml(it.name)} ספציפי ב${escapeHtml(name)}" aria-label="חיפוש אחר ${escapeHtml(it.name)} ספציפי ב${escapeHtml(name)}"
+          value="${escapeHtml(matchQuery.get(kindKey(it)) || "")}" autocomplete="off" enterkeyhint="search" /></div>
+      <div class="match-opts">${matchOptsHtml(it)}</div>
     </li>`;
   }).join("");
   $("matchGo").hidden = !matchForCompare;
@@ -2687,7 +2766,9 @@ matchSheet.addEventListener("click", (e) => {
   const toggle = e.target.closest("[data-more], [data-less]");
   if (toggle) {
     const it = find(toggle.closest("[data-id]").dataset.id);
-    if (it) { if (toggle.hasAttribute("data-more")) matchOpen.add(kindKey(it)); else matchOpen.delete(kindKey(it)); }
+    if (!it) return;
+    const opening = toggle.hasAttribute("data-more");
+    if (opening) matchOpen.add(kindKey(it)); else matchOpen.delete(kindKey(it));
     renderMatchSheet();
     return;
   }
@@ -2695,7 +2776,16 @@ matchSheet.addEventListener("click", (e) => {
   if (opt) {
     const it = find(opt.closest("[data-id]").dataset.id), p = ui.cat?.byCode.get(opt.dataset.code);
     if (!it || !p) return;
-    setChoice(kindKey(it), p);
+    const key = kindKey(it);
+    setChoice(key, p);
+    // The list shows it too: each item of this kind becomes the product (its name as the
+    // title, what was written as its kind), as when choosing a product while typing.
+    if (!lockedForMe()) {
+      const same = ui.items.filter((i) => !i.done && !i.barcode && kindKey(i) === key);
+      const fields = { barcode: p.code, productName: p.name, name: productTitle(p), kind: it.kind || it.name };
+      same.forEach((i) => Object.assign(i, fields)); // shown at once; the backend update follows
+      if (same.length) backend.patch(same.map((i) => i.id), fields).catch(fail);
+    }
     track("match_pick");
     buzz(8);
     render();
@@ -2706,6 +2796,15 @@ matchSheet.addEventListener("click", (e) => {
   if (e.target.closest("#matchSkip")) closeSheets();
 });
 document.addEventListener("click", (e) => { if (e.target.closest("#matchBtn")) openMatchSheet(false); });
+matchSheet.addEventListener("input", (e) => {
+  const box = e.target.closest(".match-search");
+  if (!box) return;
+  const li = box.closest("[data-id]"), it = find(li.dataset.id);
+  if (!it) return;
+  matchQuery.set(kindKey(it), box.value);
+  li.querySelector(".match-opts").innerHTML = matchOptsHtml(it);
+});
+matchSheet.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.closest(".match-search")) { e.preventDefault(); e.target.blur(); } });
 
 const altSheet = $("altSheet");
 let altForCompare = false;
