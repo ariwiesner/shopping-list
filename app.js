@@ -2150,10 +2150,10 @@ function openEdit(id) {
   $("productStore").textContent = "";
   // Search for a specific product (any words: "תנובה 3%"), beside the name.
   $("editSearch").value = "";
-  $("editSearch").hidden = !ui.cat;
+  $("editSearchCol").hidden = !ui.cat;
   editNameTouched = false;
   // A product already chosen: offer a different one; otherwise a specific one.
-  if (ui.cat) $("editSearch").placeholder = it.barcode
+  if (ui.cat) $("editSearchLabel").textContent = it.barcode
     ? `חפש אחר ${it.kind || it.name} שונה`
     : `חיפוש אחר ${it.kind || it.name} ספציפי ב${ui.cat.name}`;
   $("productList").hidden = !ui.cat;
@@ -2191,22 +2191,25 @@ function renderProducts() {
   const results = [...seen.values()].sort((a, b) => isIt(b) - isIt(a) || whole(b) - whole(a) || a.price - b.price).slice(0, 40);
   const sel = editProduct?.code;
   const selected = sel && ui.cat.byCode.get(sel);
-  const list = selected && !results.includes(selected) ? [selected, ...results] : results;
-  // First option: let the app decide (the clearly-meant product, or a typical price).
-  const auto = ui.cat && resolve(ui.cat, $("editName").value.trim());
+  // The product chosen now comes first, whatever is searched; then "let the app decide";
+  // then the other options.
+  const list = results.filter((p) => p !== selected);
+  // Let the app decide: the clearly-meant product, or else a typical price.
+  const auto = ui.cat && resolve(ui.cat, base);
   // Otherwise the common price of the matching products (their middle price).
-  const typical = !auto && ui.cat && estimate(ui.cat, $("editName").value.trim());
-  $("productList").innerHTML = `
+  const typical = !auto && ui.cat && estimate(ui.cat, base);
+  const row = (p) => `
+    <li><button type="button" class="product${p.code === sel ? " selected" : ""}" data-code="${escapeHtml(p.code)}" role="option" aria-selected="${p.code === sel}">
+      <span class="product-name">${escapeHtml(p.name)}${p.brand ? `<small>${escapeHtml(p.brand)}</small>` : ""}</span>
+      <span class="product-price">${pickerPrice(p)}${p.weighted ? "<small>לק״ג</small>" : ""}</span>
+    </button></li>`;
+  $("productList").innerHTML = (selected ? row(selected) : "") + `
     <li><button type="button" class="product${!sel ? " selected" : ""}" data-code="" role="option" aria-selected="${!sel}">
       <span class="product-name">${auto ? `אוטומטי — ${escapeHtml(auto.name)}` : "לא משנה איזה — לפי הערכה"}</span>
       <span class="product-price${auto ? "" : " muted"}">${auto ? amt(money(auto.price)) + (auto.weighted ? "<small>לק״ג</small>" : "")
         : typical ? amt("~" + money(typical.price)) + "<small>מחיר נפוץ</small>" : "מחיר נפוץ"}</span>
     </button></li>` +
-    list.map((p) => `
-    <li><button type="button" class="product${p.code === sel ? " selected" : ""}" data-code="${escapeHtml(p.code)}" role="option" aria-selected="${p.code === sel}">
-      <span class="product-name">${escapeHtml(p.name)}${p.brand ? `<small>${escapeHtml(p.brand)}</small>` : ""}</span>
-      <span class="product-price">${pickerPrice(p)}${p.weighted ? "<small>לק״ג</small>" : ""}</span>
-    </button></li>`).join("") +
+    list.map(row).join("") +
     (q && !results.length ? `<li class="products-empty">לא מצאנו מוצרים בשם הזה</li>` : "");
 }
 

@@ -1169,15 +1169,16 @@ body.asking-consent .content { padding-bottom: 130px; }
 }
 
 /* The item's sheet: search for a specific product, under its name */
-/* The name, and beside it the product search; the amount on its own line under them */
-.name-inputs { display: flex; gap: 6px; }
-#editSheet .name-row { flex-wrap: wrap; row-gap: 10px; }
-#editSheet .name-col:not(.qty-col) { flex: 1 1 100%; }
-#editSheet .name-col.qty-col { order: 2; flex-direction: row; align-items: center; gap: 10px; }
-#editSheet .name-inputs input { min-width: 0; }
-#editName { flex: 1.4 1 0; }
+/* One row: a small amount, then the name and the product search at the same width */
+#editSheet .name-row { gap: 6px; }
+#editSheet .name-col:not(.qty-col) { flex: 1 1 0; }
+#editSheet .search-col[hidden] { display: none; }
+#editSheet .search-col .edit-search { margin: 0; }
+#editSheet .col-label { font-size: 12.5px; line-height: 1.25; }
+#editSheet .stepper.inline button { width: 24px; font-size: 17px; }
+#editSheet .stepper.inline output { min-width: 16px; font-size: 15px; }
 .edit-search {
-  flex: 3 1 0; width: auto; height: 44px; margin: 0; padding: 0 10px;
+  width: 100%; height: 44px; margin: 0; padding: 0 10px; box-sizing: border-box; -webkit-appearance: none; appearance: none;
   border: 1.5px solid var(--line); border-radius: 12px; background: var(--surface-2);
   font: inherit; font-size: 16px; color: var(--text);
 }

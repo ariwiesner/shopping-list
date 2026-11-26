@@ -388,10 +388,12 @@
           </div>
           <div class="name-col">
             <label class="col-label" for="editName">שם המוצר <small id="productStore"></small></label>
-            <div class="name-inputs">
-              <input id="editName" type="text" maxlength="60" required autocomplete="off" />
-              <input id="editSearch" class="edit-search" type="search" autocomplete="off" enterkeyhint="search" aria-label="חיפוש מוצר ספציפי" hidden />
-            </div>
+            <input id="editName" type="text" maxlength="60" required autocomplete="off" />
+          </div>
+          <!-- Search for a specific product (compare mode): same width as the name -->
+          <div class="name-col search-col" id="editSearchCol" hidden>
+            <label class="col-label" for="editSearch" id="editSearchLabel">חיפוש</label>
+            <input id="editSearch" class="edit-search" type="search" autocomplete="off" enterkeyhint="search" placeholder="למשל: תנובה 3%" />
           </div>
         </div>
         <div class="seg unit-seg" id="editUnit" role="radiogroup" aria-label="יחידות או קילו" hidden>
