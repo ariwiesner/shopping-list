@@ -314,9 +314,11 @@ function itemHtml(it) {
         <div class="stepper" role="group" aria-label="כמות">
           <button data-act="inc" aria-label="הגדלת כמות">+</button>
           <label class="qty-field"><input class="qty-input" data-act="qty" type="text" inputmode="decimal" enterkeyhint="done"
-            maxlength="5" value="${it.qty}" aria-label="כמות של ${name}${it.unit === "kg" ? " בק״ג" : ""}"${askedByOthers(it) ? " readonly" : ""} />${unitTag(it)}</label>
+            maxlength="5" value="${it.qty}" aria-label="כמות של ${name}${it.unit === "kg" ? " בק״ג" : ""}"${askedByOthers(it) ? " readonly" : ""} />${it.unit === "kg" && !canWeigh(it) ? "<small>ק״ג</small>" : ""}</label>
           <button data-act="dec" aria-label="הקטנת כמות">−</button>
         </div>
+        ${canWeigh(it) && !it.done ? `<button type="button" class="unit-btn${it.unit === "kg" ? " kg" : ""}" data-act="unit"
+          aria-label="${it.unit === "kg" ? "בק״ג — לעבור ליחידות" : "ביחידות — לעבור לק״ג"}">${it.unit === "kg" ? "ק״ג" : "יח׳"}</button>` : ""}
         ${it.unit === "kg" ? `<span class="qty-badge">${it.qty} ק״ג</span>` : it.qty > 1 ? `<span class="qty-badge">×${it.qty}</span>` : ""}
       </div>
     </li>`;
@@ -1879,11 +1881,15 @@ function convertQty(it, qty, toUnit) {
   if (toUnit === "kg") return per ? Math.min(Math.max(Math.round(qty * per * 10) / 10, 0.1), 999) : qty;
   return Math.min(Math.max(per ? Math.round(qty / per) : Math.round(qty), 1), 999);
 }
-// The unit, small inside the amount box: ק״ג when bought (or priced) by weight, יח׳ for
-// produce counted in pieces. Changed in the item's sheet.
-function unitTag(it) {
-  if (it.unit === "kg" || it._price?.byKg) return "<small>ק״ג</small>";
-  return canWeigh(it) ? "<small>יח׳</small>" : "";
+function toggleUnit(id) {
+  const it = find(id);
+  if (!it) return;
+  if (askedByOthers(it)) return showToast("כמה אנשים ביקשו את הפריט: שנו את היחידות מתוך הפריט", false);
+  const unit = it.unit === "kg" ? null : "kg";
+  const qty = convertQty(it, it.qty, unit);
+  buzz(5);
+  backend.patch([id], { unit, qty, ...(it.importNote ? { importNote: null } : {}) }).catch(fail);
+  showToast(unit === "kg" ? `${it.name}: ${qty} ק״ג` : `${it.name}: ${qty} יח׳`, false);
 }
 
 let lastRemoved = null;
@@ -2211,12 +2217,9 @@ function openEdit(id) {
   $("editName").readOnly = !!ui.cat;
   editNameTouched = false;
   // A product already chosen: offer a different one; otherwise a specific one.
-  // Its hint, inside the box over two small lines (a real placeholder can't wrap).
-  if (ui.cat) {
-    const hint = it.barcode ? `חפש אחר ${it.kind || it.name} שונה` : `חיפוש אחר ${it.kind || it.name} ספציפי ב${ui.cat.name}`;
-    $("editSearchPh").textContent = hint;
-    $("editSearch").setAttribute("aria-label", hint);
-  }
+  if (ui.cat) $("editSearchLabel").textContent = it.barcode
+    ? `חפש אחר ${it.kind || it.name} שונה`
+    : `חיפוש אחר ${it.kind || it.name} ספציפי ב${ui.cat.name}`;
   $("productList").hidden = !ui.cat;
   if (ui.cat) renderProducts();
 }
@@ -2947,6 +2950,7 @@ function onListClick(e) {
     case "edit": return openEdit(id);
     case "swap": return swapToHere(id);
     case "unalt": return undoAlt(id);
+    case "unit": return toggleUnit(id);
     case "inc": return changeQty(id, 1);
     case "dec": return changeQty(id, -1);
   }
