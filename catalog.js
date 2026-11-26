@@ -269,7 +269,7 @@ const BASIC_BY_KEY = new Map(BASICS.flatMap((b) => b.keys.map((k) => [norm(k), b
 export const basicWords = () => BASICS.map((b) => b.keys[0]);
 // Loose produce: not a sack or a pack of some size, nor cooked/canned/frozen ("גזר 10 ק"ג", "תפוחי אדמה 200 גרם").
 const PACKED = /\d+(\.\d+)? ?(גרם|גר|ג'|ג׳|ק"ג|ק״ג|קג|קילו)|שקית|מארז|רשת|מבושל|פרוס|חמוצ|כבוש|שימור|קפוא|מרוסק|קצוצ|מיובש|רסק|מבושל/;
-function basicProduct(cat, rule) {
+function basicPool(cat, rule) {
   const fits = (p) => rule.head.test(p.name) && !rule.not?.test(p.name) && !(rule.weighted && PACKED.test(p.name));
   let pool = cat.entries.map((e) => e.it).filter((p) => fits(p) && (rule.weighted === undefined || !!p.weighted === rule.weighted));
   if (!pool.length && rule.weighted) pool = cat.entries.map((e) => e.it).filter(fits);
@@ -277,9 +277,11 @@ function basicProduct(cat, rule) {
     const better = pool.filter((p) => want.test(p.name));
     if (better.length) pool = better;
   }
-  if (!pool.length) return null;
-  pool.sort((a, b) => a.price - b.price);
-  return pool[Math.floor((pool.length - 1) / 2)];
+  return pool.sort((a, b) => a.price - b.price);
+}
+function basicProduct(cat, rule) {
+  const pool = basicPool(cat, rule);
+  return pool.length ? pool[Math.floor((pool.length - 1) / 2)] : null;
 }
 
 // The product an item name clearly means, or null if it's ambiguous.
@@ -383,9 +385,12 @@ function likeName(names, brands) {
 }
 // What one chain offers for a general item, kept small so the comparison can gather it
 // chain by chain without holding every catalog in memory at once.
+// A basic word ("לחם", "חלב") offers only its ordinary products (regular bread, 3% milk), so
+// the comparison is on one of those and never on rye bread or lactose-free milk.
 export function chainOffer(cat, name) {
   const plain = resolve(cat, name);
-  const pool = estimatePool(cat, name);
+  const rule = BASIC_BY_KEY.get(norm(name));
+  const pool = rule ? Object.assign(basicPool(cat, rule), { fit: "all" }) : estimatePool(cat, name);
   return {
     plain: plain ? { loose: plain.weighted || !realBarcode(plain.code) } : null,
     products: !pool.length || pool.fit === "general" ? [] // only the product word matched
@@ -433,10 +438,10 @@ export function referencesFrom(offers, name) {
   const widest = wide.filter((r) => r.n >= maxN - 1);
   const minExtra = Math.min(...widest.map((r) => r.extra));
   const score = (r) => (r.n >= maxN - 1 ? (r.extra <= minExtra + 1 ? 0 : 1) : 2);
-  // Not the very cheapest (that's the smallest pack: 100 g cottage cheese), a typical one
-  // from the low end.
+  // Not the cheapest (that's the smallest pack: 100 g cottage cheese) nor a premium one:
+  // the middle price (median) of the plain ones.
   const top = wide.filter((r) => score(r) === 0).sort((a, b) => a.typical - b.typical);
-  const target = top[Math.floor((top.length - 1) / 3)].typical;
+  const target = top[Math.floor((top.length - 1) / 2)].typical;
   // Among the plain ones, the usual kind first (its rarest describing word is the most common).
   const usualTop = Math.max(...top.map((r) => r.usual));
   const kind = (r) => (score(r) === 0 && r.usual >= usualTop / 2 ? 0 : 1);
