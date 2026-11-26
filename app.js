@@ -93,8 +93,34 @@ function numberWordsToDigits(s) {
   return s;
 }
 
+// What a plain amount means, the way people say it.
+// Always by weight: meat and poultry cuts. "חזה עוף" is a kilo, "2 חזה עוף" two kilos.
+// (Pieces only when said: "3 יח׳ חזה עוף".)
+const ALWAYS_KG = ["חזה עוף", "חזה הודו", "בשר טחון", "עוף טחון", "הודו טחון", "טחון", "כרעיים", "שוקיים", "שוקי עוף",
+  "כנפיים", "כנפי עוף", "פרגיות", "פרגית", "אנטריקוט", "צלעות", "כבד עוף", "כבדי עוף", "לבבות עוף", "קורקבנים",
+  "גולש", "אסאדו", "שייטל", "סינטה", "צלי בקר", "בשר בקר", "בשר לבן", "כתף בקר"];
+const NOT_BY_WEIGHT = /פרוס|נקניק|מעושן|קבב|ממולא|צלוי|מבושל|שניצל/;
+// By weight when no amount is given: "עגבניות" is a kilo of tomatoes, "3 עגבניות" three tomatoes.
+const KG_IF_NO_AMOUNT = ["עגבניות", "מלפפונים", "בצל", "בצלים", "גזר", "תפוחי אדמה", "תפוחים", "תפוחי עץ", "בננות",
+  "תפוזים", "קלמנטינות", "לימונים", "פלפלים", "קישואים", "חצילים", "בטטות", "אגסים", "אפרסקים", "נקטרינות",
+  "שזיפים", "ענבים", "סלק", "שניצל", "שניצלים"];
+function defaultUnit(p) {
+  if (p.unit || p.pieces) return p;
+  const n = norm(p.name);
+  if (ALWAYS_KG.some((k) => n === k || n.startsWith(k + " ")) && !NOT_BY_WEIGHT.test(n)) return { ...p, unit: "kg" };
+  if (!p.counted && KG_IF_NO_AMOUNT.includes(n)) return { ...p, unit: "kg", qty: 1 };
+  return p;
+}
+// Pieces said outright: "3 יח׳ חזה עוף", "חזה עוף 3 יחידות".
+const PIECES = String.raw`(?:יח׳|יח'|יח|יחידות|יחידה)`;
+const PIECES_FIRST = new RegExp(String.raw`^(\d{1,3})\s*${PIECES}\s+(.+)$`);
+const PIECES_LAST = new RegExp(String.raw`^(.+?)\s+(\d{1,3})\s*${PIECES}$`);
+
 function parseInput(text) {
   let s = halfKilos(numberWordsToDigits(text.trim().replace(/\s+/g, " ")));
+  let pm = s.match(PIECES_FIRST);
+  if (pm) return { name: capitalize(pm[2]), qty: Math.min(Math.max(+pm[1], 1), 999), counted: true, pieces: true };
+  if ((pm = s.match(PIECES_LAST))) return { name: capitalize(pm[1]), qty: Math.min(Math.max(+pm[2], 1), 999), counted: true, pieces: true };
   let km = s.match(KG_FIRST);
   if (km || (km = s.match(KG_LAST))) {
     const [num, rest] = s.match(KG_FIRST) ? [km[1], km[2]] : [km[2], km[1]];
@@ -104,12 +130,13 @@ function parseInput(text) {
   if ((km = s.match(KG_ONLY))) return { name: capitalize(km[1]), qty: 1, unit: "kg" };
   let qty = 1;
   let m = s.match(/^(\d{1,3})\s*[x×]?\s+(.+)$/i);
-  if (m) { qty = +m[1]; s = m[2]; }
+  let counted = false;
+  if (m) { qty = +m[1]; s = m[2]; counted = true; }
   else if ((m = s.match(/^(.+?)\s*[x×]\s*(\d{1,3})$/i)) || (m = s.match(/^(.+?)\s+(\d{1,3})$/))) {
-    s = m[1]; qty = +m[2];
+    s = m[1]; qty = +m[2]; counted = true;
   }
   qty = Math.min(Math.max(qty || 1, 1), 999);
-  return { name: capitalize(s), qty };
+  return { name: capitalize(s), qty, counted };
 }
 
 // ---------- Backends ----------
@@ -1714,7 +1741,7 @@ function productTitle(product) {
 }
 
 function addItem(text, product = null) {
-  const { name: typed, qty, unit } = parseInput(text);
+  const { name: typed, qty, unit } = defaultUnit(parseInput(text));
   if (!typed) return;
   // A chosen product: its name is the title, what was typed is the kind.
   const name = product ? productTitle(product) : typed;
@@ -2766,10 +2793,11 @@ function matchCandidates(it, n = 3, all = false) {
     return starts + whole * 10 + (produce && p.weighted ? 150 : 0);
   };
   const chains = (p) => Math.min(commonCat?.byCode.get(p.code)?.chains.length || 1, 7);
+  const basic = resolve(ui.cat, q); // "חלב": the ordinary product comes first
   const seen = new Set();
-  return search(ui.cat, q, all ? 200 : 80)
-    .filter((p) => { const k = norm(p.name); if (seen.has(k)) return false; seen.add(k); return all || score(p) >= 10; })
-    .sort((a, b) => score(b) - score(a) || chains(b) - chains(a) || a.price - b.price)
+  return [...(basic ? [basic] : []), ...search(ui.cat, q, all ? 200 : 80)]
+    .filter((p) => { const k = norm(p.name); if (seen.has(k)) return false; seen.add(k); return all || p === basic || score(p) >= 10; })
+    .sort((a, b) => (b === basic) - (a === basic) || score(b) - score(a) || chains(b) - chains(a) || a.price - b.price)
     .slice(0, n);
 }
 function openMatchSheet(forCompare = false) {
