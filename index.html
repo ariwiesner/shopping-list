@@ -95,8 +95,8 @@
            Each person picks their own mode (on a shared list too).
            In the sticky header, so it stays in reach while scrolling. -->
       <div class="mode-switch" id="modeSwitch" role="tablist" aria-label="מצב תצוגה">
-        <button type="button" role="tab" data-mode="list" aria-selected="true">📝 רשימת קניות</button>
-        <button type="button" role="tab" data-mode="compare" aria-selected="false">💰 השוואת מחירים</button>
+        <button type="button" role="tab" data-mode="list" aria-selected="true"><span class="ms-icon" aria-hidden="true">📝</span><span class="ms-label">רשימת קניות</span><span class="ms-short" aria-hidden="true">רשימה</span></button>
+        <button type="button" role="tab" data-mode="compare" aria-selected="false"><span class="ms-icon" aria-hidden="true">💰</span><span class="ms-label">השוואת מחירים</span><span class="ms-short" aria-hidden="true">השוואה</span></button>
       </div>
       <div class="progress-card" id="progressCard" hidden>
         <div class="total" id="totalBox" hidden>
@@ -105,11 +105,18 @@
             <strong id="totalAmount" dir="ltr">₪0</strong>
           </div>
           <p class="total-note" id="totalNote"></p>
+          <button type="button" class="link-btn total-fix" id="matchBtn" hidden></button>
         </div>
       </div>
     </header>
 
     <main class="content" id="content">
+      <!-- Samsung Internet only: installing from it is blocked by Play Protect -->
+      <div class="install-hint" id="installHint" hidden>
+        <p>כדי להתקין את האפליקציה, פתחו אותה ב-Chrome. ב-Samsung Internet ההתקנה נחסמת.</p>
+        <a class="btn primary" id="openChrome" href="#">פתיחה ב-Chrome</a>
+        <button type="button" class="install-hint-x" id="installHintClose" aria-label="סגירה">✕</button>
+      </div>
       <!-- The planned shopping, front and centre (everyone on the list sees it; the owner taps to change it) -->
       <button type="button" class="plan-card" id="planLine" hidden>
         <span class="plan-main" id="planMain"></span>
@@ -313,6 +320,18 @@
     <button type="button" class="sheet-item danger home-clear" id="homeClear" hidden>🗑️ <span>הסרת החנות הקבועה</span></button>
   </div>
 
+  <!-- Matching items written without a product ("חלב") to products, once, for the whole list -->
+  <div class="sheet" id="matchSheet" role="dialog" aria-modal="true" aria-labelledby="matchTitle" hidden>
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <h3 id="matchTitle">לדייק את ההשוואה</h3>
+    <p class="sheet-note" id="matchNote"></p>
+    <ul class="alt-list" id="matchList"></ul>
+    <div class="edit-actions">
+      <button type="button" class="btn ghost" id="matchSkip">סגירה</button>
+      <button type="button" class="btn primary" id="matchGo" hidden>להשוות</button>
+    </div>
+  </div>
+
   <!-- Replacements for chosen products the selected chain doesn't sell -->
   <div class="sheet" id="altSheet" role="dialog" aria-modal="true" aria-labelledby="altTitle" hidden>
     <div class="sheet-handle" aria-hidden="true"></div>
@@ -363,13 +382,18 @@
             <span class="col-label" id="qtyLabel">כמות</span>
             <div class="stepper inline" role="group" aria-labelledby="qtyLabel">
               <button type="button" data-step="1" aria-label="הגדלת כמות">+</button>
-              <output id="editQty" aria-live="polite">1</output>
+              <input id="editQty" class="qty-input" type="text" inputmode="decimal" enterkeyhint="done" maxlength="5" value="1" aria-labelledby="qtyLabel" />
               <button type="button" data-step="-1" aria-label="הקטנת כמות">−</button>
             </div>
           </div>
           <div class="name-col">
-            <label class="col-label" for="editName">שם <small id="productStore"></small></label>
+            <label class="col-label" for="editName">שם המוצר <small id="productStore"></small></label>
             <input id="editName" type="text" maxlength="60" required autocomplete="off" />
+          </div>
+          <!-- Search for a specific product (compare mode): same width as the name -->
+          <div class="name-col search-col" id="editSearchCol" hidden>
+            <label class="col-label" for="editSearch" id="editSearchLabel">חיפוש</label>
+            <input id="editSearch" class="edit-search" type="search" autocomplete="off" enterkeyhint="search" placeholder="למשל: תנובה 3%" />
           </div>
         </div>
         <div class="seg unit-seg" id="editUnit" role="radiogroup" aria-label="יחידות או קילו" hidden>
