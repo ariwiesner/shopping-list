@@ -1111,3 +1111,25 @@ body.asking-consent .content { padding-bottom: 130px; }
 .home-price[hidden] { display: none; }
 .home-price-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .home-price strong { flex: none; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+
+/* ---------- Simple list mode ---------- */
+/* Just a checkbox and the name: the quantity shows as "×2" (tap the item to change it). */
+.mode-list .stepper { display: none; }
+.mode-list .qty-badge { display: block; }
+.suggest-name-only { justify-content: flex-start; }
+
+/* Matching general items, from the total */
+.total-fix { padding: 4px 0 0; font-size: 13px; }
+.total-fix[hidden] { display: none; }
+#matchList { flex: 0 1 auto; min-height: 96px; max-height: none; overflow-y: auto; overscroll-behavior: contain; }
+
+/* Samsung Internet: open in Chrome to install */
+.install-hint {
+  position: relative; margin: 4px 0 12px; padding: 12px 14px 12px 40px;
+  background: var(--accent-soft); border-radius: var(--radius);
+  display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+}
+.install-hint[hidden] { display: none; }
+.install-hint p { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.4; }
+.install-hint .btn { min-height: 38px; padding: 0 16px; text-decoration: none; display: inline-flex; align-items: center; }
+.install-hint-x { position: absolute; top: 6px; left: 6px; width: 32px; height: 32px; border-radius: 50%; color: var(--muted); }

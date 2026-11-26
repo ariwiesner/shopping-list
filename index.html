@@ -64,10 +64,6 @@
           </div>
         </div>
         <div class="top-actions">
-          <button class="share-btn import-btn" id="importBtn" aria-label="ייבוא רשימה מוואטסאפ או מצילום" aria-haspopup="dialog">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10"/><path d="M8 10.5l4 4 4-4"/><path d="M5 15.5V18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2.5"/></svg>
-            <span>ייבוא</span>
-          </button>
           <button class="share-btn" id="shareBtn" aria-label="שיתוף הרשימה">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.9-5 5.5-5s4.9 1.8 5.5 5"/><path d="M18 8v6M15 11h6"/></svg>
           </button>
@@ -105,11 +101,18 @@
             <strong id="totalAmount" dir="ltr">₪0</strong>
           </div>
           <p class="total-note" id="totalNote"></p>
+          <button type="button" class="link-btn total-fix" id="matchBtn" hidden></button>
         </div>
       </div>
     </header>
 
     <main class="content" id="content">
+      <!-- Samsung Internet only: installing from it is blocked by Play Protect -->
+      <div class="install-hint" id="installHint" hidden>
+        <p>כדי להתקין את האפליקציה, פתחו אותה ב-Chrome. ב-Samsung Internet ההתקנה נחסמת.</p>
+        <a class="btn primary" id="openChrome" href="#">פתיחה ב-Chrome</a>
+        <button type="button" class="install-hint-x" id="installHintClose" aria-label="סגירה">✕</button>
+      </div>
       <!-- The planned shopping, front and centre (everyone on the list sees it; the owner taps to change it) -->
       <button type="button" class="plan-card" id="planLine" hidden>
         <span class="plan-main" id="planMain"></span>
@@ -186,6 +189,7 @@
     <div class="sheet-handle" aria-hidden="true"></div>
     <h3 id="sheetTitle">אפשרויות רשימה</h3>
     <div id="listSwitcher"></div>
+    <button class="sheet-item" data-action="import">📥 <span>ייבוא רשימה מוואטסאפ או מצילום</span></button>
     <div id="accountRow"></div>
     <!-- The usual store (chain and branch): its total shows above the list -->
     <div id="homeRow"></div>
@@ -311,6 +315,18 @@
     <div class="chain-list" id="chainList"></div>
     <p class="chain-empty" id="chainEmpty" hidden>לא מצאנו רשת בשם הזה</p>
     <button type="button" class="sheet-item danger home-clear" id="homeClear" hidden>🗑️ <span>הסרת החנות הקבועה</span></button>
+  </div>
+
+  <!-- Matching items written without a product ("חלב") to products, once, for the whole list -->
+  <div class="sheet" id="matchSheet" role="dialog" aria-modal="true" aria-labelledby="matchTitle" hidden>
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <h3 id="matchTitle">לדייק את ההשוואה</h3>
+    <p class="sheet-note" id="matchNote"></p>
+    <ul class="alt-list" id="matchList"></ul>
+    <div class="edit-actions">
+      <button type="button" class="btn ghost" id="matchSkip">סגירה</button>
+      <button type="button" class="btn primary" id="matchGo" hidden>להשוות</button>
+    </div>
   </div>
 
   <!-- Replacements for chosen products the selected chain doesn't sell -->

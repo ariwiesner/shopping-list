@@ -25,7 +25,7 @@ export async function createCloud(config) {
   const {
     initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
     doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch,
-    onSnapshot, serverTimestamp, deleteField,
+    onSnapshot, serverTimestamp, deleteField, FieldPath,
   } = F;
 
   const app = initializeApp(config);
@@ -285,6 +285,12 @@ export async function createCloud(config) {
     // The store a shared list is priced at, so everyone on the list sees the same total.
     setListStore(store, branch = null) {
       return updateDoc(listRef(), { store: store || null, branch: branch || null });
+    },
+
+    // The product an item name means on this list ("חלב" → a barcode), for everyone on it.
+    // (A FieldPath: names hold spaces, dots and Hebrew.) null forgets it.
+    setListChoice(key, product) {
+      return updateDoc(listRef(), new FieldPath("choices", key), product ? { code: product.code, name: product.name } : deleteField());
     },
 
     // ----- sharing -----

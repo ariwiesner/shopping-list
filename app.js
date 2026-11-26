@@ -199,7 +199,7 @@ function priceLine(it) {
       return `<div class="item-price">${dealPrice(p, perKg)}${qtyNote} <span class="like-tag">דומה</span></div>` +
         `<div class="item-alt">כאן: ${escapeHtml(p.product.name)} <span class="alt-swap" role="button" tabindex="0" data-act="swap">להחליף</span></div>`;
     }
-    const label = it.productName || ui.choices[kindKey(it)]?.name || p.product.name;
+    const label = it.productName || choiceOf(kindKey(it))?.name || p.product.name;
     // The title is already the product's name: don't say it twice.
     const same = it.barcode && (norm(label).startsWith(norm(it.name)) || norm(it.name).startsWith(norm(label).split(" ").slice(0, -1).join(" ")));
     return `<div class="item-price">${dealPrice(p, perKg)}${qtyNote}${same ? "" : ` <span class="muted">· ${escapeHtml(label)}</span>`}</div>${dealLine(p)}`;
@@ -269,7 +269,7 @@ function itemHtml(it) {
 // matched to a product is priced on that same product, so the list and the comparison
 // show the same amount.
 function listPrice(it, opts, cat = ui.cat) {
-  const choice = ui.choices[kindKey(it)];
+  const choice = choiceOf(kindKey(it));
   const refs = !it.barcode && !choice && !(it.price > 0) && cat ? ui.refs[kindKey(it)] : null;
   return refs ? priceByReference(cat, it, refs, opts) : priceItem(cat, it, choice, opts);
 }
@@ -365,6 +365,9 @@ function renderTotal(items) {
     if (it._price.missingProduct) missCount++;
     if (it._price.kind === "none") noneCount++;
   }
+  const general = ui.cat ? generalItems().length : 0;
+  $("matchBtn").hidden = !general;
+  $("matchBtn").textContent = `לדייק ${general === 1 ? "פריט כללי" : `${general} פריטים כלליים`}`;
   ui.listSum = { total: sum, est: estCount, club: items.some((i) => i._price.deal?.applied && i._price.deal.club) };
   $("totalStore").textContent = ui.cat ? ui.cat.name : "רשימה";
   $("totalAmount").textContent = (estCount ? "~" : "") + money(sum);
@@ -421,10 +424,24 @@ $("modeSwitch").addEventListener("click", (e) => {
   const b = e.target.closest("[data-mode]");
   if (b) setMode(b.dataset.mode);
 });
+// Samsung Internet makes its own app package for the site, which Google Play Protect blocks
+// as "built for an older version of Android". Chrome's is fine: offer to open the app there.
+(function installHint() {
+  const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+  if (!/SamsungBrowser/i.test(navigator.userAgent) || standalone || prefs.samsungHintOff) return;
+  $("installHint").hidden = false;
+  $("openChrome").href = `intent://${location.host}${location.pathname}#Intent;scheme=https;package=com.android.chrome;end`;
+  $("installHintClose").addEventListener("click", () => {
+    $("installHint").hidden = true;
+    prefs.samsungHintOff = true;
+    store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), samsungHintOff: true });
+  });
+})();
 function renderMode() {
   const mode = viewMode();
   $("modeSwitch").querySelectorAll("[data-mode]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.mode === mode)));
   $("storesSection").hidden = mode === MODE_LIST;
+  document.body.classList.toggle("mode-list", mode === MODE_LIST);
 }
 const rememberChain = (id) => {
   if (!id || prefs.lastChain === id) return;
@@ -773,11 +790,17 @@ const wazeUrl = (b) => `https://waze.com/ul?ll=${b.lat},${b.lon}&navigate=yes`;
 
 $("dealsBtn").addEventListener("click", () => {
   track("compare_open");
+  // Items written without a product ("חלב"): offer to match them once first (asked once a
+  // session; the choices are kept on the list, so it's rarely needed again).
+  if (!matchAsked && generalItems().length && ui.cat) return openMatchSheet(true);
+  continueToCompare();
+});
+function continueToCompare() {
   // Products from another chain this store doesn't sell: offer to choose replacements first,
   // so the comparison is as accurate as it can be (it can also go ahead without).
   if (storeGaps().length) return openAltSheet(true);
   openSheet(dealsSheet); runDeals();
-});
+}
 $("dealsRadius").addEventListener("click", (e) => {
   const b = e.target.closest("[data-km]");
   if (!b) return;
@@ -868,7 +891,7 @@ async function runDeals(force = false) {
   deals.error = false; deals.stage = "locating"; renderDeals();
   const here = await getLocation();
   deals.where = here;
-  const key = JSON.stringify([items, ui.choices, current, here && [here.lat.toFixed(2), here.lon.toFixed(2)]]);
+  const key = JSON.stringify([items, allChoices(), current, here && [here.lat.toFixed(2), here.lon.toFixed(2)]]);
   if (!force && key === deals.key && deals.result) { deals.stage = null; renderDeals(); return; }
 
   deals.stage = "pricing"; deals.progress = null; renderDeals();
@@ -894,7 +917,7 @@ async function runDeals(force = false) {
     else { console.error(data.message); finish(null); }
   };
   w.onerror = (e) => { console.error(e); finish(null); };
-  w.postMessage({ id, items, choices: ui.choices, clubs: false, here, maxKm: Infinity, current });
+  w.postMessage({ id, items, choices: allChoices(), clubs: false, here, maxKm: Infinity, current });
 }
 
 function renderDeals() {
@@ -1312,7 +1335,6 @@ function openImport() {
   renderImport();
 }
 $("emptyImport").addEventListener("click", openImport);
-$("importBtn").addEventListener("click", openImport);
 
 // On a phone-only list, imported items merge into what's there: the item already on the list.
 const existingFor = (name) => !intoNewList() && name.trim()
@@ -1563,6 +1585,36 @@ const fail = (e) => { console.error(e); showToast("משהו השתבש — נס�
 // same thing added twice, and for remembering which product "חלב" means.
 const kindKey = (it) => norm(it.kind || it.name);
 
+// ---------- Remembered products ----------
+// "חלב" → the product it means. On a shared list the choices live on the list itself, so
+// whoever just writes "חלב" gets the product the shopper chose once, and the comparison is
+// exact without anyone picking from a list. This device's own choices fill in the rest.
+const listChoices = () => (backend === cloud && ui.list?.choices) || {};
+const choiceOf = (key) => listChoices()[key] || ui.choices[key] || null;
+const allChoices = () => ({ ...ui.choices, ...listChoices() });
+function setChoice(key, product) {
+  if (!key) return;
+  const v = product ? { code: product.code, name: product.name } : null;
+  if (v) ui.choices[key] = v; else delete ui.choices[key];
+  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), choices: ui.choices });
+  if (canWriteList()) {
+    const shared = { ...(ui.list.choices || {}) };
+    if (v) shared[key] = v; else delete shared[key];
+    ui.list.choices = shared; // shown at once; the list's update follows
+    cloud.setListChoice(key, v).catch(fail);
+  }
+}
+
+// Names this device added before ("חלב", "לחם"): typing offers them again in the plain list.
+const HISTORY_MAX = 300;
+function rememberName(name) {
+  const n = String(name || "").trim();
+  if (!n) return;
+  const k = norm(n);
+  prefs.history = [n, ...(prefs.history || []).filter((x) => norm(x) !== k)].slice(0, HISTORY_MAX);
+  store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), history: prefs.history });
+}
+
 // A product's name as a title: the fullest wording any chain uses (chains cut names short),
 // without stray dots, stars and internal codes.
 function productTitle(product) {
@@ -1593,9 +1645,8 @@ function addItem(text, product = null) {
   if (product) {
     // Chosen while typing: this exact product (its barcode is the same at every chain),
     // and "חלב" means it next time too, as when choosing it in the item's sheet.
-    ui.choices[norm(typed)] = { code: product.code, name: product.name };
-    store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), choices: ui.choices });
-  }
+    setChoice(norm(typed), product);
+  } else rememberName(typed);
   track("add_item", { shared: ui.members.length > 1 ? 1 : 0 });
   // The same thing again: the same product, or the same kind/title as typed.
   const existing = ui.items.find((i) => !i.done && ((product && i.barcode === product.code)
@@ -2035,7 +2086,7 @@ function openEdit(id) {
   $("editUnit").hidden = !weighed;
   syncEditUnit();
   $("editPrice").value = typeof it.price === "number" && it.price > 0 ? it.price : "";
-  const remembered = ui.choices[kindKey(it)];
+  const remembered = choiceOf(kindKey(it));
   editProduct = it.barcode ? { code: it.barcode, name: it.productName } : remembered || null;
   // The name field also searches the store's products (when a store is chosen).
   $("productStore").textContent = ui.cat ? `(${ui.cat.name})` : "";
@@ -2148,8 +2199,7 @@ $("editForm").addEventListener("submit", (e) => {
         fields.kind = null;
       }
       const key = norm(fields.kind || it.kind || fields.name);
-      if (editProduct) ui.choices[key] = editProduct; else delete ui.choices[key];
-      store.set(PREFS_KEY, { ...store.get(PREFS_KEY, {}), choices: ui.choices });
+      setChoice(key, editProduct || null);
     }
     backend.patch([id], fields).catch(fail);
   }
@@ -2525,6 +2575,84 @@ function altCandidates(it) {
   const overlap = (p) => content(p.name).filter((w) => want.has(stem(w))).length;
   return [...seen.values()].sort((a, b) => (b === auto) - (a === auto) || overlap(b) - overlap(a) || a.price - b.price).slice(0, 4);
 }
+// ---------- Matching general items ("חלב") to products ----------
+// Whoever writes the list just types. Whoever compares prices matches each general item to
+// a product once, here; it's remembered on the list (setChoice) for everyone, every week.
+const matchSheet = $("matchSheet");
+let matchAsked = false, matchForCompare = false;
+const generalItems = () => {
+  const seen = new Set();
+  return ui.items.filter((i) => {
+    const k = kindKey(i);
+    if (i.done || i.barcode || i.price > 0 || choiceOf(k) || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+};
+// Products a general item likely means: the name starting with what was typed ("ביצים L"
+// before "נודלס ביצים"), then products sold at more chains (the usual ones), then cheaper.
+function matchCandidates(it, n = 3) {
+  const q = it.kind || it.name;
+  const typed = norm(q).split(" ").filter((w) => w && !/\d/.test(w));
+  if (!ui.cat || !typed.length) return [];
+  const produce = !!unitKg(q); // fresh produce: the loose kind, sold by weight
+  const score = (p) => {
+    const ws = norm(p.name).split(" ");
+    const starts = ws[0] === typed[0] ? 200 : stem(ws[0]) === stem(typed[0]) ? 100 : 0;
+    const whole = typed.filter((t) => ws.some((w) => stem(w) === stem(t))).length;
+    return starts + whole * 10 + (produce && p.weighted ? 150 : 0);
+  };
+  const chains = (p) => Math.min(commonCat?.byCode.get(p.code)?.chains.length || 1, 7);
+  const seen = new Set();
+  return search(ui.cat, q, 80)
+    .filter((p) => { const k = norm(p.name); if (seen.has(k)) return false; seen.add(k); return score(p) >= 10; })
+    .sort((a, b) => score(b) - score(a) || chains(b) - chains(a) || a.price - b.price)
+    .slice(0, n);
+}
+function openMatchSheet(forCompare = false) {
+  matchAsked = true;
+  matchForCompare = forCompare;
+  renderMatchSheet();
+  openSheet(matchSheet);
+  // How many chains sell each product helps rank the options: load it, then rank again.
+  if (!commonCat) loadCommon().then((c) => { commonCat = c; if (!matchSheet.hidden) renderMatchSheet(); }).catch(() => {});
+}
+function renderMatchSheet() {
+  const items = generalItems();
+  const name = ui.cat?.name || "";
+  $("matchNote").textContent = items.length
+    ? `${items.length === 1 ? "פריט אחד נכתב" : `${items.length} פריטים נכתבו`} בלי מוצר מדויק, אז המחיר שלהם משוער. בחרו מוצר פעם אחת: הבחירה נשמרת ברשימה, ובפעם הבאה שמישהו יכתוב אותו שם זה יהיה המוצר הזה.`
+    : "כל הפריטים ברשימה מותאמים למוצר מדויק.";
+  $("matchList").innerHTML = items.map((it) => {
+    const opts = matchCandidates(it);
+    return `<li class="alt-item" data-id="${escapeHtml(it.id)}">
+      <p class="alt-head"><b>${escapeHtml(it.name)}</b></p>
+      ${opts.length ? opts.map((p) => `<button type="button" class="product alt-opt" data-code="${escapeHtml(p.code)}">
+          <span class="product-name">${escapeHtml(p.name)}</span>
+          <span class="product-price">${amt(money(p.price))}${p.weighted ? "<small>לק״ג</small>" : ""}</span></button>`).join("")
+        : `<p class="alt-none">לא מצאנו ב${escapeHtml(name)} מוצר מתאים</p>`}
+    </li>`;
+  }).join("");
+  $("matchGo").hidden = !matchForCompare;
+  $("matchSkip").textContent = matchForCompare ? "להשוות בלי לבחור" : "סגירה";
+}
+matchSheet.addEventListener("click", (e) => {
+  const opt = e.target.closest(".alt-opt");
+  if (opt) {
+    const it = find(opt.closest("[data-id]").dataset.id), p = ui.cat?.byCode.get(opt.dataset.code);
+    if (!it || !p) return;
+    setChoice(kindKey(it), p);
+    track("match_pick");
+    buzz(8);
+    render();
+    renderMatchSheet();
+    return;
+  }
+  if (e.target.closest("#matchGo") || (e.target.closest("#matchSkip") && matchForCompare)) { continueToCompare(); return; }
+  if (e.target.closest("#matchSkip")) closeSheets();
+});
+document.addEventListener("click", (e) => { if (e.target.closest("#matchBtn")) openMatchSheet(false); });
+
 const altSheet = $("altSheet");
 let altForCompare = false;
 function openAltSheet(forCompare = false) {
@@ -2576,7 +2704,7 @@ document.addEventListener("click", (e) => { if (e.target.closest("#gapChoose")) 
 // keeps its own product, which comes back at every other chain.
 function swapToHere(id) {
   const it = find(id);
-  const p = it && ui.cat && priceItem(ui.cat, it, ui.choices[kindKey(it)], {});
+  const p = it && ui.cat && priceItem(ui.cat, it, choiceOf(kindKey(it)), {});
   if (!p?.product) return;
   backend.patch([id], { alts: { ...(it.alts || {}), [ui.cat.id]: { code: p.product.code, name: p.product.name } } }).catch(fail);
   buzz(8);
@@ -2692,10 +2820,32 @@ function hideSuggest() {
   clearTimeout(suggestTimer); suggestRun++;
   suggestEl.hidden = true; suggestEl.innerHTML = ""; suggestRows = []; suggestFor = "";
 }
+// The plain list: just names this household used before, no products and no prices.
+function nameSuggest(name) {
+  const q = norm(name);
+  const onList = new Set(ui.items.filter((i) => !i.done).map((i) => norm(i.name)));
+  const seen = new Set();
+  const pool = [...(prefs.history || []), ...ui.items.map((i) => i.kind || i.name)];
+  const starts = [], inside = [];
+  for (const n of pool) {
+    const k = norm(n);
+    if (!k || k === q || seen.has(k) || onList.has(k)) continue;
+    seen.add(k);
+    if (k.startsWith(q) || k.split(" ").some((w) => w.startsWith(q))) starts.push(n);
+    else if (k.includes(q)) inside.push(n);
+  }
+  suggestRows = [...starts, ...inside].slice(0, 5).map((n) => ({ name: n }));
+  suggestFor = input.value;
+  if (!suggestRows.length) { hideSuggest(); return; }
+  suggestEl.innerHTML = suggestRows.map((r, i) =>
+    `<button type="button" class="suggest-row suggest-name-only" role="option" data-i="${i}"><span class="suggest-name">${escapeHtml(r.name)}</span></button>`).join("");
+  suggestEl.hidden = false;
+}
 async function updateSuggest() {
   const run = ++suggestRun;
   const { name } = parseInput(input.value);
   if (norm(name).length < 2) { hideSuggest(); return; }
+  if (viewMode() === MODE_LIST) return nameSuggest(name);
   let common = commonCat;
   if (!common) {
     try { common = commonCat = await loadCommon(); } catch (_) {}
@@ -2736,7 +2886,7 @@ async function updateSuggest() {
 }
 input.addEventListener("input", () => {
   clearTimeout(suggestTimer);
-  if (commonCat || ui.cat) updateSuggest(); // instant once loaded, so the list always matches
+  if (commonCat || ui.cat || viewMode() === MODE_LIST) updateSuggest(); // instant once loaded, so the list always matches
   else suggestTimer = setTimeout(updateSuggest, 120);
 });
 // Keep the keyboard open: choosing a row mustn't take the focus from the input.
@@ -2745,8 +2895,15 @@ suggestEl.addEventListener("click", (e) => {
   const row = e.target.closest("[data-i]");
   const r = row && suggestRows[Number(row.dataset.i)];
   if (!r || suggestFor !== input.value) return; // a list for older text: ignore the tap
-  addItem(input.value, r.p);
-  track("add_item_product", { chains: r.n });
+  if (r.name) {
+    // An earlier name: added as written, with the quantity typed so far ("2 חל" → 2 חלב).
+    const { qty, unit } = parseInput(input.value);
+    addItem(`${qty > 1 || unit === "kg" ? `${qty}${unit === "kg" ? " ק״ג" : ""} ` : ""}${r.name}`);
+    track("add_item_history");
+  } else {
+    addItem(input.value, r.p);
+    track("add_item_product", { chains: r.n });
+  }
   input.value = "";
   hideSuggest();
   input.focus();
