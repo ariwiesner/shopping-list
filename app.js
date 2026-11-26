@@ -1906,11 +1906,10 @@ function convertQty(it, qty, toUnit) {
   if (toUnit === "kg") return per ? Math.min(Math.max(Math.round(qty * per * 10) / 10, 0.1), 999) : qty;
   return Math.min(Math.max(per ? Math.round(qty / per) : Math.round(qty), 1), 999);
 }
-// The unit, small inside the amount box: ק״ג when bought (or priced) by weight, יח׳ for
-// produce counted in pieces. Changed in the item's sheet.
+// The unit, small inside the amount box: ק״ג when bought (or priced) by weight; nothing for
+// pieces. Changed in the item's sheet.
 function unitTag(it) {
-  if (it.unit === "kg" || it._price?.byKg) return "<small>ק״ג</small>";
-  return canWeigh(it) ? "<small>יח׳</small>" : "";
+  return it.unit === "kg" || it._price?.byKg ? "<small>ק״ג</small>" : ""; // pieces: nothing written
 }
 
 let lastRemoved = null;
