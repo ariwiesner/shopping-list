@@ -215,7 +215,11 @@ function priceLine(it) {
   // Switching chain: a placeholder where the price will be, until its prices arrive.
   if (pricesLoading() && p?.kind !== "manual") return `<div class="item-price skel" aria-label="טוען מחיר"></div>`;
   // No store chosen: still show which product was chosen, as a quiet second line.
-  if (!ui.cat && p?.kind !== "manual") return it.productName ? `<div class="item-alt">🏷️ ${escapeHtml(it.productName)}</div>` : "";
+  if (!ui.cat && p?.kind !== "manual") {
+    // The product's name, unless the title already is that name.
+    const pn = it.productName && norm(it.productName), n = norm(it.name);
+    return pn && !pn.startsWith(n) && !n.startsWith(pn) ? `<div class="item-alt">🏷️ ${escapeHtml(it.productName)}</div>` : "";
+  }
   if (!p) return "";
   // Weighed produce: counted in units (≈ kg by a typical weight) or in kg.
   const qtyNote = p.unitKg ? ` <span class="muted">(≈${fmtKg(p.kg)} ק״ג · ${amt(money(p.unit))} לק״ג)</span>`
@@ -2717,7 +2721,16 @@ matchSheet.addEventListener("click", (e) => {
   if (opt) {
     const it = find(opt.closest("[data-id]").dataset.id), p = ui.cat?.byCode.get(opt.dataset.code);
     if (!it || !p) return;
-    setChoice(kindKey(it), p);
+    const key = kindKey(it);
+    setChoice(key, p);
+    // The list shows it too: each item of this kind becomes the product (its name as the
+    // title, what was written as its kind), as when choosing a product while typing.
+    if (!lockedForMe()) {
+      const same = ui.items.filter((i) => !i.done && !i.barcode && kindKey(i) === key);
+      const fields = { barcode: p.code, productName: p.name, name: productTitle(p), kind: it.kind || it.name };
+      same.forEach((i) => Object.assign(i, fields)); // shown at once; the backend update follows
+      if (same.length) backend.patch(same.map((i) => i.id), fields).catch(fail);
+    }
     track("match_pick");
     buzz(8);
     render();
