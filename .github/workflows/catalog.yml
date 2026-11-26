@@ -36,6 +36,9 @@ jobs:
           git worktree add out FETCH_HEAD
           cd out && git switch -c catalog-data
 
+      - name: Up-to-date certificate list (some chains' sites use newer chains)
+        run: pip install --quiet certifi
+
       - name: Build catalog
         run: python scripts/build_catalog.py --out out
 

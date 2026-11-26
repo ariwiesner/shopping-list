@@ -46,8 +46,20 @@ WORKERS = 6       # parallel downloads per chain (be polite to the chains' serve
 # HTTP helpers
 # ---------------------------------------------------------------------------
 
+# Trusted certificate authorities: certifi's up-to-date list when installed (some systems'
+# lists miss newer chains, e.g. Let's Encrypt's), else the system's.
+try:
+    import certifi
+    import ssl
+    TLS = urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=certifi.where()))
+except ImportError:
+    TLS = None
+
+
 def make_opener(cookies=False):
     handlers = [urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())] if cookies else []
+    if TLS:
+        handlers.append(TLS)
     op = urllib.request.build_opener(*handlers)
     op.addheaders = [("User-Agent", UA)]
     return op
@@ -178,6 +190,99 @@ def src_cerberus(user):
     return source
 
 
+def src_laib(edi):
+    """laibcatalog.co.il (Victory, Mahsanei HaShuk, H. Cohen): a JSON file list per chain
+    (its 'edi' code); files download from /webapi/<edi>/<name>."""
+    def source():
+        base = "https://laibcatalog.co.il"
+        listing = json.loads(text(f"{base}/webapi/api/getfiles?edi={edi}", timeout=90))
+        def of(kind):
+            return [x["fileName"] for x in listing if (x.get("fileType") or "").lower() == kind and x.get("fileName")]
+        url = lambda n: f"{base}/webapi/{edi}/{n}"
+        files = [{"store": store_id_of(n), "url": url(n), "file": n} for n in of("pricefull")]
+        promos = [{"store": store_id_of(n), "url": url(n), "file": n} for n in of("promofull")]
+        stores = sorted(of("stores") + of("storesfull"), key=stamp_of)
+        return files, (url(stores[-1]) if stores else None), fetch, promos
+    return source
+
+
+def src_bina(prefix):
+    """<prefix>.binaprojects.com (Zol VeBegadol, Shuk HaIr, Bareket, King Store, Super
+    Sapir): MainIO_Hok.aspx lists files by type (1 stores, 4 PriceFull, 5 PromoFull,
+    with past days too); each downloads from /Download/<name>."""
+    def source():
+        base = f"https://{prefix}.binaprojects.com"
+        def of(kind):
+            body = urllib.parse.urlencode({"WStore": "", "WDate": "", "WFileType": kind}).encode()
+            return [x["FileNm"] for x in json.loads(fetch(base + "/MainIO_Hok.aspx", data=body, timeout=90)) if x.get("FileNm")]
+        url = lambda n: f"{base}/Download/{n}"
+        files = [{"store": store_id_of(n), "url": url(n), "file": n} for n in of(4) if n.lower().startswith("pricefull")]
+        promos = [{"store": store_id_of(n), "url": url(n), "file": n} for n in of(5) if n.lower().startswith("promofull")]
+        stores = sorted((n for n in of(1) if n.lower().startswith("store")), key=stamp_of)
+        return files, (url(stores[-1]) if stores else None), fetch, promos
+    return source
+
+
+def src_superpharm():
+    """prices.super-pharm.co.il: a paged table, filtered by file type and day; links go to
+    /Download/<name>?bucketName=…. Today's files, or yesterday's early in the morning."""
+    base = "https://prices.super-pharm.co.il"
+    def listing(kind):
+        for days in (0, 1):
+            day = (dt.datetime.now() - dt.timedelta(days=days)).strftime("%d/%m/%Y")
+            out = []
+            for page in range(1, 60):
+                q = urllib.parse.urlencode({"Category-equals": kind, "Date-equals": day, "page": page})
+                t = text(f"{base}/?{q}")
+                links = re.findall(r'href="(/Download/[^"]+)"', t)
+                if not links:
+                    break
+                out += [html.unescape(l) for l in links]
+                if f'data-page="{page + 1}"' not in t:
+                    break
+            if out:
+                return out
+        return []
+    def source():
+        name = lambda l: l.split("/Download/", 1)[1].split("?", 1)[0]
+        files = [{"store": store_id_of(name(l)), "url": base + l, "file": name(l)} for l in listing("PriceFull")]
+        promos = [{"store": store_id_of(name(l)), "url": base + l, "file": name(l)} for l in listing("PromoFull")]
+        stores = sorted(listing("Stores"), key=lambda l: stamp_of(name(l)))
+        return files, (base + stores[-1] if stores else None), fetch, promos
+    return source
+
+
+def src_netiv_hesed():
+    """app.netiv-hesed.com: one page per day (?Date=YYYY-MM-DD) listing that day's files;
+    each downloads from /Prices/Download?fileName=<name>. Today's, else yesterday's."""
+    base = "https://app.netiv-hesed.com"
+    def source():
+        names = []
+        for days in (0, 1):
+            day = (dt.datetime.now() - dt.timedelta(days=days)).strftime("%Y-%m-%d")
+            names = re.findall(r'href="/Prices/Download\?fileName=([^"&]+)"', text(f"{base}/?Date={day}"))
+            if any(n.startswith("PriceFull") for n in names):
+                break
+        url = lambda n: f"{base}/Prices/Download?fileName={urllib.parse.quote(n)}"
+        files = [{"store": store_id_of(n), "url": url(n), "file": n} for n in names if n.startswith("PriceFull")]
+        promos = [{"store": store_id_of(n), "url": url(n), "file": n} for n in names if n.startswith("PromoFull")]
+        stores = sorted((n for n in names if n.startswith("Stores")), key=stamp_of)
+        return files, (url(stores[-1]) if stores else None), fetch, promos
+    return source
+
+
+def src_json_list(url):
+    """A JSON list of files ({type, name, url, date}) - Mishnat Yosef (KT) on Cloudflare."""
+    def source():
+        rows = json.loads(text(url, timeout=90))
+        of = lambda kind: [r for r in rows if r.get("type") == kind and r.get("url")]
+        files = [{"store": store_id_of(r["name"]), "url": r["url"], "file": r["name"]} for r in of("PriceFull")]
+        promos = [{"store": store_id_of(r["name"]), "url": r["url"], "file": r["name"]} for r in of("PromoFull")]
+        stores = sorted(of("Stores"), key=lambda r: r.get("date") or "")
+        return files, (stores[-1]["url"] if stores else None), fetch, promos
+    return source
+
+
 CHAINS = [
     {"id": "shufersal", "name": "שופרסל", "color": "#d71f26", "source": src_shufersal},
     {"id": "rami-levy", "name": "רמי לוי", "color": "#0a5bab", "source": src_cerberus("RamiLevi")},
@@ -186,6 +291,28 @@ CHAINS = [
     {"id": "osher-ad", "name": "אושר עד", "color": "#f7a600", "source": src_cerberus("osherad")},
     {"id": "hazi-hinam", "name": "חצי חינם", "color": "#f28c00", "source": src_hazi_hinam},
     {"id": "tiv-taam", "name": "טיב טעם", "color": "#00843d", "source": src_cerberus("TivTaam")},
+    {"id": "victory", "name": "ויקטורי", "color": "#f47920", "source": src_laib("7290696200003")},
+    {"id": "mahsanei-hashuk", "name": "מחסני השוק", "color": "#00843d", "source": src_laib("7290661400001")},
+    {"id": "het-cohen", "name": "היפר כהן", "color": "#f2c500", "source": src_laib("7290455000004")},
+    {"id": "freshmarket", "name": "פרשמרקט", "color": "#d7141a", "source": src_cerberus("freshmarket")},
+    {"id": "keshet", "name": "קשת טעמים", "color": "#2e3192", "source": src_cerberus("Keshet")},
+    {"id": "stop-market", "name": "סטופ מרקט", "color": "#c8102e", "source": src_cerberus("Stop_Market")},
+    {"id": "politzer", "name": "פוליצר", "color": "#e2231a", "source": src_cerberus("politzer")},
+    {"id": "salach-dabach", "name": "סאלח דבאח", "color": "#e30613", "source": src_cerberus("SalachD")},
+    {"id": "zol-vebegadol", "name": "זול ובגדול", "color": "#e30613", "source": src_bina("zolvebegadol")},
+    {"id": "shuk-hair", "name": "שוק העיר", "color": "#2e9e48", "source": src_bina("shuk-hayir")},
+    {"id": "bareket", "name": "ברקת", "color": "#f2a900", "source": src_bina("superbareket")},
+    {"id": "king-store", "name": "קינג סטור", "color": "#c8102e", "source": src_bina("kingstore")},
+    {"id": "super-sapir", "name": "סופר ספיר", "color": "#3aa655", "source": src_bina("supersapir")},
+    {"id": "maayan-2000", "name": "מעיין 2000", "color": "#e31e24", "source": src_bina("maayan2000")},
+    {"id": "shefa-birkat-hashem", "name": "שפע ברכת השם", "color": "#00a651", "source": src_bina("shefabirkathashem")},
+    {"id": "city-market", "name": "סיטי מרקט", "color": "#e31e24", "source": src_bina("citymarketkiryatgat")},
+    {"id": "alonit", "name": "אלונית", "color": "#6ab023", "source": src_cerberus("doralon")},
+    {"id": "netiv-hesed", "name": "נתיב החסד", "color": "#d71920", "source": src_netiv_hesed()},
+    # Mishnat Yosef (KT, src_json_list("https://list-files.w5871031-kt.workers.dev/")) publishes
+    # empty price files for now; add it back when they have products.
+    {"id": "super-pharm", "name": "סופר-פארם", "color": "#e2001a", "source": src_superpharm()},
+    {"id": "good-pharm", "name": "גוד פארם", "color": "#222222", "source": src_bina("goodpharm")},
 ]
 
 

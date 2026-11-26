@@ -27,7 +27,7 @@ function km(a, b) {
 //   ref: a general item priced on the same product as at the other chains (refs[i])
 function pricesIn(cat, items, choices, club = false, refs = []) {
   const price = (it, i, opts) => {
-    const choice = choices[norm(it.name)] || null;
+    const choice = choices[norm(it.kind || it.name)] || null;
     return refs[i]?.length && !choice ? priceByReference(cat, it, refs[i], opts) : priceItem(cat, it, choice, opts);
   };
   // Deals as on the list: first without basket-minimum deals to get the total, then with them.
@@ -36,15 +36,19 @@ function pricesIn(cat, items, choices, club = false, refs = []) {
     const p = price(it, i, { club, basket });
     if (p.kind === "none") return null;
     return {
-      total: p.total, est: p.kind === "estimate", sub: !!p.missingProduct, ref: !!p.reference && !p.similar,
+      total: p.total, est: p.kind === "estimate", sub: !!p.missingProduct, ref: !!p.reference && !p.similar, alt: !!p.alt,
       name: p.product?.name || null, kinds: p.kind === "estimate" ? p.count : null, // what was priced
+      // To tell identical products apart from similar ones: the barcode priced, and
+      // whether it's loose produce by its plain name ("עגבניה" by weight, comparable as is).
+      code: p.kind === "exact" ? p.product.code : null,
+      loose: p.kind === "exact" && !!p.product.weighted && !!p.auto && !p.missingProduct && !p.similar,
     };
   });
 }
 
 // General items ("חלב", "שמן"): which product to compare them on, the same at every chain.
 // Gathered chain by chain (only a small summary of each is kept).
-const isGeneral = (it, choices) => !it.barcode && !(typeof it.price === "number" && it.price > 0) && !choices[norm(it.name)];
+const isGeneral = (it, choices) => !it.barcode && !(typeof it.price === "number" && it.price > 0) && !choices[norm(it.kind || it.name)];
 
 self.onmessage = async ({ data }) => {
   const { id, items, choices, here, maxKm, current, clubs = false } = data;
@@ -102,7 +106,7 @@ self.onmessage = async ({ data }) => {
     }
     const result = summarize(items, chains, branches, current);
     // Say what general items were compared on.
-    result.refs = items.map((it, i) => (refs[i]?.length ? { item: it.name, product: refs[i][0].name } : null)).filter(Boolean);
+    result.refs = items.map((it, i) => (refs[i]?.length ? { item: it.name, product: refs[i][0].name, refs: refs[i].slice(0, 8) } : null)).filter(Boolean);
     self.postMessage({ type: "result", id, result });
   } catch (e) {
     self.postMessage({ type: "error", id, message: String(e?.message || e) });
@@ -149,13 +153,49 @@ function summarize(items, chains, branches, current) {
     });
     return { total: round(sum), missing, est, subs, subList };
   };
+  // Identical products: the same barcode in both stores (or loose produce by its plain
+  // name). Savings are counted on those only, so "חוסכים ₪5" never comes from a
+  // different product. The baseline is the user's store; with none, for each item the
+  // product most stores priced, at its middle price.
+  // A replacement the user approved for that chain counts too (they decided it's the same).
+  const same = (a, b) => !!a && !!b && !a.est && !b.est && ((!!a.code && a.code === b.code) || (a.loose && b.loose) || a.alt || b.alt);
+  const all = [...chains, ...branches];
+  const base = items.map((_, i) => {
+    if (!counted[i]) return null;
+    if (mine) return mine.prices[i] && !mine.prices[i].est ? mine.prices[i] : null;
+    const groups = new Map();
+    for (const s of all) {
+      const p = s.prices[i];
+      if (!p || p.est) continue;
+      const k = p.loose ? "loose" : p.code;
+      if (k) groups.set(k, [...(groups.get(k) || []), p]);
+    }
+    const best = [...groups.values()].sort((a, b) => b.length - a.length)[0];
+    if (!best || best.length < 2) return null;
+    const ts = best.map((p) => p.total).sort((a, b) => a - b);
+    return { ...best[0], total: ts[ts.length >> 1] };
+  });
+  const versus = (prices) => {
+    let n = 0, here = 0, there = 0;
+    const diff = [];
+    prices.forEach((p, i) => {
+      if (!counted[i]) return;
+      if (base[i] && same(p, base[i])) { n++; here += p.total; there += base[i].total; return; }
+      diff.push({ item: items[i].name, qty: items[i].qty || 1, name: p?.name || null, total: p ? p.total : null, est: !!p?.est, missing: !p });
+    });
+    return { same: n, sameSave: round(there - here), diff };
+  };
+
   const out = {
     itemCount: items.length,
     counted: counted.filter(Boolean).length,
     // Items left out because the current store doesn't have them (but another chain does).
     excluded: mine ? items.filter((_, i) => !counted[i] && chains.some((c) => c.prices[i])).map((it) => it.name) : [],
-    chains: chains.map(({ prices, ...c }) => ({ ...c, ...total(prices) })),
-    branches: branches.map(({ prices, ...b }) => ({ ...b, ...total(prices) })),
+    // Everything on the list that isn't compared (not sold at the user's store, or nowhere).
+    uncounted: items.map((it, i) => (counted[i] ? null : { item: it.name, qty: it.qty || 1, nowhere: !chains.some((c) => c.prices[i]) })).filter(Boolean),
+    chains: chains.map(({ prices, ...c }) => ({ ...c, ...total(prices), ...versus(prices) })),
+    branches: branches.map(({ prices, ...b }) => ({ ...b, ...total(prices), ...versus(prices) })),
+    baseline: mine ? "mine" : "typical",
     current: null,
   };
   if (mine) {
