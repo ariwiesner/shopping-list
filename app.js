@@ -2664,7 +2664,7 @@ const matchQuery = new Map(); // kindKey → what was typed in its search box
 function matchOptsHtml(it) {
   const name = ui.cat?.name || "";
   const open = matchOpen.has(kindKey(it));
-  const q = open ? (matchQuery.get(kindKey(it)) || "").trim() : "";
+  const q = (matchQuery.get(kindKey(it)) || "").trim();
   let opts, more = 0;
   if (q) {
     const seen = new Set();
@@ -2683,8 +2683,8 @@ function matchOptsHtml(it) {
       <span class="product-name">${escapeHtml(p.name)}</span>
       <span class="product-price">${amt(money(p.price))}${p.weighted ? "<small>לק״ג</small>" : ""}</span></button>`).join("")
     : `<p class="alt-none">${q ? `לא מצאנו ב${escapeHtml(name)} מוצר כזה` : `לא מצאנו ב${escapeHtml(name)} מוצר מתאים`}</p>`) +
-    (!open ? `<button type="button" class="link-btn match-more" data-more>${more > 0 ? `עוד ${more} אפשרויות · חיפוש ↓` : "חיפוש מוצר אחר ↓"}</button>`
-      : `<button type="button" class="link-btn match-more" data-less>פחות אפשרויות ↑</button>`);
+    (q ? "" : more > 0 ? `<button type="button" class="link-btn match-more" data-more>עוד ${more} אפשרויות ↓</button>`
+      : open && opts.length > 3 ? `<button type="button" class="link-btn match-more" data-less>פחות אפשרויות ↑</button>` : "");
 }
 function renderMatchSheet() {
   const items = generalItems();
@@ -2693,11 +2693,10 @@ function renderMatchSheet() {
     ? `${items.length === 1 ? "פריט אחד נכתב" : `${items.length} פריטים נכתבו`} בלי מוצר מדויק, אז המחיר שלהם משוער. בחרו מוצר פעם אחת: הבחירה נשמרת ברשימה, ובפעם הבאה שמישהו יכתוב אותו שם זה יהיה המוצר הזה.`
     : "כל הפריטים ברשימה מותאמים למוצר מדויק.";
   $("matchList").innerHTML = items.map((it) => {
-    const open = matchOpen.has(kindKey(it));
     return `<li class="alt-item" data-id="${escapeHtml(it.id)}">
-      <p class="alt-head"><b>${escapeHtml(it.name)}</b></p>
-      ${open ? `<input type="search" class="match-search" placeholder="חיפוש מוצר ב${escapeHtml(name)}…" aria-label="חיפוש מוצר עבור ${escapeHtml(it.name)}"
-        value="${escapeHtml(matchQuery.get(kindKey(it)) || "")}" autocomplete="off" enterkeyhint="search" />` : ""}
+      <div class="match-head"><b>${escapeHtml(it.name)}</b>
+        <input type="search" class="match-search" placeholder="חיפוש ${escapeHtml(it.name)} ברשת ${escapeHtml(name)}" aria-label="חיפוש ${escapeHtml(it.name)} ברשת ${escapeHtml(name)}"
+          value="${escapeHtml(matchQuery.get(kindKey(it)) || "")}" autocomplete="off" enterkeyhint="search" /></div>
       <div class="match-opts">${matchOptsHtml(it)}</div>
     </li>`;
   }).join("");
@@ -2710,9 +2709,8 @@ matchSheet.addEventListener("click", (e) => {
     const it = find(toggle.closest("[data-id]").dataset.id);
     if (!it) return;
     const opening = toggle.hasAttribute("data-more");
-    if (opening) matchOpen.add(kindKey(it)); else { matchOpen.delete(kindKey(it)); matchQuery.delete(kindKey(it)); }
+    if (opening) matchOpen.add(kindKey(it)); else matchOpen.delete(kindKey(it));
     renderMatchSheet();
-    if (opening) $("matchList").querySelector(`[data-id="${CSS.escape(it.id)}"] .match-search`)?.focus({ preventScroll: true });
     return;
   }
   const opt = e.target.closest(".alt-opt");

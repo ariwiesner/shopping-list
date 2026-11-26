@@ -1128,8 +1128,10 @@ body.asking-consent .content { padding-bottom: 130px; }
 /* Matching general items, from the total */
 .total-fix { padding: 4px 0 0; font-size: 13px; }
 .match-more { display: block; padding: 8px 4px 2px; font-size: 14px; }
+.match-head { display: flex; align-items: center; gap: 10px; margin: 0 4px 8px; }
+.match-head b { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .match-search {
-  width: 100%; height: 42px; margin: 0 0 8px; padding: 0 14px;
+  flex: 1; min-width: 0; height: 38px; margin: 0; padding: 0 12px;
   border: 1.5px solid var(--line); border-radius: 12px; background: var(--surface-2);
   font: inherit; font-size: 16px; color: var(--text);
 }
