@@ -1174,6 +1174,13 @@ body.asking-consent .content { padding-bottom: 130px; }
 #editSheet .name-col:not(.qty-col) { flex: 1 1 0; }
 #editSheet .search-col[hidden] { display: none; }
 #editSheet .search-col .edit-search { margin: 0; }
+.search-box { position: relative; }
+.search-ph {
+  position: absolute; inset: 0 10px; display: flex; align-items: center; pointer-events: none;
+  font-size: 12px; font-weight: 600; line-height: 1.2; color: var(--muted);
+  overflow: hidden;
+}
+.search-box .edit-search:not(:placeholder-shown) + .search-ph, .search-box .edit-search:focus + .search-ph { display: none; }
 #editSheet .col-label { font-size: 12.5px; line-height: 1.25; }
 #editSheet .stepper.inline button { width: 24px; font-size: 17px; }
 #editSheet .stepper.inline output { min-width: 16px; font-size: 15px; }
@@ -1191,3 +1198,14 @@ body.asking-consent .content { padding-bottom: 130px; }
 .edit-search:focus { outline: none; border-color: var(--accent); }
 .edit-search::placeholder, .match-search::placeholder { font-size: 12.5px; }
 .edit-search[hidden] { display: none; }
+
+/* The plain list: a chosen product's price, small, under its name */
+.item-price.list-price { font-size: 12.5px; margin-top: 1px; }
+
+/* The unit inside the amount box: small, under or beside the number */
+/* Out of the layout, so every amount box is the same size: tiny, right under the number */
+.list .qty-field { position: relative; }
+.list .qty-field small {
+  position: absolute; left: 50%; bottom: -3px; transform: translateX(-50%);
+  margin: 0; font-size: 8.5px; font-weight: 700; line-height: 1; color: var(--muted); pointer-events: none; white-space: nowrap;
+}
