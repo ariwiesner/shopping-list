@@ -111,6 +111,12 @@
     </header>
 
     <main class="content" id="content">
+  <!-- One-time notice about usage statistics (until the user chooses) -->
+  <div class="consent-bar" id="consentBar" role="region" aria-label="נתוני שימוש" hidden>
+    <p>📊 נאספים נתוני שימוש אנונימיים. <button type="button" class="link-btn" id="consentMore">פרטים</button></p>
+    <button type="button" class="link-btn consent-off" id="consentNo">לכבות</button>
+    <button type="button" class="btn primary" id="consentYes">הבנתי</button>
+  </div>
       <!-- Samsung Internet only: installing from it is blocked by Play Protect -->
       <div class="install-hint" id="installHint" hidden>
         <p>כדי להתקין את האפליקציה, פתחו אותה ב-Chrome. ב-Samsung Internet ההתקנה נחסמת.</p>
@@ -127,8 +133,12 @@
           <p class="stores-title" id="storesTitle">איפה קונים היום?</p>
           <button type="button" class="chains-btn" id="chainsBtn" aria-haspopup="dialog" hidden>☰ כל הרשתות</button>
         </div>
-        <div class="wheel" id="storeRow" role="slider" tabindex="0" aria-labelledby="storesTitle"
-             aria-description="גררו או השתמשו בחצים כדי לסובב את הגלגל"></div>
+        <div class="wheel-wrap">
+          <div class="wheel" id="storeRow" role="slider" tabindex="0" aria-labelledby="storesTitle"
+               aria-description="גררו או השתמשו בחצים כדי לסובב את הגלגל"></div>
+          <button type="button" class="wheel-nav prev" data-step="-1" aria-label="הרשת הקודמת"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+          <button type="button" class="wheel-nav next" data-step="1" aria-label="הרשת הבאה"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>
+        </div>
         <button class="branch-btn" id="branchBtn" hidden aria-haspopup="dialog">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
           <span id="branchName">כל הסניפים</span>
@@ -415,12 +425,6 @@
     </form>
   </div>
 
-  <!-- One-time notice about usage statistics (until the user chooses) -->
-  <div class="consent-bar" id="consentBar" role="region" aria-label="נתוני שימוש" hidden>
-    <p>📊 נאספים נתוני שימוש אנונימיים. <button type="button" class="link-btn" id="consentMore">פרטים</button></p>
-    <button type="button" class="link-btn consent-off" id="consentNo">לכבות</button>
-    <button type="button" class="btn primary" id="consentYes">הבנתי</button>
-  </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden>
     <span id="toastText"></span>

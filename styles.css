@@ -5,7 +5,7 @@
   --text: #1f2328;
   --muted: #6b6f76;
   --line: #e6e2d8;
-  --accent: #2f9e6b;
+  --accent: #1b7049; /* dark enough for text on --accent-soft and white on it (5:1 and more) */
   --accent-soft: #dff3e8;
   --accent-ink: #ffffff;
   --danger: #d9534f;
@@ -174,6 +174,15 @@ h1 { margin: 2px 0 0; font-size: 18px; font-weight: 800; letter-spacing: 0; }
 .done .stepper { display: none; }
 .qty-badge { display: none; color: var(--muted); font-weight: 700; padding-inline-end: 12px; }
 .done .qty-badge { display: block; }
+
+/* In the item row: a compact amount (+ and − close to the number) and a trash icon beside it */
+.list .item-body { gap: 8px; padding-inline-end: 4px; }
+.list .stepper { height: 38px; }
+.list .stepper button { width: 32px; height: 38px; font-size: 20px; border-radius: 99px; }
+.list .qty-input { width: 1.9em; min-width: 24px; padding: 2px 0; }
+.item-del { flex: none; width: 36px; height: 44px; display: grid; place-items: center; border-radius: 12px; color: var(--muted); }
+.item-del svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.item-del:active { background: var(--surface-2); color: var(--danger); }
 
 @keyframes pop { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }
 
@@ -955,16 +964,16 @@ s.was { color: var(--muted); font-weight: 600; text-decoration-thickness: 1.5px;
 #privacySheet .lock-toggle.on .switch { background: var(--accent); }
 #privacySheet .lock-toggle.on .switch::after { inset-inline-start: 21px; }
 .consent-bar {
-  position: fixed; left: 12px; right: 12px; z-index: 15;
-  bottom: calc(var(--safe-b) + 74px);
-  max-width: 536px; margin: 0 auto; padding: 12px 14px;
+  /* In the page, above the list: it never covers the row for adding items */
+  position: static;
+  margin: 0 0 12px; padding: 10px 12px;
   border-radius: 16px; background: var(--surface); box-shadow: 0 6px 24px rgba(0, 0, 0, .16); border: 1.5px solid var(--line);
 }
 .consent-bar p { margin: 0 0 10px; font-size: 13.5px; line-height: 1.45; font-weight: 600; }
 .consent-bar .link-btn { display: inline; padding: 0; font-size: 13.5px; }
 .consent-actions { display: flex; gap: 8px; }
 .consent-actions .btn { height: 40px; font-size: 14px; }
-body.asking-consent .content { padding-bottom: 180px; }
+
 .consent-actions { align-items: center; justify-content: space-between; }
 .consent-actions .btn.primary { flex: 0 0 auto; padding: 0 22px; }
 .consent-off { color: var(--muted); font-size: 13.5px; padding: 8px 4px; }
@@ -1041,7 +1050,7 @@ body.asking-consent .content { padding-bottom: 180px; }
 .consent-bar .link-btn { font-size: 12.5px; }
 .consent-bar .consent-off { flex: none; padding: 6px 4px; font-size: 12.5px; }
 .consent-bar .btn.primary { flex: none; height: 32px; padding: 0 14px; font-size: 13px; }
-body.asking-consent .content { padding-bottom: 130px; }
+
 /* A chosen product this store doesn't sell: calm, not a warning */
 .like-tag { display: inline-block; padding: 0 7px; border-radius: 99px; font-size: 11px; font-weight: 700; line-height: 18px; vertical-align: 1px;
   background: var(--line); color: var(--muted); }
@@ -1209,3 +1218,38 @@ body.asking-consent .content { padding-bottom: 130px; }
   position: absolute; left: 50%; bottom: -3px; transform: translateX(-50%);
   margin: 0; font-size: 8.5px; font-weight: 700; line-height: 1; color: var(--muted); pointer-events: none; white-space: nowrap;
 }
+
+/* ---------- Review fixes ---------- */
+/* Amounts read left to right inside Hebrew ("~₪141.02") */
+bdi[dir="ltr"], [dir="ltr"] { unicode-bidi: isolate; }
+
+/* Touch targets: 44px at least */
+.list .stepper { height: 44px; }
+.list .stepper button { width: 36px; height: 44px; }
+.chains-btn { min-height: 44px; padding: 0 14px; font-size: 13.5px; display: inline-flex; align-items: center; }
+.deals-btn { min-height: 48px; }
+.total-fix { min-height: 44px; display: inline-flex; align-items: center; padding: 0 2px; font-size: 14px; font-weight: 700; }
+.add-btn { width: 48px; height: 48px; }
+.consent-actions .btn, .consent-off { min-height: 44px; }
+
+/* The store wheel: arrows on both sides (there are more stores), a spinner while switching */
+.wheel-wrap { position: relative; }
+.wheel-nav {
+  position: absolute; top: 2px; z-index: 5;
+  width: 44px; height: 44px; display: grid; place-items: center;
+  border-radius: 50%; color: var(--muted); background: var(--surface); box-shadow: var(--shadow);
+}
+.wheel-nav.prev { right: 18px; }
+.wheel-nav.next { left: 18px; }
+.wheel-nav svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.wheel-nav:active { transform: scale(.92); }
+.spinner.small { display: inline-block; width: 13px; height: 13px; border-width: 2px; vertical-align: -2px; margin-inline-end: 6px; }
+body.prices-loading .item-price, body.prices-loading #totalAmount { opacity: .4; transition: opacity .2s; }
+body.prices-loading .wheel .store.top .store-circle { animation: wheel-pulse 1s ease-in-out infinite; }
+@keyframes wheel-pulse { 50% { box-shadow: 0 0 0 9px color-mix(in srgb, var(--store-color) 18%, transparent); } }
+
+/* Where is it cheapest: two groups, each by price, and a clear "cheapest" tag */
+.deal-group { margin: 12px 4px 6px; font-size: 13px; font-weight: 800; color: var(--muted); }
+.cheapest-tag { display: inline-block; margin-inline-start: 8px; padding: 1px 9px; border-radius: 99px;
+  background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 800; line-height: 20px; vertical-align: 1px; }
+.deal-row.cheapest { box-shadow: inset 0 0 0 2px var(--accent); }

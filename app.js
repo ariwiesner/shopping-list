@@ -215,10 +215,12 @@ const CHECK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l
 
 // Money inside Hebrew text: keep ~₪12.90 in left-to-right order.
 const amt = (s) => `<bdi dir="ltr">${s}</bdi>`;
+// The same for plain text: "~₪141.02" stays in one piece inside Hebrew text.
+const ltr = (s) => `\u2066${s}\u2069`;
 
 // ---------- Deals on the card ----------
 // Applied: "<s>₪29.80</s> ₪24 · 🏷️ 2 ב־₪24". Not (yet) applied: a short hint under the price.
-const dealText = (d) => (d.m > 1 ? `${d.m} ב־${money(d.t)}` : `${money(d.t)}`);
+const dealText = (d) => (d.m > 1 ? `${d.m} ב־${ltr(money(d.t))}` : ltr(money(d.t)));
 function dealPrice(p, perKg = "") {
   const d = p.deal;
   if (d?.applied && d.saving > 0) return `<s class="was">${amt(money(p.regular))}</s> ${amt(money(p.total))}${perKg}`;
@@ -345,6 +347,7 @@ function itemHtml(it) {
           <button data-act="dec" aria-label="הקטנת כמות">−</button>
         </div>
         ${it.unit === "kg" ? `<span class="qty-badge">${it.qty} ק״ג</span>` : it.qty > 1 ? `<span class="qty-badge">×${it.qty}</span>` : ""}
+        <button class="item-del" data-act="del" aria-label="מחיקת ${name}">${TRASH_SVG}</button>
       </div>
     </li>`;
 }
@@ -457,8 +460,8 @@ function renderTotal(items) {
   $("totalStore").textContent = ui.cat ? ui.cat.name : "רשימה";
   $("totalAmount").textContent = (estCount ? "~" : "") + money(sum);
   const notes = [];
-  if (saved >= 0.5) notes.push(`🏷️ כולל מבצעים: חוסכים ${money(saved)}`);
-  if (inCart) notes.push(`בעגלה: ${money(inCart)}`);
+  if (saved >= 0.5) notes.push(`🏷️ כולל מבצעים: חוסכים ${ltr(money(saved))}`);
+  if (inCart) notes.push(`בעגלה: ${ltr(money(inCart))}`);
   if (estCount) notes.push(`${estCount === 1 ? "פריט אחד כללי" : `${estCount} פריטים כלליים`} — מחיר משוער`);
   // Chosen products this store doesn't sell are not "general": say what they are.
   if (missCount) notes.push(`${missCount === 1 ? "מוצר אחד שבחרת לא נמכר כאן" : `${missCount} מוצרים שבחרת לא נמכרים כאן`} — חושב לפי דומה`);
@@ -503,6 +506,11 @@ function setMode(mode) {
   // A short fade, so the change of page is seen.
   const c = $("content");
   c.classList.remove("mode-enter"); void c.offsetWidth; c.classList.add("mode-enter");
+  // Comparing opens on the usual store (chain and branch), when one is set.
+  const home = mode === MODE_COMPARE ? homeStore() : null;
+  if (home && (currentStoreId() !== home.chain || (currentBranchId(home.chain) || null) !== (home.branch || null))) {
+    chooseStore(home.chain, home.branch || null);
+  }
   const chain = currentStoreId();
   loadStore(chain); // re-renders (no store = no prices)
   if (chain) { requestAnimationFrame(layoutWheel); nearestBranch(chain, false); }
@@ -546,6 +554,7 @@ function renderStores() {
   buildWheel();
   updateWheelBadges();
   $("chainsBtn").hidden = false;
+  $("chainsBtn").textContent = `☰ כל הרשתות (${ui.chains.length})`;
   // Someone else on a shared list picked a store: turn the wheel to it.
   const k = wheelItems().findIndex((x) => x.id === (sel || ""));
   if (k >= 0 && !wheel.dragging && !wheel.anim && wheelIndex() !== k) spinToChain(k, false);
@@ -556,10 +565,14 @@ function renderStores() {
   $("branchName").textContent = !b ? "כל הסניפים — מחיר נפוץ ברשת"
     : (branch ? `סניף ${branch.name}${branch.city && !branch.name.includes(branch.city) ? `, ${branch.city}` : ""}` : `סניף ${b}`)
       + (isAutoBranch(sel) && !userPickedBranch(sel) ? " · הקרוב אליך" : "");
-  $("storeNote").textContent = !sel ? ""
+  // Switching store: a spinner under the wheel and the prices dimmed until the new ones are in.
+  const loading = !!sel && !ui.catError && ui.catId === sel && (!ui.cat || ui.cat.id !== sel || (ui.cat.branch || null) !== b);
+  document.body.classList.toggle("prices-loading", loading);
+  $("storeNote").innerHTML = !sel ? ""
     : ui.catError ? "לא הצלחנו לטעון את המחירים. נסו שוב."
-    : ui.catId === sel && (!ui.cat || ui.cat.id !== sel || (ui.cat.branch || null) !== b) ? "טוען מחירים…"
+    : loading ? `<span class="spinner small" aria-hidden="true"></span>טוענים מחירים ב${escapeHtml(c?.name || "רשת")}…`
     : c ? `המחירים עודכנו ב־${new Date(c.updated).toLocaleDateString("he-IL")}` : "";
+  if (!wheel.dragging && !wheel.anim) requestAnimationFrame(layoutWheel); // keep the wheel drawn after every change
 }
 
 // The branch picked for a chain: the shared list's choice, else this device's last choice.
@@ -671,6 +684,7 @@ let branchCtx = { chain: null, purpose: "shop" };
 // The usual store: this device's own { chain, branch (null = all branches), branchName }, or null.
 const homeStore = () => (prefs.home?.chain && (!ui.chains.length || ui.chains.some((c) => c.id === prefs.home.chain)) ? prefs.home : null);
 const homeLabel = (h = homeStore()) => (h ? chainName(h.chain) + (h.branch ? ` · סניף ${h.branchName || h.branch}` : "") : "");
+const TRASH_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
 const STAR_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg>';
 const starBtn = (on, data, what) => `<button type="button" class="star-btn${on ? " on" : ""}" data-star="${escapeHtml(String(data))}"
   aria-pressed="${on}" aria-label="${on ? `הסרת ${escapeHtml(what)} מהחנות הקבועה` : `קביעת ${escapeHtml(what)} כחנות הקבועה`}">${STAR_SVG}</button>`;
@@ -1065,8 +1079,22 @@ function renderDeals() {
   const unc = res.uncounted || [];
   // Like CHP's basket survey: a store must have at least 85% of the list's products to be
   // ranked; below that it "doesn't cover the list".
-  const enough = (x) => x.same >= Math.max(1, Math.ceil(counted * 0.85));
-  const rank = (a, b) => enough(b) - enough(a) || b.sameSave - a.sameSave || a.total - b.total || (a.km ?? 1e9) - (b.km ?? 1e9);
+  // Two groups, each by price: the stores that have everything on the list (at exact prices
+  // where any store has them all), then the ones missing products or priced by estimate.
+  const covers = (x) => !x.missing;
+  const byTotal = (a, b) => a.total - b.total || (a.km ?? 1e9) - (b.km ?? 1e9);
+  const groups = (list) => {
+    const exact = list.filter((x) => covers(x) && !x.est);
+    const full = (exact.length ? exact : list.filter(covers)).sort(byTotal);
+    return [full, list.filter((x) => !full.includes(x)).sort(byTotal)];
+  };
+  const enough = (x) => covers(x) && x.same >= Math.max(1, Math.ceil(counted * 0.5));
+  const rank = (a, b) => enough(b) - enough(a) || a.total - b.total || (a.km ?? 1e9) - (b.km ?? 1e9);
+  const lacks = (x) => [x.missing && (x.missing === 1 ? "חסר מוצר אחד" : `חסרים ${x.missing} מוצרים`),
+    x.est && (x.est === 1 ? "מוצר אחד במחיר משוער" : `${x.est} במחיר משוער`)].filter(Boolean).join(" · ");
+  const cheapest = `<span class="cheapest-tag">הכי זול</span>`;
+  const groupHtml = (title, list, row) => list.length
+    ? `<p class="deal-group">${title}</p><ul class="deal-list">${list.map(row).join("")}</ul>` : "";
   const vs = cur ? `לעומת ${escapeHtml(cur.chainName)}` : "מהמחיר הנפוץ";
   const matchLine = (x) => `<span class="match${x.same === listN ? " full" : ""}">מבוסס על ${x.same} מתוך ${listN} מוצרים</span>` +
     (enough(x) ? "" : ` <span class="match low">· לא מכסה את הסל</span>`);
@@ -1120,6 +1148,7 @@ function renderDeals() {
   };
   // The best branch within the chosen distance: most saved on identical products.
   const nearby = res.branches.filter((b) => b.km != null && b.km <= maxKm && ok(b)).sort(rank);
+  { const [full, rest] = groups(nearby); nearby.splice(0, nearby.length, ...full, ...rest); } // the cheapest complete one first
   const best = nearby[0];
   const box = (kicker, inner, cls = "") => `<section class="deal${cls}"><p class="deal-kicker">${kicker}</p>${inner}</section>`;
   const head = (id, name, sub, total) => `<div class="deal-head">${logo(id)}
@@ -1156,28 +1185,35 @@ function renderDeals() {
   html += box(`📍 ${!best || !enough(best) ? `הכי קרוב לרשימה ${area}` : curOnlyByCoverage ? "הסניף שלך" : mineWins ? `האפשרות הבאה ${area}` : `הכי זול ${area}`} · ${within}`, nearHtml, mineWins || (best && !enough(best)) ? "" : " main");
   // No location at all: the chains by their common prices (no branches needed).
   if (!deals.where) {
-    const ranked = res.chains.filter(ok).sort(rank).slice(0, 10);
-    if (ranked.length) {
-      html += `<p class="sheet-label">הרשתות לפי מחיר נפוץ ברשת</p><ul class="deal-list">` + ranked.map((c, k) => `
-        <li><button type="button" class="deal-row" data-pick='${escapeHtml(JSON.stringify([c.id, null]))}'>
+    const [full, rest] = groups(res.chains.filter(ok));
+    const row = (c, k, top) => `
+        <li><button type="button" class="deal-row${top && k === 0 ? " cheapest" : ""}" data-pick='${escapeHtml(JSON.stringify([c.id, null]))}'>
           ${logo(c.id)}
-          <span class="deal-name"><strong>${k === 0 && enough(c) ? "🏆 " : ""}${escapeHtml(c.name)}</strong><small>מחיר נפוץ ברשת · ${c.same}/${listN} מוצרים${enough(c) ? "" : " · לא מכסה את הסל"}</small></span>
+          <span class="deal-name"><strong>${escapeHtml(c.name)}${top && k === 0 ? cheapest : ""}</strong><small>מחיר נפוץ ברשת${top ? "" : ` · ${lacks(c)}`}</small></span>
           <strong class="deal-total">${amt(est(c) + money(c.total))}</strong>
-        </button></li>`).join("") + `</ul>`;
+        </button></li>`;
+    if (full.length || rest.length) {
+      html += `<p class="sheet-label">הרשתות לפי מחיר נפוץ ברשת</p>` +
+        groupHtml("✅ יש בהן את כל הסל", full.slice(0, 10), (c, k) => row(c, k, true)) +
+        groupHtml("⚠️ חסרים מוצרים", rest.slice(0, 8), (c, k) => row(c, k, false));
     }
   }
 
   // Other chains nearby: the best branch of each.
   const more = nearby.filter((b, k) => b.chain !== best?.chain && b.chain !== cur?.chain
-    && nearby.findIndex((x) => x.chain === b.chain) === k).slice(0, 5);
+    && nearby.findIndex((x) => x.chain === b.chain) === k).slice(0, 8);
   if (more.length) {
-    html += `<p class="sheet-label">רשתות אחרות לידך</p><ul class="deal-list">` + more.map((b) => `
+    const [full, rest] = groups(more);
+    const row = (b, top) => `
       <li><button type="button" class="deal-row" data-pick='${escapeHtml(JSON.stringify([b.chain, b.id]))}'>
         ${logo(b.chain)}
         <span class="deal-name"><strong>${escapeHtml(b.chainName)}</strong><small>${escapeHtml(where(b))} · ${kmText(b.km)}</small>
-          <small class="row-save${b.sameSave >= 1 && enough(b) ? "" : " flat"}">${b.same}/${listN} מוצרים${enough(b) ? "" : " · לא מכסה את הסל"} · ${saveText(b)}</small></span>
+          <small class="row-save${b.sameSave >= 1 && top ? "" : " flat"}">${top ? "" : `${lacks(b)} · `}${saveText(b)}</small></span>
         <strong class="deal-total">${amt(est(b) + money(b.total))}</strong>
-      </button>${diffNote(b)}</li>`).join("") + `</ul>`;
+      </button>${diffNote(b)}</li>`;
+    html += `<p class="sheet-label">רשתות אחרות לידך</p>` +
+      groupHtml("✅ יש בהן את כל הסל", full, (b) => row(b, true)) +
+      groupHtml("⚠️ חסרים מוצרים", rest, (b) => row(b, false));
   }
 
   // General items ("חלב") are compared on one product, the same at every chain: say which.
@@ -1257,7 +1293,11 @@ function layoutWheel() {
     const near = Math.max(0, 1 - Math.abs(d));       // 1 at the top, 0 one step away
     const scale = 0.72 + 0.5 * near;
     el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -50%) scale(${scale.toFixed(3)})`;
-    el.style.opacity = String(Math.max(0, 1 - Math.max(0, Math.abs(d) - 1) * 0.75));
+    // Every store that fits in the wheel is shown in full (wide screens show more of them);
+    // the edges fade out (the mask), so it's clear the wheel goes on.
+    const edge = Math.min(x, wheel.el.clientWidth - x);
+    el.style.opacity = Math.abs(a) > Math.PI / 2 ? "0" : // (the far side of the circle is never shown)
+       String(Math.max(0, Math.min(1, (edge + 20) / 50)));
     el.style.zIndex = String(100 - Math.round(Math.abs(d) * 10));
     el.classList.toggle("top", Math.abs(d) < 0.5);
   });
@@ -1360,6 +1400,11 @@ function settleWheel() {
   let startX = 0, startRot = 0, moved = false, downSlot = null, samples = [];
   const sign = RTL ? 1 : -1;
 
+  // The arrows beside the wheel: one store at a time (and a sign there are more).
+  document.querySelectorAll(".wheel-nav").forEach((b) => b.addEventListener("click", () => {
+    if (!wheel.btns.length) return;
+    spinTo(Math.round(wheel.rot) + Number(b.dataset.step));
+  }));
   el.addEventListener("pointerdown", (e) => {
     if (!wheel.btns.length || (e.pointerType === "mouse" && e.button !== 0)) return;
     cancelAnimationFrame(wheel.anim); wheel.anim = 0;
@@ -2976,6 +3021,7 @@ function onListClick(e) {
     case "unalt": return undoAlt(id);
     case "inc": return changeQty(id, 1);
     case "dec": return changeQty(id, -1);
+    case "del": return removeItems([id]); // with undo in the toast
   }
 }
 todoList.addEventListener("click", onListClick);
