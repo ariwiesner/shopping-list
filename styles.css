@@ -1128,6 +1128,12 @@ body.asking-consent .content { padding-bottom: 130px; }
 /* Matching general items, from the total */
 .total-fix { padding: 4px 0 0; font-size: 13px; }
 .match-more { display: block; padding: 8px 4px 2px; font-size: 14px; }
+.match-search {
+  width: 100%; height: 42px; margin: 0 0 8px; padding: 0 14px;
+  border: 1.5px solid var(--line); border-radius: 12px; background: var(--surface-2);
+  font: inherit; font-size: 16px; color: var(--text);
+}
+.match-search:focus { outline: none; border-color: var(--accent); }
 .total-fix[hidden] { display: none; }
 #matchList { flex: 0 1 auto; min-height: 96px; max-height: none; overflow-y: auto; overscroll-behavior: contain; }
 

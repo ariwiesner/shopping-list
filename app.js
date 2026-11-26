@@ -2658,6 +2658,34 @@ function openMatchSheet(forCompare = false) {
   // How many chains sell each product helps rank the options: load it, then rank again.
   if (!commonCat) loadCommon().then((c) => { commonCat = c; if (!matchSheet.hidden) renderMatchSheet(); }).catch(() => {});
 }
+// One item's options: the 3 likeliest; opened, all of them, or what its search box finds
+// (any words: "תנובה 3%"), with a button to open or close.
+const matchQuery = new Map(); // kindKey → what was typed in its search box
+function matchOptsHtml(it) {
+  const name = ui.cat?.name || "";
+  const open = matchOpen.has(kindKey(it));
+  const q = open ? (matchQuery.get(kindKey(it)) || "").trim() : "";
+  let opts, more = 0;
+  if (q) {
+    const seen = new Set();
+    // Products that are the item ("חלב" when searching "תנובה 3%" for milk) come first.
+    const own = norm(it.kind || it.name).split(" ").filter((w) => w.length > 1 && !/\d/.test(w)).map(stem);
+    const isIt = (p) => (norm(p.name).split(" ").some((w) => own.includes(stem(w))) ? 1 : 0);
+    opts = ui.cat ? search(ui.cat, q, 200)
+      .filter((p) => { const k = norm(p.name); if (seen.has(k)) return false; seen.add(k); return true; })
+      .map((p, i) => ({ p, i, own: isIt(p) })).sort((a, b) => b.own - a.own || a.i - b.i).map((x) => x.p) : [];
+  } else {
+    const all = matchCandidates(it, Infinity, true);
+    opts = open ? all : matchCandidates(it);
+    more = all.length - opts.length;
+  }
+  return (opts.length ? opts.map((p) => `<button type="button" class="product alt-opt" data-code="${escapeHtml(p.code)}">
+      <span class="product-name">${escapeHtml(p.name)}</span>
+      <span class="product-price">${amt(money(p.price))}${p.weighted ? "<small>לק״ג</small>" : ""}</span></button>`).join("")
+    : `<p class="alt-none">${q ? `לא מצאנו ב${escapeHtml(name)} מוצר כזה` : `לא מצאנו ב${escapeHtml(name)} מוצר מתאים`}</p>`) +
+    (!open ? `<button type="button" class="link-btn match-more" data-more>${more > 0 ? `עוד ${more} אפשרויות · חיפוש ↓` : "חיפוש מוצר אחר ↓"}</button>`
+      : `<button type="button" class="link-btn match-more" data-less>פחות אפשרויות ↑</button>`);
+}
 function renderMatchSheet() {
   const items = generalItems();
   const name = ui.cat?.name || "";
@@ -2665,19 +2693,12 @@ function renderMatchSheet() {
     ? `${items.length === 1 ? "פריט אחד נכתב" : `${items.length} פריטים נכתבו`} בלי מוצר מדויק, אז המחיר שלהם משוער. בחרו מוצר פעם אחת: הבחירה נשמרת ברשימה, ובפעם הבאה שמישהו יכתוב אותו שם זה יהיה המוצר הזה.`
     : "כל הפריטים ברשימה מותאמים למוצר מדויק.";
   $("matchList").innerHTML = items.map((it) => {
-    // The 3 likeliest, and a button for all of them (the one wanted may not be in the 3).
-    const all = matchCandidates(it, Infinity, true);
     const open = matchOpen.has(kindKey(it));
-    const opts = open ? all : matchCandidates(it);
-    const more = all.length - opts.length;
     return `<li class="alt-item" data-id="${escapeHtml(it.id)}">
       <p class="alt-head"><b>${escapeHtml(it.name)}</b></p>
-      ${opts.length ? opts.map((p) => `<button type="button" class="product alt-opt" data-code="${escapeHtml(p.code)}">
-          <span class="product-name">${escapeHtml(p.name)}</span>
-          <span class="product-price">${amt(money(p.price))}${p.weighted ? "<small>לק״ג</small>" : ""}</span></button>`).join("")
-        : `<p class="alt-none">לא מצאנו ב${escapeHtml(name)} מוצר מתאים</p>`}
-      ${more > 0 ? `<button type="button" class="link-btn match-more" data-more>עוד ${more} אפשרויות ↓</button>`
-        : open && all.length > 3 ? `<button type="button" class="link-btn match-more" data-less>פחות אפשרויות ↑</button>` : ""}
+      ${open ? `<input type="search" class="match-search" placeholder="חיפוש מוצר ב${escapeHtml(name)}…" aria-label="חיפוש מוצר עבור ${escapeHtml(it.name)}"
+        value="${escapeHtml(matchQuery.get(kindKey(it)) || "")}" autocomplete="off" enterkeyhint="search" />` : ""}
+      <div class="match-opts">${matchOptsHtml(it)}</div>
     </li>`;
   }).join("");
   $("matchGo").hidden = !matchForCompare;
@@ -2687,8 +2708,11 @@ matchSheet.addEventListener("click", (e) => {
   const toggle = e.target.closest("[data-more], [data-less]");
   if (toggle) {
     const it = find(toggle.closest("[data-id]").dataset.id);
-    if (it) { if (toggle.hasAttribute("data-more")) matchOpen.add(kindKey(it)); else matchOpen.delete(kindKey(it)); }
+    if (!it) return;
+    const opening = toggle.hasAttribute("data-more");
+    if (opening) matchOpen.add(kindKey(it)); else { matchOpen.delete(kindKey(it)); matchQuery.delete(kindKey(it)); }
     renderMatchSheet();
+    if (opening) $("matchList").querySelector(`[data-id="${CSS.escape(it.id)}"] .match-search`)?.focus({ preventScroll: true });
     return;
   }
   const opt = e.target.closest(".alt-opt");
@@ -2706,6 +2730,15 @@ matchSheet.addEventListener("click", (e) => {
   if (e.target.closest("#matchSkip")) closeSheets();
 });
 document.addEventListener("click", (e) => { if (e.target.closest("#matchBtn")) openMatchSheet(false); });
+matchSheet.addEventListener("input", (e) => {
+  const box = e.target.closest(".match-search");
+  if (!box) return;
+  const li = box.closest("[data-id]"), it = find(li.dataset.id);
+  if (!it) return;
+  matchQuery.set(kindKey(it), box.value);
+  li.querySelector(".match-opts").innerHTML = matchOptsHtml(it);
+});
+matchSheet.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.closest(".match-search")) { e.preventDefault(); e.target.blur(); } });
 
 const altSheet = $("altSheet");
 let altForCompare = false;
