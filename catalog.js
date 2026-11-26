@@ -241,11 +241,58 @@ export function search(cat, query, limit = 40) {
   return out.slice(0, limit).map((x) => x.e.it);
 }
 
+// Basic products: what a plain word means when nobody says more. "חלב" is ordinary 3% milk
+// in a litre, not goat's milk or vanilla milk; "עגבניות" are loose tomatoes, not canned or
+// cherry; "לחם" is the regular sliced bread. For each word: the product's first words (head),
+// what it can't be (not), and what to prefer if there is any (prefer, in order). Among what's
+// left, the middle price, the same way at every chain.
+const BASICS = [
+  { keys: ["חלב"], head: /^חלב /, not: /עזים|סויה|שקד|שיבולת|אורז|קוקוס|עמיד|לקט|מועשר|וניל|קפה|שוקו|בטעם|אבקה|מרוכז|נטו|הקצפה|אורגני|טבעי|3\.8|קרמל|תות|בננה/, prefer: [/3%/, /(^|[^\d.])1 ?(ל|ליטר)(\s|$)/] },
+  { keys: ["לחם"], head: /^לחם /, not: /שום|גלוטן| קל|מלא|קפוא|כוסמין|שיפון|דגנים|בריאות|מחמצת|שחור/, prefer: [/אחיד/, /פרוס/] },
+  { keys: ["עגבניות", "עגבניה", "עגבנייה"], weighted: true, head: /^עגבני/, not: /שרי|תמר|אורגני|ארוז|קרטון|ירדן|מגי|אשכול|בייבי/, prefer: [/^עגבני(ה|יה|ות)$/] },
+  { keys: ["מלפפונים", "מלפפון"], weighted: true, head: /^מלפפו/, not: /בייבי|מיני|ארוז|אורגני|חמוצ|כבוש/, prefer: [/^מלפפו(ן|נים)$/] },
+  { keys: ["בצל", "בצלים"], weighted: true, head: /^בצל/, not: /ירוק|סגול|שאלוט|אורגני|ארוז|מטוגן|אבקה/, prefer: [/^בצל( יבש)?$/] },
+  { keys: ["גזר"], weighted: true, head: /^גזר/, not: /בייבי|גמדי|ארוז|אורגני|מגורר|דק|מקלות|קלוף|שטראוס/, prefer: [/^גזר$/] },
+  { keys: ["תפוחי אדמה", "תפוח אדמה", "תפוא"], weighted: true, head: /^תפו?ח(י)? אדמה/, not: /אורגני|ארוז|בייבי|מיני|קפוא|צ.יפס|פירה/, prefer: [/^תפו?ח(י)? אדמה$/] },
+  { keys: ["בננות", "בננה"], weighted: true, head: /^בננ/, not: /אורגני|ארוז|מיובש|צ.יפס/, prefer: [/^בננ(ה|ות)$/] },
+  { keys: ["ביצים"], head: /^ביצ(ים|י משק)/, not: /שוקו|קינדר|הפתעה|בון|אומגה|חופש|אורגני|שליו/, prefer: [/(^|\s)L(\s|$)/, /(^|\D)12(\D|$)/] },
+  { keys: ["קוטג", "קוטג׳", "קוטג'"], head: /^קוטג/, not: /עזים|זית|בטעם|עם /, prefer: [/5%/, /250/] },
+  { keys: ["גבינה לבנה"], head: /^גבינה לבנה/, not: /עזים|כבשים|בטעם|עם /, prefer: [/5%/, /250/] },
+  { keys: ["חמאה"], head: /^חמאה/, not: /מלוחה|שום|תבלינ|עזים|צמחית|נמרחת/, prefer: [/200/] },
+  { keys: ["סוכר"], head: /^סוכר/, not: /חום|דמרה|אבק|קנים|ונילי|ללא|ממתיק|מוסקובדו|קוביות/, prefer: [/לבן/, /1 ?ק/] },
+  { keys: ["קמח"], head: /^קמח/, not: /מלא|כוסמין|תופח|תירס|אורז|ללא|שקדים|מצה|תפוח|שיבולת/, prefer: [/לבן|חיטה/, /1 ?ק/] },
+  { keys: ["אורז"], head: /^אורז/, not: /מלא|פריך|פציח|קפוא|תערובת|פראי|סושי|ציפוי|מוכן/, prefer: [/פרסי/, /1 ?ק/] },
+  { keys: ["חזה עוף"], head: /חזה עוף/, not: /פרוס|נקניק|מעושן|שניצל|מתובל|ממולא|צלוי|קבב|מבושל/, prefer: [/^חזה עוף/, /טרי/] },
+  { keys: ["שמן"], head: /^שמן (קנולה|סויה|חמניות)/, not: /תרסיס|ספריי/, prefer: [/קנולה/, /(^|[^\d.])1 ?(ל|ליטר)(\s|$)/] },
+];
+const BASIC_BY_KEY = new Map(BASICS.flatMap((b) => b.keys.map((k) => [norm(k), b])));
+export const basicWords = () => BASICS.map((b) => b.keys[0]);
+// Loose produce: not a sack or a pack of some size, nor cooked/canned/frozen ("גזר 10 ק"ג", "תפוחי אדמה 200 גרם").
+const PACKED = /\d+(\.\d+)? ?(גרם|גר|ג'|ג׳|ק"ג|ק״ג|קג|קילו)|שקית|מארז|רשת|מבושל|פרוס|חמוצ|כבוש|שימור|קפוא|מרוסק|קצוצ|מיובש|רסק|מבושל/;
+function basicProduct(cat, rule) {
+  const fits = (p) => rule.head.test(p.name) && !rule.not?.test(p.name) && !(rule.weighted && PACKED.test(p.name));
+  let pool = cat.entries.map((e) => e.it).filter((p) => fits(p) && (rule.weighted === undefined || !!p.weighted === rule.weighted));
+  if (!pool.length && rule.weighted) pool = cat.entries.map((e) => e.it).filter(fits);
+  for (const want of rule.prefer || []) {
+    const better = pool.filter((p) => want.test(p.name));
+    if (better.length) pool = better;
+  }
+  if (!pool.length) return null;
+  pool.sort((a, b) => a.price - b.price);
+  return pool[Math.floor((pool.length - 1) / 2)];
+}
+
 // The product an item name clearly means, or null if it's ambiguous.
 // "בננה" → the store's product named "בננה" (or "בננה מובחרת"); "גבינה" → null (dozens of kinds).
+// A basic word ("חלב") → its ordinary product (above).
 export function resolve(cat, name) {
   const key = norm(name);
   if (cat.resolved.has(key)) return cat.resolved.get(key);
+  const basic = BASIC_BY_KEY.get(key);
+  if (basic) {
+    const p = basicProduct(cat, basic);
+    if (p) { cat.resolved.set(key, p); return p; }
+  }
   const { core } = coreOf(name);
   let product = null;
   if (core.length) {
@@ -499,6 +546,11 @@ const UNIT_KG = [
   ["שזיף", 0.07], ["מנגו", 0.35], ["קיווי", 0.08], ["רימו", 0.3], ["כרובי", 1.0], ["כרוב", 1.2],
   ["ברוקולי", 0.4], ["סלק", 0.2], ["צנו", 0.1], ["קולרבי", 0.3], ["דלעת", 1.5], ["אבטיח", 6],
   ["מלו", 1.5], ["אננס", 1.2], ["פומל", 1], ["חס", 0.4], ["שום", 0.05], ["אפרסמו", 0.2], ["פפאיה", 0.8],
+  // Fish and meat bought in pieces ("19 פילה אמנון", "4 שניצלים"): a typical piece.
+  ["עוף שלם", 1.6], ["פילה", 0.2], ["שניצל", 0.15], ["חזה", 0.25], ["שוקי עוף", 0.15], ["שוקיים", 0.15],
+  ["כנפיים", 0.1], ["כרעיים", 0.3], ["פרגי", 0.12], ["סטייק", 0.3], ["אנטריקוט", 0.3], ["המבורגר", 0.12],
+  ["קבב", 0.08], ["קציצ", 0.06], ["צלעות", 0.3], ["סלמון", 0.2], ["אמנון", 0.4], ["דניס", 0.4],
+  ["לברק", 0.4], ["מושט", 0.4], ["בורי", 0.4], ["טונה טרי", 0.25],
 ];
 export function unitKg(name) {
   const n = norm(name);

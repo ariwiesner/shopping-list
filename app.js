@@ -71,6 +71,14 @@ function numberAt(words, i) {
   }
   return null;
 }
+// Halves of a kilo: "חצי קילו" → 0.5 קילו, "קילו וחצי" → 1.5 קילו, "2 קילו וחצי" → 2.5 קילו.
+function halfKilos(s) {
+  const kg = String.raw`(ק"ג|ק״ג|קג|קילו)`;
+  return s
+    .replace(new RegExp(String.raw`(^|\s)חצי\s+${kg}(?=\s|$)`), "$10.5 $2")
+    .replace(new RegExp(String.raw`(^|\s)(\d+(?:[.,]\d+)?)\s*${kg}\s+וחצי(?=\s|$)`), (m, a, n, k) => `${a}${parseFloat(n.replace(",", ".")) + 0.5} ${k}`)
+    .replace(new RegExp(String.raw`(^|\s)${kg}\s+וחצי(?=\s|$)`), "$11.5 $2");
+}
 function numberWordsToDigits(s) {
   const words = s.split(" ");
   if (words.length < 2) return s;
@@ -85,23 +93,50 @@ function numberWordsToDigits(s) {
   return s;
 }
 
+// What a plain amount means, the way people say it.
+// Always by weight: meat and poultry cuts. "חזה עוף" is a kilo, "2 חזה עוף" two kilos.
+// (Pieces only when said: "3 יח׳ חזה עוף".)
+const ALWAYS_KG = ["חזה עוף", "חזה הודו", "בשר טחון", "עוף טחון", "הודו טחון", "טחון", "כרעיים", "שוקיים", "שוקי עוף",
+  "כנפיים", "כנפי עוף", "פרגיות", "פרגית", "אנטריקוט", "צלעות", "כבד עוף", "כבדי עוף", "לבבות עוף", "קורקבנים",
+  "גולש", "אסאדו", "שייטל", "סינטה", "צלי בקר", "בשר בקר", "בשר לבן", "כתף בקר"];
+const NOT_BY_WEIGHT = /פרוס|נקניק|מעושן|קבב|ממולא|צלוי|מבושל|שניצל/;
+// By weight when no amount is given: "עגבניות" is a kilo of tomatoes, "3 עגבניות" three tomatoes.
+const KG_IF_NO_AMOUNT = ["עגבניות", "מלפפונים", "בצל", "בצלים", "גזר", "תפוחי אדמה", "תפוחים", "תפוחי עץ", "בננות",
+  "תפוזים", "קלמנטינות", "לימונים", "פלפלים", "קישואים", "חצילים", "בטטות", "אגסים", "אפרסקים", "נקטרינות",
+  "שזיפים", "ענבים", "סלק", "שניצל", "שניצלים"];
+function defaultUnit(p) {
+  if (p.unit || p.pieces) return p;
+  const n = norm(p.name);
+  if (ALWAYS_KG.some((k) => n === k || n.startsWith(k + " ")) && !NOT_BY_WEIGHT.test(n)) return { ...p, unit: "kg" };
+  if (!p.counted && KG_IF_NO_AMOUNT.includes(n)) return { ...p, unit: "kg", qty: 1 };
+  return p;
+}
+// Pieces said outright: "3 יח׳ חזה עוף", "חזה עוף 3 יחידות".
+const PIECES = String.raw`(?:יח׳|יח'|יח|יחידות|יחידה)`;
+const PIECES_FIRST = new RegExp(String.raw`^(\d{1,3})\s*${PIECES}\s+(.+)$`);
+const PIECES_LAST = new RegExp(String.raw`^(.+?)\s+(\d{1,3})\s*${PIECES}$`);
+
 function parseInput(text) {
-  let s = numberWordsToDigits(text.trim().replace(/\s+/g, " "));
+  let s = halfKilos(numberWordsToDigits(text.trim().replace(/\s+/g, " ")));
+  let pm = s.match(PIECES_FIRST);
+  if (pm) return { name: capitalize(pm[2]), qty: Math.min(Math.max(+pm[1], 1), 999), counted: true, pieces: true };
+  if ((pm = s.match(PIECES_LAST))) return { name: capitalize(pm[1]), qty: Math.min(Math.max(+pm[2], 1), 999), counted: true, pieces: true };
   let km = s.match(KG_FIRST);
   if (km || (km = s.match(KG_LAST))) {
     const [num, rest] = s.match(KG_FIRST) ? [km[1], km[2]] : [km[2], km[1]];
-    const qty = Math.min(Math.max(Math.round(parseFloat(num.replace(",", ".")) * 2) / 2, 0.5), 999);
+    const qty = Math.min(Math.max(Math.round(parseFloat(num.replace(",", ".")) * 10) / 10, 0.1), 999);
     return { name: capitalize(rest), qty, unit: "kg" };
   }
   if ((km = s.match(KG_ONLY))) return { name: capitalize(km[1]), qty: 1, unit: "kg" };
   let qty = 1;
   let m = s.match(/^(\d{1,3})\s*[x×]?\s+(.+)$/i);
-  if (m) { qty = +m[1]; s = m[2]; }
+  let counted = false;
+  if (m) { qty = +m[1]; s = m[2]; counted = true; }
   else if ((m = s.match(/^(.+?)\s*[x×]\s*(\d{1,3})$/i)) || (m = s.match(/^(.+?)\s+(\d{1,3})$/))) {
-    s = m[1]; qty = +m[2];
+    s = m[1]; qty = +m[2]; counted = true;
   }
   qty = Math.min(Math.max(qty || 1, 1), 999);
-  return { name: capitalize(s), qty };
+  return { name: capitalize(s), qty, counted };
 }
 
 // ---------- Backends ----------
@@ -218,7 +253,13 @@ function priceLine(it) {
   if (!ui.cat && p?.kind !== "manual") {
     // The product's name, unless the title already is that name.
     const pn = it.productName && norm(it.productName), n = norm(it.name);
-    return pn && !pn.startsWith(n) && !n.startsWith(pn) ? `<div class="item-alt">🏷️ ${escapeHtml(it.productName)}</div>` : "";
+    const named = pn && !pn.startsWith(n) && !n.startsWith(pn) ? `<div class="item-alt">🏷️ ${escapeHtml(it.productName)}</div>` : "";
+    // A product chosen for it: its price, small, at the store it's compared at.
+    const cat = it.barcode && listPriceCat();
+    const lp = cat && priceItem(cat, it, choiceOf(kindKey(it)), { club: isClubMember(cat.id) });
+    const price = lp && lp.kind === "exact" && !lp.missingProduct
+      ? `<div class="item-price list-price" title="ב${escapeHtml(cat.name)}">${amt(money(lp.total))}</div>` : "";
+    return price + named;
   }
   if (!p) return "";
   // Weighed produce: counted in units (≈ kg by a typical weight) or in kg.
@@ -300,7 +341,7 @@ function itemHtml(it) {
         <div class="stepper" role="group" aria-label="כמות">
           <button data-act="inc" aria-label="הגדלת כמות">+</button>
           <label class="qty-field"><input class="qty-input" data-act="qty" type="text" inputmode="decimal" enterkeyhint="done"
-            maxlength="5" value="${it.qty}" aria-label="כמות של ${name}"${askedByOthers(it) ? " readonly" : ""} />${it.unit === "kg" ? "<small>ק״ג</small>" : ""}</label>
+            maxlength="5" value="${it.qty}" aria-label="כמות של ${name}${it.unit === "kg" ? " בק״ג" : ""}"${askedByOthers(it) ? " readonly" : ""} />${unitTag(it)}</label>
           <button data-act="dec" aria-label="הקטנת כמות">−</button>
         </div>
         ${it.unit === "kg" ? `<span class="qty-badge">${it.qty} ק״ג</span>` : it.qty > 1 ? `<span class="qty-badge">×${it.qty}</span>` : ""}
@@ -767,6 +808,22 @@ $("branchList").addEventListener("click", (e) => {
   else selectBranch(b.dataset.branch || null);
   closeSheets();
 });
+
+// The store the plain list's chosen products are priced at: the usual store, else the one
+// last compared at (its branch too). Loaded quietly, like the usual store's total.
+function listPriceStore() {
+  const h = homeStore();
+  if (h) return h;
+  const chain = [storeChoice(), prefs.lastChain].find(knownChain) || ui.chains[0]?.id; // as comparing starts
+  return chain ? { chain, branch: currentBranchId(chain) } : null;
+}
+function listPriceCat() {
+  const s = listPriceStore();
+  if (!s) return null;
+  if (ui.homeCat?.key === homeKey(s)) return ui.homeCat.cat;
+  loadHome(s);
+  return null;
+}
 
 // "In your usual store: ₪X", above the list in the plain list mode. Prices the list at the
 // usual store (its branch prices when one is set), loaded on its own beside the store shown.
@@ -1684,7 +1741,7 @@ function productTitle(product) {
 }
 
 function addItem(text, product = null) {
-  const { name: typed, qty, unit } = parseInput(text);
+  const { name: typed, qty, unit } = defaultUnit(parseInput(text));
   if (!typed) return;
   // A chosen product: its name is the title, what was typed is the kind.
   const name = product ? productTitle(product) : typed;
@@ -1702,12 +1759,12 @@ function addItem(text, product = null) {
   if (existing && askedByOthers(existing)) return askDuplicate(existing, qty);
   if (existing) {
     const next = Math.min(existing.qty + qty, 999);
-    backend.patch([existing.id], { qty: next, ...(product ? { barcode: product.code, productName: product.name, name, kind: existing.kind || kind } : {}) }).catch(fail);
+    backend.patch([existing.id], { qty: next, ...(product ? { barcode: product.code, productName: product.name, name, kind: existing.kind || kind, weighted: !!product.weighted } : {}) }).catch(fail);
     showToast(`${existing.name} כבר ברשימה — עכשיו ×${next}`, false);
   } else {
     const now = Date.now(), id = uid();
     backend.put([{ id, name, kind, qty, done: false, price: null, createdAt: now, sortKey: now, unit: unit || null,
-      ...(product ? { barcode: product.code, productName: product.name } : {}) }]).catch(fail);
+      ...(product ? { barcode: product.code, productName: product.name, weighted: !!product.weighted } : {}) }]).catch(fail);
     showNewItem(id);
   }
   buzz();
@@ -1825,10 +1882,34 @@ function changeQty(id, delta) {
   if (!it) return;
   // Shared item that others asked for: ask whose amount this changes.
   if (askedByOthers(it)) return askWho(it, delta);
-  const next = it.qty + delta * (it.unit === "kg" ? 0.5 : 1); // kg go in half kilos
-  if (next < (it.unit === "kg" ? 0.5 : 1)) return removeItems([id]);
+  const next = Math.round((it.qty + delta * (it.unit === "kg" ? 0.5 : 1)) * 10) / 10; // kg go in half kilos
+  if (next < (it.unit === "kg" ? 0.1 : 1)) return removeItems([id]);
   buzz(5);
   backend.patch([id], { qty: Math.min(next, 999), ...(it.importNote ? { importNote: null } : {}) }).catch(fail);
+}
+
+// ---------- Units or kg ----------
+// Produce can be counted (3 cucumbers) or weighed (0.4 kg). Not a packaged product
+// that was chosen ("עגבניה שרי 400 גרם"), unless it is itself sold by weight.
+function canWeigh(it) {
+  if (!it) return false;
+  if (it.barcode) {
+    const p = ui.cat?.byCode.get(it.barcode);
+    return p ? !!p.weighted : it.weighted ?? it.unit === "kg";
+  }
+  return !!(unitKg(it.kind || it.name) || it.unit === "kg");
+}
+// The same amount the other way, by the typical weight of one (a cucumber ≈ 0.13 kg):
+// 3 cucumbers ⇄ 0.4 kg. Without a typical weight, the number stays.
+function convertQty(it, qty, toUnit) {
+  const per = it && unitKg(it.kind || it.name);
+  if (toUnit === "kg") return per ? Math.min(Math.max(Math.round(qty * per * 10) / 10, 0.1), 999) : qty;
+  return Math.min(Math.max(per ? Math.round(qty / per) : Math.round(qty), 1), 999);
+}
+// The unit, small inside the amount box: ק״ג when bought (or priced) by weight; nothing for
+// pieces. Changed in the item's sheet.
+function unitTag(it) {
+  return it.unit === "kg" || it._price?.byKg ? "<small>ק״ג</small>" : ""; // pieces: nothing written
 }
 
 let lastRemoved = null;
@@ -2140,7 +2221,7 @@ function openEdit(id) {
   $("editName").value = it.name;
   $("editQty").value = editQty;
   // Units or kg: for produce sold by weight.
-  const weighed = !!find(id) && (unitKg(it.name) || listPrice(it, {}).weighted);
+  const weighed = canWeigh(it);
   $("editUnit").hidden = !weighed;
   syncEditUnit();
   $("editPrice").value = typeof it.price === "number" && it.price > 0 ? it.price : "";
@@ -2156,9 +2237,12 @@ function openEdit(id) {
   $("editName").readOnly = !!ui.cat;
   editNameTouched = false;
   // A product already chosen: offer a different one; otherwise a specific one.
-  if (ui.cat) $("editSearchLabel").textContent = it.barcode
-    ? `חפש אחר ${it.kind || it.name} שונה`
-    : `חיפוש אחר ${it.kind || it.name} ספציפי ב${ui.cat.name}`;
+  // Its hint, inside the box over two small lines (a real placeholder can't wrap).
+  if (ui.cat) {
+    const hint = it.barcode ? `חפש אחר ${it.kind || it.name} שונה` : `חיפוש אחר ${it.kind || it.name} ספציפי ב${ui.cat.name}`;
+    $("editSearchPh").textContent = hint;
+    $("editSearch").setAttribute("aria-label", hint);
+  }
   $("productList").hidden = !ui.cat;
   if (ui.cat) renderProducts();
 }
@@ -2245,7 +2329,7 @@ editSheet.addEventListener("click", (e) => {
   const step = e.target.closest("[data-step]");
   if (!step) return;
   const kg = editUnit === "kg";
-  editQty = Math.min(Math.max(editQty + +step.dataset.step * (kg ? 0.5 : 1), kg ? 0.5 : 1), 999);
+  editQty = Math.min(Math.max(Math.round((editQty + +step.dataset.step * (kg ? 0.5 : 1)) * 10) / 10, kg ? 0.1 : 1), 999);
   $("editQty").value = editQty;
   buzz(5);
 });
@@ -2256,8 +2340,9 @@ function syncEditUnit() {
 $("editUnit").addEventListener("click", (e) => {
   const b = e.target.closest("[data-unit]");
   if (!b) return;
-  editUnit = b.dataset.unit || null;
-  if (editUnit !== "kg") editQty = Math.max(1, Math.round(editQty));
+  const next = b.dataset.unit || null;
+  if (next !== editUnit) editQty = convertQty(find(editingId), editQty, next);
+  editUnit = next;
   $("editQty").value = editQty;
   syncEditUnit();
   buzz(5);
@@ -2266,7 +2351,7 @@ $("editUnit").addEventListener("click", (e) => {
 function readEditQty() {
   const kg = editUnit === "kg";
   const v = parseFloat(String($("editQty").value).replace(",", "."));
-  if (Number.isFinite(v) && v > 0) editQty = Math.min(kg ? Math.max(Math.round(v * 2) / 2, 0.5) : Math.max(Math.round(v), 1), 999);
+  if (Number.isFinite(v) && v > 0) editQty = Math.min(kg ? Math.max(Math.round(v * 10) / 10, 0.1) : Math.max(Math.round(v), 1), 999);
   $("editQty").value = editQty;
 }
 $("editQty").addEventListener("change", readEditQty);
@@ -2288,6 +2373,10 @@ $("editForm").addEventListener("submit", (e) => {
       // remember it for this item name so next time "גבינה" means the same cheese.
       fields.barcode = editProduct?.code || null;
       fields.productName = editProduct?.name || null;
+      const chosen = editProduct && ui.cat.byCode.get(editProduct.code);
+      fields.weighted = chosen ? !!chosen.weighted : null;
+      // A packaged product isn't bought by weight: back to units.
+      if (chosen && !chosen.weighted && fields.unit === "kg") { fields.qty = convertQty(it, fields.qty, null); fields.unit = null; }
       // Just picked a product: it names the item, and what was there becomes its kind.
       // Back to "any kind": the item takes its kind's name again. Otherwise the text wins.
       if (editPicked && editProduct) {
@@ -2703,10 +2792,11 @@ function matchCandidates(it, n = 3, all = false) {
     return starts + whole * 10 + (produce && p.weighted ? 150 : 0);
   };
   const chains = (p) => Math.min(commonCat?.byCode.get(p.code)?.chains.length || 1, 7);
+  const basic = resolve(ui.cat, q); // "חלב": the ordinary product comes first
   const seen = new Set();
-  return search(ui.cat, q, all ? 200 : 80)
-    .filter((p) => { const k = norm(p.name); if (seen.has(k)) return false; seen.add(k); return all || score(p) >= 10; })
-    .sort((a, b) => score(b) - score(a) || chains(b) - chains(a) || a.price - b.price)
+  return [...(basic ? [basic] : []), ...search(ui.cat, q, all ? 200 : 80)]
+    .filter((p) => { const k = norm(p.name); if (seen.has(k)) return false; seen.add(k); return all || p === basic || score(p) >= 10; })
+    .sort((a, b) => (b === basic) - (a === basic) || score(b) - score(a) || chains(b) - chains(a) || a.price - b.price)
     .slice(0, n);
 }
 function openMatchSheet(forCompare = false) {
@@ -2782,7 +2872,7 @@ matchSheet.addEventListener("click", (e) => {
     // title, what was written as its kind), as when choosing a product while typing.
     if (!lockedForMe()) {
       const same = ui.items.filter((i) => !i.done && !i.barcode && kindKey(i) === key);
-      const fields = { barcode: p.code, productName: p.name, name: productTitle(p), kind: it.kind || it.name };
+      const fields = { barcode: p.code, productName: p.name, name: productTitle(p), kind: it.kind || it.name, weighted: !!p.weighted };
       same.forEach((i) => Object.assign(i, fields)); // shown at once; the backend update follows
       if (same.length) backend.patch(same.map((i) => i.id), fields).catch(fail);
     }
@@ -2898,7 +2988,7 @@ function setQty(id, raw) {
   if (!it) return;
   let v = parseFloat(String(raw).replace(",", "."));
   if (!Number.isFinite(v)) { render(); return; } // not a number: back to what it was
-  v = it.unit === "kg" ? Math.round(v * 2) / 2 : Math.round(v);
+  v = it.unit === "kg" ? Math.round(v * 10) / 10 : Math.round(v);
   if (v <= 0) return removeItems([id]);
   v = Math.min(v, 999);
   if (v === it.qty) return;
