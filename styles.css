@@ -1127,6 +1127,7 @@ body.asking-consent .content { padding-bottom: 130px; }
 
 /* Matching general items, from the total */
 .total-fix { padding: 4px 0 0; font-size: 13px; }
+.match-more { display: block; padding: 8px 4px 2px; font-size: 14px; }
 .total-fix[hidden] { display: none; }
 #matchList { flex: 0 1 auto; min-height: 96px; max-height: none; overflow-y: auto; overscroll-behavior: contain; }
 

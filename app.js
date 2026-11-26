@@ -1374,6 +1374,7 @@ function openImport() {
   renderImport();
 }
 $("emptyImport").addEventListener("click", openImport);
+$("importBtn").addEventListener("click", openImport);
 
 // On a phone-only list, imported items merge into what's there: the item already on the list.
 const existingFor = (name) => !intoNewList() && name.trim()
@@ -2619,6 +2620,7 @@ function altCandidates(it) {
 // a product once, here; it's remembered on the list (setChoice) for everyone, every week.
 const matchSheet = $("matchSheet");
 let matchAsked = false, matchForCompare = false;
+const matchOpen = new Set(); // items showing all their options (by kindKey)
 const generalItems = () => {
   const seen = new Set();
   return ui.items.filter((i) => {
@@ -2630,7 +2632,7 @@ const generalItems = () => {
 };
 // Products a general item likely means: the name starting with what was typed ("ביצים L"
 // before "נודלס ביצים"), then products sold at more chains (the usual ones), then cheaper.
-function matchCandidates(it, n = 3) {
+function matchCandidates(it, n = 3, all = false) {
   const q = it.kind || it.name;
   const typed = norm(q).split(" ").filter((w) => w && !/\d/.test(w));
   if (!ui.cat || !typed.length) return [];
@@ -2643,8 +2645,8 @@ function matchCandidates(it, n = 3) {
   };
   const chains = (p) => Math.min(commonCat?.byCode.get(p.code)?.chains.length || 1, 7);
   const seen = new Set();
-  return search(ui.cat, q, 80)
-    .filter((p) => { const k = norm(p.name); if (seen.has(k)) return false; seen.add(k); return score(p) >= 10; })
+  return search(ui.cat, q, all ? 200 : 80)
+    .filter((p) => { const k = norm(p.name); if (seen.has(k)) return false; seen.add(k); return all || score(p) >= 10; })
     .sort((a, b) => score(b) - score(a) || chains(b) - chains(a) || a.price - b.price)
     .slice(0, n);
 }
@@ -2663,19 +2665,32 @@ function renderMatchSheet() {
     ? `${items.length === 1 ? "פריט אחד נכתב" : `${items.length} פריטים נכתבו`} בלי מוצר מדויק, אז המחיר שלהם משוער. בחרו מוצר פעם אחת: הבחירה נשמרת ברשימה, ובפעם הבאה שמישהו יכתוב אותו שם זה יהיה המוצר הזה.`
     : "כל הפריטים ברשימה מותאמים למוצר מדויק.";
   $("matchList").innerHTML = items.map((it) => {
-    const opts = matchCandidates(it);
+    // The 3 likeliest, and a button for all of them (the one wanted may not be in the 3).
+    const all = matchCandidates(it, Infinity, true);
+    const open = matchOpen.has(kindKey(it));
+    const opts = open ? all : matchCandidates(it);
+    const more = all.length - opts.length;
     return `<li class="alt-item" data-id="${escapeHtml(it.id)}">
       <p class="alt-head"><b>${escapeHtml(it.name)}</b></p>
       ${opts.length ? opts.map((p) => `<button type="button" class="product alt-opt" data-code="${escapeHtml(p.code)}">
           <span class="product-name">${escapeHtml(p.name)}</span>
           <span class="product-price">${amt(money(p.price))}${p.weighted ? "<small>לק״ג</small>" : ""}</span></button>`).join("")
         : `<p class="alt-none">לא מצאנו ב${escapeHtml(name)} מוצר מתאים</p>`}
+      ${more > 0 ? `<button type="button" class="link-btn match-more" data-more>עוד ${more} אפשרויות ↓</button>`
+        : open && all.length > 3 ? `<button type="button" class="link-btn match-more" data-less>פחות אפשרויות ↑</button>` : ""}
     </li>`;
   }).join("");
   $("matchGo").hidden = !matchForCompare;
   $("matchSkip").textContent = matchForCompare ? "להשוות בלי לבחור" : "סגירה";
 }
 matchSheet.addEventListener("click", (e) => {
+  const toggle = e.target.closest("[data-more], [data-less]");
+  if (toggle) {
+    const it = find(toggle.closest("[data-id]").dataset.id);
+    if (it) { if (toggle.hasAttribute("data-more")) matchOpen.add(kindKey(it)); else matchOpen.delete(kindKey(it)); }
+    renderMatchSheet();
+    return;
+  }
   const opt = e.target.closest(".alt-opt");
   if (opt) {
     const it = find(opt.closest("[data-id]").dataset.id), p = ui.cat?.byCode.get(opt.dataset.code);
