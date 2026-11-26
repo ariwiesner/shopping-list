@@ -1181,6 +1181,8 @@ body.asking-consent .content { padding-bottom: 130px; }
 #editSheet .stepper.inline .qty-input:focus { outline: 2px solid var(--accent); background: var(--surface); }
 /* The name's text: small like the search box's hint */
 #editSheet #editName { font-size: 13px; font-weight: 600; padding: 0 10px; }
+#editSheet #editName[readonly] { background: var(--surface-2); color: var(--text); cursor: default; }
+#editSheet #editName[readonly]:focus { border-color: var(--line); }
 .edit-search {
   width: 100%; height: 44px; margin: 0; padding: 0 10px; box-sizing: border-box; -webkit-appearance: none; appearance: none;
   border: 1.5px solid var(--line); border-radius: 12px; background: var(--surface-2);

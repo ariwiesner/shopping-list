@@ -2151,6 +2151,9 @@ function openEdit(id) {
   // Search for a specific product (any words: "תנובה 3%"), beside the name.
   $("editSearch").value = "";
   $("editSearchCol").hidden = !ui.cat;
+  // Comparing prices: the name comes from the product chosen below, not typed. (In the plain
+  // list there are no products to choose, so the name is typed there.)
+  $("editName").readOnly = !!ui.cat;
   editNameTouched = false;
   // A product already chosen: offer a different one; otherwise a specific one.
   if (ui.cat) $("editSearchLabel").textContent = it.barcode
