@@ -1,21 +1,21 @@
 {
- "generated": "2026-11-25T13:32Z",
+ "generated": "2026-11-27T13:37Z",
  "chains": [
   {
    "id": "shufersal",
    "name": "שופרסל",
    "color": "#d71f26",
-   "count": 38805,
+   "count": 38840,
    "branches": 426,
-   "updated": "2026-11-25T13:20Z"
+   "updated": "2026-11-27T12:57Z"
   },
   {
    "id": "rami-levy",
    "name": "רמי לוי",
    "color": "#0a5bab",
-   "count": 26355,
-   "branches": 98,
-   "updated": "2026-11-25T13:23Z"
+   "count": 26285,
+   "branches": 96,
+   "updated": "2026-11-27T13:00Z"
   },
   {
    "id": "carrefour",
@@ -29,17 +29,17 @@
    "id": "yochananof",
    "name": "יוחננוף",
    "color": "#e4002b",
-   "count": 18213,
+   "count": 18216,
    "branches": 47,
-   "updated": "2026-11-25T13:29Z"
+   "updated": "2026-11-27T13:08Z"
   },
   {
    "id": "osher-ad",
    "name": "אושר עד",
    "color": "#f7a600",
-   "count": 9618,
+   "count": 9604,
    "branches": 24,
-   "updated": "2026-11-25T13:30Z"
+   "updated": "2026-11-27T13:09Z"
   },
   {
    "id": "hazi-hinam",
@@ -53,9 +53,129 @@
    "id": "tiv-taam",
    "name": "טיב טעם",
    "color": "#00843d",
-   "count": 32292,
+   "count": 32231,
    "branches": 53,
-   "updated": "2026-11-25T13:31Z"
+   "updated": "2026-11-27T13:11Z"
+  },
+  {
+   "id": "freshmarket",
+   "name": "פרשמרקט",
+   "color": "#d7141a",
+   "count": 19703,
+   "branches": 46,
+   "updated": "2026-11-27T13:26Z"
+  },
+  {
+   "id": "keshet",
+   "name": "קשת טעמים",
+   "color": "#2e3192",
+   "count": 21076,
+   "branches": 2,
+   "updated": "2026-11-27T13:26Z"
+  },
+  {
+   "id": "stop-market",
+   "name": "סטופ מרקט",
+   "color": "#c8102e",
+   "count": 24963,
+   "branches": 11,
+   "updated": "2026-11-27T13:26Z"
+  },
+  {
+   "id": "politzer",
+   "name": "פוליצר",
+   "color": "#e2231a",
+   "count": 23141,
+   "branches": 8,
+   "updated": "2026-11-27T13:27Z"
+  },
+  {
+   "id": "salach-dabach",
+   "name": "סאלח דבאח",
+   "color": "#e30613",
+   "count": 23281,
+   "branches": 6,
+   "updated": "2026-11-27T13:27Z"
+  },
+  {
+   "id": "zol-vebegadol",
+   "name": "זול ובגדול",
+   "color": "#e30613",
+   "count": 16339,
+   "branches": 34,
+   "updated": "2026-11-27T13:28Z"
+  },
+  {
+   "id": "shuk-hair",
+   "name": "שוק העיר",
+   "color": "#2e9e48",
+   "count": 13891,
+   "branches": 25,
+   "updated": "2026-11-27T13:28Z"
+  },
+  {
+   "id": "bareket",
+   "name": "ברקת",
+   "color": "#f2a900",
+   "count": 12037,
+   "branches": 14,
+   "updated": "2026-11-27T13:28Z"
+  },
+  {
+   "id": "king-store",
+   "name": "קינג סטור",
+   "color": "#c8102e",
+   "count": 15307,
+   "branches": 48,
+   "updated": "2026-11-27T13:29Z"
+  },
+  {
+   "id": "super-sapir",
+   "name": "סופר ספיר",
+   "color": "#3aa655",
+   "count": 23890,
+   "branches": 89,
+   "updated": "2026-11-27T13:30Z"
+  },
+  {
+   "id": "maayan-2000",
+   "name": "מעיין 2000",
+   "color": "#e31e24",
+   "count": 12024,
+   "branches": 38,
+   "updated": "2026-11-27T13:30Z"
+  },
+  {
+   "id": "shefa-birkat-hashem",
+   "name": "שפע ברכת השם",
+   "color": "#00a651",
+   "count": 9854,
+   "branches": 22,
+   "updated": "2026-11-27T13:30Z"
+  },
+  {
+   "id": "city-market",
+   "name": "סיטי מרקט",
+   "color": "#e31e24",
+   "count": 14525,
+   "branches": 27,
+   "updated": "2026-11-27T13:31Z"
+  },
+  {
+   "id": "alonit",
+   "name": "אלונית",
+   "color": "#6ab023",
+   "count": 16239,
+   "branches": 157,
+   "updated": "2026-11-27T13:33Z"
+  },
+  {
+   "id": "good-pharm",
+   "name": "גוד פארם",
+   "color": "#222222",
+   "count": 15479,
+   "branches": 84,
+   "updated": "2026-11-27T13:34Z"
   }
  ]
 }
